@@ -1,0 +1,1063 @@
+import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useApp } from '../../store/AppContext';
+import Modal from '../../components/Modal/Modal';
+import type { Address, CreditCard, Order } from '../../types';
+import './CustomerArea.css';
+
+export default function CustomerArea() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  
+  const { 
+    activeCustomer, 
+    orders, 
+    coupons, 
+    exchanges,
+    updateCustomerStatus,
+    cancelOrder,
+    requestExchange,
+    updateExchangeStatus,
+    updateCustomerProfile,
+    addCustomerAddress,
+    updateCustomerAddress,
+    addCustomerCard,
+    removeCustomerCard,
+    setCardAsPreferred
+  } = useApp();
+
+  const tabParamVal = tabParam === 'pedidos' ? 'pedidos' : tabParam === 'cupons' ? 'cupons' : 'perfil';
+  const [prevTabParam, setPrevTabParam] = useState(tabParamVal);
+  const [activeTab, setActiveTab] = useState(tabParamVal);
+
+  if (tabParamVal !== prevTabParam) {
+    setPrevTabParam(tabParamVal);
+    setActiveTab(tabParamVal);
+  }
+
+  const handleTabChange = (tabName: string) => {
+    setActiveTab(tabName);
+    setSearchParams({ tab: tabName });
+  };
+
+  // --- MOCK E ESTADOS DOS FORMS ---
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  
+  const [prevCustomerId, setPrevCustomerId] = useState(activeCustomer.id);
+  const [prevIsEditing, setPrevIsEditing] = useState(isEditingProfile);
+  const [profileForm, setProfileForm] = useState({
+    name: activeCustomer.name,
+    email: activeCustomer.email,
+    phone: activeCustomer.phone,
+    gender: activeCustomer.gender,
+    birthDate: activeCustomer.birthDate
+  });
+
+  if (activeCustomer.id !== prevCustomerId || isEditingProfile !== prevIsEditing) {
+    setPrevCustomerId(activeCustomer.id);
+    setPrevIsEditing(isEditingProfile);
+    setProfileForm({
+      name: activeCustomer.name,
+      email: activeCustomer.email,
+      phone: activeCustomer.phone,
+      gender: activeCustomer.gender,
+      birthDate: activeCustomer.birthDate
+    });
+  }
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateCustomerProfile({
+      ...activeCustomer,
+      ...profileForm
+    });
+    setIsEditingProfile(false);
+  };
+
+  // Módulos de Inativação/Reativação
+  const [isInactivateModalOpen, setIsInactivateModalOpen] = useState(false);
+  const [isReactivateModalOpen, setIsReactivateModalOpen] = useState(false);
+
+  // Módulos de Cartões
+  const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+  const [newCard, setNewCard] = useState({
+    brand: 'Visa' as CreditCard['brand'],
+    lastFour: '',
+    holderName: '',
+    expirationDate: '',
+    isPreferred: false
+  });
+  const [cardToRemoveId, setCardToRemoveId] = useState<string | null>(null);
+
+  const handleAddCard = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCard.lastFour || !newCard.holderName || !newCard.expirationDate) return;
+    addCustomerCard(activeCustomer.id, newCard);
+    setIsCardModalOpen(false);
+    setNewCard({ brand: 'Visa', lastFour: '', holderName: '', expirationDate: '', isPreferred: false });
+  };
+
+  // Módulos de Endereços
+  const [isAddrModalOpen, setIsAddrModalOpen] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+  const [addrForm, setAddrForm] = useState({
+    label: '',
+    street: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
+    zipCode: '',
+    city: '',
+    state: '',
+    country: 'Brasil',
+    observations: ''
+  });
+
+  const handleOpenAddAddr = () => {
+    setEditingAddress(null);
+    setAddrForm({
+      label: '', street: '', number: '', complement: '', neighborhood: '',
+      zipCode: '', city: '', state: '', country: 'Brasil', observations: ''
+    });
+    setIsAddrModalOpen(true);
+  };
+
+  const handleOpenEditAddr = (addr: Address) => {
+    setEditingAddress(addr);
+    setAddrForm({
+      label: addr.label, street: addr.street, number: addr.number, complement: addr.complement || '',
+      neighborhood: addr.neighborhood, zipCode: addr.zipCode, city: addr.city, state: addr.state,
+      country: addr.country, observations: addr.observations || ''
+    });
+    setIsAddrModalOpen(true);
+  };
+
+  const handleSaveAddress = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingAddress) {
+      updateCustomerAddress(activeCustomer.id, {
+        ...editingAddress,
+        ...addrForm
+      });
+    } else {
+      addCustomerAddress(activeCustomer.id, addrForm);
+    }
+    setIsAddrModalOpen(false);
+  };
+
+  // --- CONTROLE DE TROCA ---
+  const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
+  const [selectedOrderForExc, setSelectedOrderForExc] = useState<Order | null>(null);
+  const [selectedExcProductId, setSelectedExcProductId] = useState('');
+  const [selectedExcProductSize, setSelectedExcProductSize] = useState<number | null>(null);
+  const [exchangeReason, setExchangeReason] = useState('');
+
+  const handleOpenExchange = (order: Order) => {
+    setSelectedOrderForExc(order);
+    setSelectedExcProductId(order.items[0]?.product.id || '');
+    setSelectedExcProductSize(order.items[0]?.size || null);
+    setExchangeReason('');
+    setIsExchangeModalOpen(true);
+  };
+
+  const handleConfirmExchangeRequest = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrderForExc || !selectedExcProductId || selectedExcProductSize === null || !exchangeReason) return;
+    
+    requestExchange(selectedOrderForExc.id, selectedExcProductId, selectedExcProductSize, exchangeReason);
+    setIsExchangeModalOpen(false);
+  };
+
+  // --- CONTROLE DE DETALHES DE PEDIDO ---
+  const [isOrderDetailsModalOpen, setIsOrderDetailsModalOpen] = useState(false);
+  const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null);
+
+  const handleOpenOrderDetails = (order: Order) => {
+    setSelectedOrderForDetails(order);
+    setIsOrderDetailsModalOpen(true);
+  };
+
+  // Filtrar dados do cliente atual
+  const customerOrders = orders.filter(o => o.customerId === activeCustomer.id);
+  const customerCoupons = coupons.filter(c => c.customerId === activeCustomer.id);
+
+  return (
+    <div className="customer-area-page">
+      <div className="customer-container">
+        
+        {/* Banner do Perfil do Cliente */}
+        <div className="profile-header-banner">
+          <div className="profile-avatar">
+            {activeCustomer.name.charAt(0)}
+          </div>
+          <div className="profile-header-info">
+            <h2 className="profile-client-name">{activeCustomer.name}</h2>
+            <p className="profile-client-email">{activeCustomer.email}</p>
+            <span className={`status-badge ${activeCustomer.status.toLowerCase()}`}>
+              Conta {activeCustomer.status}
+            </span>
+          </div>
+
+          <div className="profile-header-action">
+            {activeCustomer.status === 'ATIVO' ? (
+              <button 
+                onClick={() => setIsInactivateModalOpen(true)} 
+                className="btn btn-secondary btn-inactivate"
+                type="button"
+              >
+                INATIVAR MEU CADASTRO
+              </button>
+            ) : (
+              <button 
+                onClick={() => setIsReactivateModalOpen(true)} 
+                className="btn btn-primary btn-reactivate"
+                type="button"
+              >
+                REATIVAR MEU CADASTRO
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Abas */}
+        <div className="profile-tabs-bar">
+          <button 
+            onClick={() => handleTabChange('perfil')} 
+            className={`profile-tab-btn ${activeTab === 'perfil' ? 'active' : ''}`}
+            type="button"
+          >
+            PERFIL
+          </button>
+          <button 
+            onClick={() => handleTabChange('pedidos')} 
+            className={`profile-tab-btn ${activeTab === 'pedidos' ? 'active' : ''}`}
+            type="button"
+          >
+            PEDIDOS
+          </button>
+          <button 
+            onClick={() => handleTabChange('cupons')} 
+            className={`profile-tab-btn ${activeTab === 'cupons' ? 'active' : ''}`}
+            type="button"
+          >
+            CUPONS
+          </button>
+        </div>
+
+        {/* ================= ABA 1: PERFIL ================= */}
+        {activeTab === 'perfil' && (
+          <div className="tab-content-wrapper">
+            
+            {/* Dados Pessoais */}
+            <div className="profile-card-section">
+              <div className="section-card-header">
+                <h3 className="section-card-title">Dados Pessoais</h3>
+                {!isEditingProfile && (
+                  <button 
+                    onClick={() => setIsEditingProfile(true)} 
+                    className="btn btn-secondary btn-small"
+                    type="button"
+                  >
+                    EDITAR
+                  </button>
+                )}
+              </div>
+
+              {!isEditingProfile ? (
+                <div className="personal-data-grid">
+                  <div className="data-field">
+                    <span className="field-label">Nome Completo</span>
+                    <span className="field-val">{activeCustomer.name}</span>
+                  </div>
+                  <div className="data-field">
+                    <span className="field-label">E-mail</span>
+                    <span className="field-val">{activeCustomer.email}</span>
+                  </div>
+                  <div className="data-field">
+                    <span className="field-label">CPF</span>
+                    <span className="field-val">{activeCustomer.cpf}</span>
+                  </div>
+                  <div className="data-field">
+                    <span className="field-label">Telefone</span>
+                    <span className="field-val">{activeCustomer.phone}</span>
+                  </div>
+                  <div className="data-field">
+                    <span className="field-label">Gênero</span>
+                    <span className="field-val">{activeCustomer.gender}</span>
+                  </div>
+                  <div className="data-field">
+                    <span className="field-label">Data de Nascimento</span>
+                    <span className="field-val">{activeCustomer.birthDate}</span>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleSaveProfile} className="personal-data-form">
+                  <div className="form-row">
+                    <div className="form-group flex-2">
+                      <label htmlFor="edit-name">Nome Completo</label>
+                      <input
+                        type="text"
+                        id="edit-name"
+                        value={profileForm.name}
+                        onChange={e => setProfileForm(p => ({ ...p, name: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="form-group flex-1">
+                      <label>CPF (Apenas Leitura)</label>
+                      <input type="text" value={activeCustomer.cpf} disabled className="disabled-field" />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="edit-email">E-mail</label>
+                      <input
+                        type="email"
+                        id="edit-email"
+                        value={profileForm.email}
+                        onChange={e => setProfileForm(p => ({ ...p, email: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="edit-phone">Telefone</label>
+                      <input
+                        type="text"
+                        id="edit-phone"
+                        value={profileForm.phone}
+                        onChange={e => setProfileForm(p => ({ ...p, phone: e.target.value }))}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="edit-gender">Gênero</label>
+                      <select
+                        id="edit-gender"
+                        value={profileForm.gender}
+                        onChange={e => setProfileForm(p => ({ ...p, gender: e.target.value }))}
+                      >
+                        <option value="Feminino">Feminino</option>
+                        <option value="Masculino">Masculino</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="edit-birth">Data de Nascimento</label>
+                      <input
+                        type="text"
+                        id="edit-birth"
+                        value={profileForm.birthDate}
+                        onChange={e => setProfileForm(p => ({ ...p, birthDate: e.target.value }))}
+                        placeholder="dd/mm/aaaa"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-actions-edit">
+                    <button 
+                      type="button" 
+                      onClick={() => setIsEditingProfile(false)} 
+                      className="btn btn-secondary"
+                    >
+                      CANCELAR
+                    </button>
+                    <button type="submit" className="btn btn-primary">
+                      SALVAR ALTERAÇÕES
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+
+            {/* Endereços de Entrega */}
+            <div className="profile-card-section">
+              <div className="section-card-header">
+                <h3 className="section-card-title">Meus Endereços</h3>
+                <button 
+                  onClick={handleOpenAddAddr} 
+                  className="btn btn-secondary btn-small"
+                  type="button"
+                >
+                  + ADICIONAR ENDEREÇO
+                </button>
+              </div>
+
+              <div className="profile-addresses-grid">
+                {activeCustomer.addresses.map(addr => (
+                  <div key={addr.id} className="profile-address-card">
+                    <div className="addr-card-header">
+                      <span className="profile-addr-label">{addr.label}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => handleOpenEditAddr(addr)} 
+                        className="btn-edit-link"
+                      >
+                        Editar
+                      </button>
+                    </div>
+                    <p className="addr-txt">{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`}</p>
+                    <p className="addr-txt">{addr.neighborhood} - {addr.city} / {addr.state}</p>
+                    <p className="addr-txt text-light">CEP {addr.zipCode}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Cartões de Crédito */}
+            <div className="profile-card-section">
+              <div className="section-card-header">
+                <h3 className="section-card-title">Cartões de Crédito</h3>
+                <button 
+                  onClick={() => setIsCardModalOpen(true)} 
+                  className="btn btn-secondary btn-small"
+                  type="button"
+                >
+                  + ADICIONAR CARTÃO
+                </button>
+              </div>
+
+              <div className="profile-cards-list">
+                {activeCustomer.cards.length > 0 ? (
+                  activeCustomer.cards.map(card => (
+                    <div key={card.id} className="profile-card-row">
+                      <div className="card-left-info">
+                        <span className="card-brand">{card.brand}</span>
+                        <span className="card-digits">final {card.lastFour}</span>
+                        <span className="card-exp">val {card.expirationDate}</span>
+                        {card.isPreferred && <span className="pref-tag">Preferencial</span>}
+                      </div>
+
+                      <div className="card-row-actions">
+                        {!card.isPreferred && (
+                          <button 
+                            onClick={() => setCardAsPreferred(activeCustomer.id, card.id)} 
+                            className="btn-text-action"
+                            type="button"
+                          >
+                            Tornar preferencial
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => setCardToRemoveId(card.id)} 
+                          className="btn-text-action remove-action"
+                          type="button"
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="no-cards-txt">Nenhum cartão cadastrado.</p>
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ================= ABA 2: PEDIDOS ================= */}
+        {activeTab === 'pedidos' && (
+          <div className="tab-content-wrapper">
+            <h3 className="tab-section-title">Histórico de Pedidos</h3>
+            
+            {customerOrders.length > 0 ? (
+              <div className="profile-orders-list">
+                {customerOrders.map(order => {
+                  const isAberto = order.status === 'EM ABERTO';
+                  const isEntregue = order.status === 'ENTREGUE';
+                  const hasExchange = !!order.exchangeStatus;
+
+                  return (
+                    <div key={order.id} className="order-profile-card">
+                      <div className="order-profile-card-header">
+                        <div>
+                          <span className="order-id-label">Pedido {order.id}</span>
+                          <span className="order-date">{order.date}</span>
+                        </div>
+                        <span className={`order-status-tag ${order.status.replace(' ', '_').toLowerCase()}`}>
+                          {order.status}
+                        </span>
+                      </div>
+
+                      <div className="order-profile-card-body">
+                        {order.items.map(item => (
+                          <div key={`${item.product.id}-${item.size}`} className="order-item-mini-row">
+                            <span>{item.product.brand} - {item.product.name} (Tamanho {item.size})</span>
+                            <span>{item.quantity}x {item.product.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="order-profile-card-footer">
+                        <div className="order-total-block">
+                          <span>Total Pago: </span>
+                          <strong>{order.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                        </div>
+
+                        {/* Status da Troca se houver */}
+                        {hasExchange && (
+                          <div className="order-exchange-status-box">
+                            <span className="exc-tag-label">Troca:</span>
+                            <span className="exc-tag-val">{order.exchangeStatus}</span>
+                            
+                            {/* Se aceita, cliente pode despachar */}
+                            {order.exchangeStatus === 'TROCA ACEITA' && (
+                              <button 
+                                onClick={() => updateExchangeStatus(
+                                  exchanges.find(e => e.orderId === order.id)?.id || '', 
+                                  'ITEM ENVIADO'
+                                )}
+                                className="btn btn-primary btn-mini"
+                                type="button"
+                              >
+                                INFORMAR DESPACHO
+                              </button>
+                            )}
+
+                            {/* Mostrar cupom de troca gerado se processada */}
+                            {order.exchangeStatus === 'TROCA PROCESSADA' && (
+                              <div className="refund-coupon-hint">
+                                Cupom gerado: <strong>{exchanges.find(e => e.orderId === order.id)?.refundCouponCode}</strong>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="order-card-actions">
+                          <button 
+                            onClick={() => handleOpenOrderDetails(order)} 
+                            className="btn btn-secondary btn-small"
+                            type="button"
+                          >
+                            VER DETALHES
+                          </button>
+
+                          {/* Cancelar em Aberto */}
+                          {isAberto && (
+                            <button 
+                              onClick={() => cancelOrder(order.id)} 
+                              className="btn btn-secondary btn-danger-border btn-small"
+                              type="button"
+                            >
+                              CANCELAR PEDIDO
+                            </button>
+                          )}
+
+                          {/* Solicitar Troca se entregue */}
+                          {isEntregue && !hasExchange && (
+                            <button 
+                              onClick={() => handleOpenExchange(order)} 
+                              className="btn btn-primary btn-small"
+                              type="button"
+                            >
+                              SOLICITAR TROCA
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="no-orders-txt">Nenhum pedido realizado.</p>
+            )}
+          </div>
+        )}
+
+        {/* ================= ABA 3: CUPONS ================= */}
+        {activeTab === 'cupons' && (
+          <div className="tab-content-wrapper">
+            <h3 className="tab-section-title">Meus Cupons</h3>
+            
+            {customerCoupons.length > 0 ? (
+              <div className="profile-coupons-grid">
+                {customerCoupons.map(coupon => (
+                  <div key={coupon.id} className="profile-coupon-card">
+                    <div className="coupon-code-badge">{coupon.code}</div>
+                    <div className="coupon-card-body">
+                      <h4 className="coupon-card-value">
+                        {coupon.type === 'promo' ? `${coupon.value}% OFF` : coupon.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </h4>
+                      <p className="coupon-card-desc">{coupon.description}</p>
+                      <p className="coupon-card-date">Válido até {coupon.expirationDate}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="no-coupons-txt">Você não possui cupons ativos.</p>
+            )}
+          </div>
+        )}
+
+      </div>
+
+      {/* MODAL: Confirma Inativação */}
+      <Modal
+        isOpen={isInactivateModalOpen}
+        onClose={() => setIsInactivateModalOpen(false)}
+        title="Inativar Cadastro?"
+      >
+        <div className="inactive-confirm-modal">
+          <p className="modal-description-txt">
+            Deseja realmente inativar seu cadastro? Após a inativação, você poderá consultar seus dados e pedidos anteriores, mas não poderá realizar novas compras.
+          </p>
+          <div className="modal-actions">
+            <button onClick={() => setIsInactivateModalOpen(false)} className="btn btn-secondary">CANCELAR</button>
+            <button 
+              onClick={() => {
+                updateCustomerStatus(activeCustomer.id, 'INATIVO');
+                setIsInactivateModalOpen(false);
+              }} 
+              className="btn btn-primary"
+            >
+              CONFIRMAR INATIVAÇÃO
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL: Confirma Reativação */}
+      <Modal
+        isOpen={isReactivateModalOpen}
+        onClose={() => setIsReactivateModalOpen(false)}
+        title="Reativar Cadastro?"
+      >
+        <div className="inactive-confirm-modal">
+          <p className="modal-description-txt">
+            Deseja reativar seu cadastro de cliente para voltar a fazer compras no RunWay?
+          </p>
+          <div className="modal-actions">
+            <button onClick={() => setIsReactivateModalOpen(false)} className="btn btn-secondary">CANCELAR</button>
+            <button 
+              onClick={() => {
+                updateCustomerStatus(activeCustomer.id, 'ATIVO');
+                setIsReactivateModalOpen(false);
+              }} 
+              className="btn btn-primary"
+            >
+              CONFIRMAR REATIVAÇÃO
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL: Confirmar Exclusão de Cartão */}
+      <Modal
+        isOpen={cardToRemoveId !== null}
+        onClose={() => setCardToRemoveId(null)}
+        title="Excluir Cartão?"
+      >
+        <div className="inactive-confirm-modal">
+          <p className="modal-description-txt">
+            Deseja realmente excluir este cartão de crédito de sua carteira?
+          </p>
+          <div className="modal-actions">
+            <button onClick={() => setCardToRemoveId(null)} className="btn btn-secondary">CANCELAR</button>
+            <button 
+              onClick={() => {
+                if (cardToRemoveId) {
+                  removeCustomerCard(activeCustomer.id, cardToRemoveId);
+                }
+                setCardToRemoveId(null);
+              }} 
+              className="btn btn-primary"
+            >
+              EXCLUIR CARTÃO
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL: Adicionar Cartão */}
+      <Modal
+        isOpen={isCardModalOpen}
+        onClose={() => setIsCardModalOpen(false)}
+        title="Adicionar Novo Cartão"
+      >
+        <form onSubmit={handleAddCard} className="address-modal-form">
+          <div className="form-row">
+            <div className="form-group flex-2">
+              <label htmlFor="card-number">Bandeira</label>
+              <select
+                value={newCard.brand}
+                onChange={e => setNewCard(prev => ({ ...prev, brand: e.target.value as CreditCard['brand'] }))}
+              >
+                <option value="Visa">Visa</option>
+                <option value="Mastercard">Mastercard</option>
+                <option value="Elo">Elo</option>
+              </select>
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="card-digits">Últimos 4 Dígitos</label>
+              <input
+                type="text"
+                id="card-digits"
+                maxLength={4}
+                value={newCard.lastFour}
+                onChange={e => setNewCard(prev => ({ ...prev, lastFour: e.target.value.replace(/\D/g, '') }))}
+                placeholder="4821"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group flex-2">
+              <label htmlFor="card-holder">Nome Impresso no Cartão</label>
+              <input
+                type="text"
+                id="card-holder"
+                value={newCard.holderName}
+                onChange={e => setNewCard(prev => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
+                placeholder="ANA C SILVA"
+                required
+              />
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="card-exp">Validade</label>
+              <input
+                type="text"
+                id="card-exp"
+                placeholder="MM/AA"
+                maxLength={5}
+                value={newCard.expirationDate}
+                onChange={e => setNewCard(prev => ({ ...prev, expirationDate: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+
+          <label className="checkbox-preferred-label" style={{ display: 'flex', gap: '0.5rem', fontSize: '0.8rem', color: '#888', cursor: 'pointer', marginTop: '0.5rem' }}>
+            <input
+              type="checkbox"
+              checked={newCard.isPreferred}
+              onChange={e => setNewCard(prev => ({ ...prev, isPreferred: e.target.checked }))}
+            />
+            Definir como cartão preferencial de pagamento
+          </label>
+
+          <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setIsCardModalOpen(false)}>CANCELAR</button>
+            <button type="submit" className="btn btn-primary">SALVAR CARTÃO</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Adicionar/Editar Endereço */}
+      <Modal
+        isOpen={isAddrModalOpen}
+        onClose={() => setIsAddrModalOpen(false)}
+        title={editingAddress ? 'Editar Endereço' : 'Adicionar Novo Endereço'}
+      >
+        <form onSubmit={handleSaveAddress} className="address-modal-form">
+          <div className="form-group">
+            <label htmlFor="m-addr-label">Identificação (ex: Casa, Trabalho)</label>
+            <input
+              type="text"
+              id="m-addr-label"
+              value={addrForm.label}
+              onChange={e => setAddrForm(prev => ({ ...prev, label: e.target.value }))}
+              required
+            />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group flex-2">
+              <label htmlFor="m-addr-street">Logradouro</label>
+              <input
+                type="text"
+                id="m-addr-street"
+                value={addrForm.street}
+                onChange={e => setAddrForm(prev => ({ ...prev, street: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="m-addr-num">Número</label>
+              <input
+                type="text"
+                id="m-addr-num"
+                value={addrForm.number}
+                onChange={e => setAddrForm(prev => ({ ...prev, number: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label htmlFor="m-addr-comp">Complemento</label>
+              <input
+                type="text"
+                id="m-addr-comp"
+                value={addrForm.complement}
+                onChange={e => setAddrForm(prev => ({ ...prev, complement: e.target.value }))}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="m-addr-neigh">Bairro</label>
+              <input
+                type="text"
+                id="m-addr-neigh"
+                value={addrForm.neighborhood}
+                onChange={e => setAddrForm(prev => ({ ...prev, neighborhood: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group flex-1">
+              <label htmlFor="m-addr-zip">CEP</label>
+              <input
+                type="text"
+                id="m-addr-zip"
+                value={addrForm.zipCode}
+                onChange={e => setAddrForm(prev => ({ ...prev, zipCode: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-group flex-2">
+              <label htmlFor="m-addr-city">Cidade</label>
+              <input
+                type="text"
+                id="m-addr-city"
+                value={addrForm.city}
+                onChange={e => setAddrForm(prev => ({ ...prev, city: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="m-addr-state">Estado</label>
+              <input
+                type="text"
+                id="m-addr-state"
+                value={addrForm.state}
+                onChange={e => setAddrForm(prev => ({ ...prev, state: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setIsAddrModalOpen(false)}>CANCELAR</button>
+            <button type="submit" className="btn btn-primary">SALVAR ENDEREÇO</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Solicitar Troca */}
+      <Modal
+        isOpen={isExchangeModalOpen}
+        onClose={() => setIsExchangeModalOpen(false)}
+        title="Solicitar Troca de Produto"
+      >
+        <form onSubmit={handleConfirmExchangeRequest} className="address-modal-form">
+          {selectedOrderForExc && (
+            <>
+              <div className="form-group">
+                <label htmlFor="exc-product">Selecione o Item para Trocar</label>
+                <select
+                  id="exc-product"
+                  value={selectedExcProductId}
+                  onChange={e => {
+                    const id = e.target.value;
+                    setSelectedExcProductId(id);
+                    const it = selectedOrderForExc.items.find(x => x.product.id === id);
+                    setSelectedExcProductSize(it ? it.size : null);
+                  }}
+                >
+                  {selectedOrderForExc.items.map(item => (
+                    <option key={`${item.product.id}-${item.size}`} value={item.product.id}>
+                      {item.product.name} (Tamanho {item.size})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="exc-reason">Motivo da Troca</label>
+                <textarea
+                  id="exc-reason"
+                  rows={4}
+                  value={exchangeReason}
+                  onChange={e => setExchangeReason(e.target.value)}
+                  placeholder="Por favor, descreva o motivo da troca (ex: ficou apertado, defeito...)"
+                  style={{
+                    backgroundColor: '#050505',
+                    border: '1px solid var(--color-border)',
+                    color: '#fff',
+                    padding: '0.5rem',
+                    borderRadius: '6px',
+                    fontFamily: 'inherit',
+                    fontSize: '0.85rem',
+                    outline: 'none'
+                  }}
+                  required
+                />
+              </div>
+
+              <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setIsExchangeModalOpen(false)}>CANCELAR</button>
+                <button type="submit" className="btn btn-primary">SOLICITAR DEVOLUÇÃO</button>
+              </div>
+            </>
+          )}
+        </form>
+      </Modal>
+
+      {/* MODAL: Detalhes do Pedido */}
+      <Modal
+        isOpen={isOrderDetailsModalOpen}
+        onClose={() => {
+          setIsOrderDetailsModalOpen(false);
+          setSelectedOrderForDetails(null);
+        }}
+        title={selectedOrderForDetails ? `Detalhes do Pedido - ${selectedOrderForDetails.id}` : 'Detalhes do Pedido'}
+      >
+        {selectedOrderForDetails && (
+          <div className="order-details-modal-content">
+            
+            <div className="order-details-section">
+              <h4 className="details-sec-title">Informações Gerais</h4>
+              <div className="details-grid-2">
+                <div className="details-info-item">
+                  <span className="info-label">Data do Pedido</span>
+                  <span className="info-val">{selectedOrderForDetails.date}</span>
+                </div>
+                <div className="details-info-item">
+                  <span className="info-label">Status</span>
+                  <div>
+                    <span className={`order-status-tag ${selectedOrderForDetails.status.replace(' ', '_').toLowerCase()}`} style={{ display: 'inline-block', marginTop: '0.2rem' }}>
+                      {selectedOrderForDetails.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="order-details-section">
+              <h4 className="details-sec-title">Itens Comprados</h4>
+              <div className="details-items-list">
+                {selectedOrderForDetails.items.map(item => (
+                  <div key={`${item.product.id}-${item.size}`} className="details-item-row">
+                    <div className="details-item-img-wrapper">
+                      <img src={item.product.image} alt={item.product.name} className="details-item-img" />
+                    </div>
+                    <div className="details-item-info">
+                      <span className="details-item-name">{item.product.brand} - {item.product.name}</span>
+                      <span className="details-item-meta">Tamanho: {item.size} | Qtd: {item.quantity}</span>
+                    </div>
+                    <div className="details-item-price">
+                      <span>{(item.product.price * item.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="order-details-section">
+              <h4 className="details-sec-title">Endereço de Entrega</h4>
+              <div className="details-address-box">
+                <strong className="addr-label-tag">{selectedOrderForDetails.shippingAddress.label}</strong>
+                <p className="addr-text" style={{ marginTop: '0.25rem' }}>
+                  {selectedOrderForDetails.shippingAddress.street}, {selectedOrderForDetails.shippingAddress.number}
+                  {selectedOrderForDetails.shippingAddress.complement && ` - ${selectedOrderForDetails.shippingAddress.complement}`}
+                </p>
+                <p className="addr-text">
+                  {selectedOrderForDetails.shippingAddress.neighborhood} - {selectedOrderForDetails.shippingAddress.city} / {selectedOrderForDetails.shippingAddress.state}
+                </p>
+                <p className="addr-text">CEP {selectedOrderForDetails.shippingAddress.zipCode}</p>
+              </div>
+            </div>
+
+            <div className="order-details-section">
+              <h4 className="details-sec-title">Método de Pagamento</h4>
+              <div className="details-payment-list">
+                {/* Cartões de crédito */}
+                {selectedOrderForDetails.paymentMethods.map(pm => {
+                  const card = activeCustomer.cards.find(c => c.id === pm.cardId);
+                  return (
+                    <div key={pm.cardId} className="payment-method-row">
+                      <span>💳 Cartão {card ? `${card.brand} final ${card.lastFour}` : `final ${pm.cardId.slice(-4)}`}</span>
+                      <strong>{pm.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                  );
+                })}
+                {/* Cupons usados */}
+                {selectedOrderForDetails.couponsUsed.map(coupon => (
+                  <div key={coupon.id} className="payment-method-row coupon-row">
+                    <span>🎫 Cupom ({coupon.code})</span>
+                    <strong>- {coupon.type === 'promo' ? `${coupon.value}%` : coupon.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="order-details-section" style={{ marginBottom: 0 }}>
+              <h4 className="details-sec-title">Resumo de Valores</h4>
+              <div className="details-totals-box">
+                <div className="totals-row">
+                  <span>Subtotal</span>
+                  <span>{selectedOrderForDetails.subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                </div>
+                {selectedOrderForDetails.discount > 0 && (
+                  <div className="totals-row discount-text">
+                    <span>Desconto</span>
+                    <span>- {selectedOrderForDetails.discount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+                )}
+                <div className="totals-row total-highlight">
+                  <span>Total Pago</span>
+                  <span>{selectedOrderForDetails.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                </div>
+              </div>
+            </div>
+
+            {selectedOrderForDetails.exchangeStatus && (
+              <div className="order-details-section exchange-details-box" style={{ marginTop: '1.25rem' }}>
+                <h4 className="details-sec-title">Informações de Troca</h4>
+                <div className="details-grid-2">
+                  <div className="details-info-item">
+                    <span className="info-label">Status da Troca</span>
+                    <span className="exc-tag-val">{selectedOrderForDetails.exchangeStatus}</span>
+                  </div>
+                  {selectedOrderForDetails.exchangeReason && (
+                    <div className="details-info-item">
+                      <span className="info-label">Motivo</span>
+                      <span className="info-val">{selectedOrderForDetails.exchangeReason}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1.5rem' }}>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={() => {
+                  setIsOrderDetailsModalOpen(false);
+                  setSelectedOrderForDetails(null);
+                }}
+              >
+                FECHAR
+              </button>
+            </div>
+
+          </div>
+        )}
+      </Modal>
+
+    </div>
+  );
+}
+

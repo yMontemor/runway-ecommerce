@@ -1,0 +1,636 @@
+.checkout-page {
+  background-color: #050505;
+  min-height: calc(100vh - 65px);
+  padding: 2rem;
+  width: 100%;
+}
+
+.checkout-container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Wizard Header */
+.checkout-wizard-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.wizard-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.wizard-step.active {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.wizard-step.active .step-num {
+  background-color: var(--color-primary);
+  color: #050505;
+}
+
+.wizard-step.completed {
+  color: #ffffff;
+}
+
+.wizard-step.completed .step-num {
+  background-color: #222222;
+  color: #ffffff;
+}
+
+.step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.wizard-line {
+  height: 1px;
+  background-color: var(--color-border);
+  width: 60px;
+}
+
+/* Step Content */
+.checkout-step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.step-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Addresses (Step 1) */
+.addresses-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.address-label-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.address-label-card.selected {
+  border-color: var(--color-primary);
+}
+
+.address-radio-input {
+  margin-top: 0.2rem;
+  accent-color: var(--color-primary);
+}
+
+.address-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.addr-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.addr-street {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.addr-loc, .addr-cep {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.address-actions {
+  display: flex;
+  margin-top: 0.5rem;
+}
+
+.step-footer {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #1a1a1a;
+  padding-top: 1.5rem;
+  margin-top: 1rem;
+}
+
+/* Payment Layout (Step 2) */
+.payment-layout, .review-layout {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+}
+
+.payment-inputs, .review-main {
+  flex: 2.4;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.payment-calc-sidebar, .review-summary-sidebar {
+  flex: 1;
+  position: sticky;
+  top: 85px;
+  width: 100%;
+}
+
+.payment-section, .review-section {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.section-subtitle, .review-subtitle {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.card-instructions {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.25rem 0;
+}
+
+.no-coupons-text {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* Coupons (Step 2) */
+.coupons-checkout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.coupon-checkout-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  background-color: var(--color-surface-light);
+  border: 1px solid var(--color-border);
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.coupon-checkout-row input {
+  accent-color: var(--color-primary);
+}
+
+.coupon-checkout-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.cp-code {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--color-primary);
+}
+
+.cp-desc {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* Cards (Step 2) */
+.cards-checkout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.card-checkout-row {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-surface-light);
+  border: 1px solid var(--color-border);
+  padding: 0.75rem;
+  border-radius: 6px;
+  transition: border-color 0.15s ease;
+}
+
+.card-checkout-row.selected {
+  border-color: #3e3e3e;
+}
+
+.card-selector-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.card-selector-label input {
+  accent-color: var(--color-primary);
+}
+
+.card-icon-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.card-brand-tag {
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.card-number-tag {
+  color: var(--color-text-secondary);
+}
+
+.pref-badge {
+  font-size: 0.6rem;
+  font-weight: 800;
+  background-color: rgba(198, 255, 0, 0.1);
+  color: var(--color-primary);
+  padding: 0.08rem 0.3rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.card-split-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid #1e1e1e;
+}
+
+.currency-prefix {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+
+.card-amount-field {
+  background-color: #050505 !important;
+  border: 1px solid var(--color-border) !important;
+  color: #ffffff;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  width: 90px;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.card-amount-field:focus {
+  border-color: #555555 !important;
+}
+
+.btn-use-rest {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+}
+
+.btn-use-rest:hover {
+  text-decoration: underline;
+}
+
+.split-actions-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+
+.btn-small {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.75rem;
+}
+
+/* Sidebar Calculo */
+.calc-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.calc-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.calc-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.calc-row span:last-child {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.discount-row span {
+  color: var(--color-success) !important;
+}
+
+.calc-divider {
+  height: 1px;
+  background-color: #1a1a1a;
+}
+
+.payment-distribution-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+}
+
+.dist-row {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-text-secondary);
+}
+
+.text-success {
+  color: var(--color-success);
+  font-weight: 800;
+}
+
+.text-danger {
+  color: var(--color-danger);
+  font-weight: 800;
+}
+
+.dist-warning {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-align: right;
+}
+
+.dist-warning strong {
+  color: #ffffff;
+}
+
+/* Review (Step 3) */
+.review-addr-card {
+  background-color: var(--color-surface-light);
+  border: 1px solid var(--color-border);
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.review-addr-card strong {
+  color: #ffffff;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.review-payments-list, .review-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.review-pay-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.review-pay-item strong {
+  color: #ffffff;
+}
+
+.review-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.rev-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.rev-item-info span:first-child {
+  color: #ffffff;
+}
+
+.rev-qty {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+}
+
+.rev-price {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.btn-confirm-order {
+  padding: 0.8rem 2rem;
+}
+
+/* Confirmado (Step 4) */
+.order-confirmed-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 440px;
+  margin: 2rem auto;
+}
+
+.success-icon-wrapper {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background-color: rgba(198, 255, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.confirmed-title {
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: #ffffff;
+  margin: 0 0 0.5rem 0;
+  letter-spacing: 0.5px;
+}
+
+.confirmed-desc {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin: 0 0 2rem 0;
+}
+
+.confirmed-details-card {
+  width: 100%;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+.conf-detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.conf-detail-row strong {
+  color: #ffffff;
+}
+
+.neon-text {
+  color: var(--color-primary) !important;
+}
+
+.status-badge-open {
+  background-color: rgba(255, 152, 0, 0.1);
+  color: var(--color-warning);
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+}
+
+.confirmed-actions {
+  display: flex;
+  gap: 1rem;
+  width: 100%;
+}
+
+.confirmed-actions a {
+  flex: 1;
+}
+
+/* Novo Endereço Form */
+.address-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.form-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  flex: 1;
+}
+
+.form-group input {
+  background-color: #050505;
+  border: 1px solid var(--color-border);
+  color: #ffffff;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.form-group input:focus {
+  border-color: #555555;
+}
+
+.flex-2 {
+  flex: 2;
+}
+
+@media (max-width: 992px) {
+  .payment-layout, .review-layout {
+    flex-direction: column;
+  }
+  
+  .payment-calc-sidebar, .review-summary-sidebar {
+    position: static;
+  }
+}

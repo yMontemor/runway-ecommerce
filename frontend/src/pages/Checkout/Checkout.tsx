@@ -1,0 +1,762 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useApp } from '../../store/AppContext';
+import Modal from '../../components/Modal/Modal';
+import type { Coupon, Order } from '../../types';
+import './Checkout.css';
+
+export default function Checkout() {
+  const navigate = useNavigate();
+  const { 
+    activeCustomer, 
+    cartsByCustomer, 
+    coupons, 
+    checkoutCart,
+    addCustomerAddress 
+  } = useApp();
+
+  const cartItems = useMemo(() => {
+    return cartsByCustomer[activeCustomer.id] || [];
+  }, [cartsByCustomer, activeCustomer.id]);
+  
+  const [step, setStep] = useState(1); // 1: Em aberto, 2: Pagamento, 3: Revisão, 4: Confirmado
+  const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
+
+  // Se o carrinho estiver vazio e não houver pedido confirmado, volta para o carrinho
+  useEffect(() => {
+    if (cartItems.length === 0 && step !== 4) {
+      navigate('/carrinho');
+    }
+  }, [cartItems, step, navigate]);
+
+  // --- STEP 1: ENDEREÇO ---
+  const [selectedAddressId, setSelectedAddressId] = useState<string>(
+    activeCustomer.addresses[0]?.id || ''
+  );
+  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [newAddress, setNewAddress] = useState({
+    label: '',
+    street: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
+    zipCode: '',
+    city: '',
+    state: '',
+    country: 'Brasil',
+    observations: ''
+  });
+
+  const handleAddAddress = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAddress.label || !newAddress.street || !newAddress.number || !newAddress.zipCode) return;
+    
+    addCustomerAddress(activeCustomer.id, newAddress);
+    setIsAddressModalOpen(false);
+    
+    // Reset form
+    setNewAddress({
+      label: '',
+      street: '',
+      number: '',
+      complement: '',
+      neighborhood: '',
+      zipCode: '',
+      city: '',
+      state: '',
+      country: 'Brasil',
+      observations: ''
+    });
+  };
+
+  // --- STEP 2: PAGAMENTO ---
+  const customerCoupons = coupons.filter(c => c.customerId === activeCustomer.id);
+  const promoCoupons = customerCoupons.filter(c => c.type === 'promo');
+  const exchangeCoupons = customerCoupons.filter(c => c.type === 'exchange');
+
+  const [selectedPromoCouponId, setSelectedPromoCouponId] = useState<string>('');
+  const [selectedExchangeCouponId, setSelectedExchangeCouponId] = useState<string>('');
+
+  const [prevCustomerId, setPrevCustomerId] = useState(activeCustomer.id);
+  const [selectedCardIds, setSelectedCardIds] = useState<string[]>(() => {
+    const pref = activeCustomer.cards.find(c => c.isPreferred) || activeCustomer.cards[0];
+    return pref ? [pref.id] : [];
+  });
+  const [cardAmounts, setCardAmounts] = useState<Record<string, string>>({});
+
+  // Sincronizar mudança de cliente na renderização
+  if (activeCustomer.id !== prevCustomerId) {
+    setPrevCustomerId(activeCustomer.id);
+    const newAddrId = activeCustomer.addresses[0]?.id || '';
+    setSelectedAddressId(newAddrId);
+    setSelectedPromoCouponId('');
+    setSelectedExchangeCouponId('');
+    const preferredCard = activeCustomer.cards.find(c => c.isPreferred) || activeCustomer.cards[0];
+    setSelectedCardIds(preferredCard ? [preferredCard.id] : []);
+    setCardAmounts({});
+  }
+
+  // Cálculos do checkout
+  const subtotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  
+  // RF0034: Frete calculado somente após seleção do endereço
+  const calculateShipping = (addressId: string): number => {
+    const addr = activeCustomer.addresses.find(a => a.id === addressId);
+    if (!addr) return 0;
+    if (subtotal >= 500) return 0; // Frete grátis acima de R$ 500
+    // Valor mockado variável por estado
+    const freteByState: Record<string, number> = {
+      'SP': 18.90, 'RJ': 22.50, 'MG': 24.90, 'ES': 26.90,
+      'PR': 25.90, 'SC': 27.90, 'RS': 29.90
+    };
+    return freteByState[addr.state.toUpperCase()] ?? 29.90;
+  };
+
+  const isFreeShipping = subtotal >= 500;
+  const hasSelectedAddress = !!selectedAddressId;
+  const shippingCost = hasSelectedAddress ? calculateShipping(selectedAddressId) : 0;
+  
+  // Calcular descontos
+  const promoCoupon = promoCoupons.find(c => c.id === selectedPromoCouponId);
+  const exchangeCoupon = exchangeCoupons.find(c => c.id === selectedExchangeCouponId);
+
+  const discountPromo = promoCoupon ? (subtotal * (promoCoupon.value / 100)) : 0;
+  const discountExchange = exchangeCoupon ? exchangeCoupon.value : 0;
+
+  const totalDiscount = discountPromo + discountExchange;
+  const totalPayableBeforeExchange = Math.max(0, subtotal + shippingCost - discountPromo);
+  const remainingToPay = Math.max(0, totalPayableBeforeExchange - discountExchange);
+
+  // Sincronizar autofill do cartão na renderização
+  const [prevCardIds, setPrevCardIds] = useState(selectedCardIds);
+  const [prevRemainingToPay, setPrevRemainingToPay] = useState(remainingToPay);
+
+  if (selectedCardIds !== prevCardIds || remainingToPay !== prevRemainingToPay) {
+    setPrevCardIds(selectedCardIds);
+    setPrevRemainingToPay(remainingToPay);
+    if (selectedCardIds.length === 1) {
+      setCardAmounts({
+        [selectedCardIds[0]]: remainingToPay.toFixed(2)
+      });
+    }
+  }
+
+  const handleCardToggle = (cardId: string) => {
+    setSelectedCardIds(prev => {
+      let updated;
+      if (prev.includes(cardId)) {
+        updated = prev.filter(id => id !== cardId);
+      } else {
+        updated = [...prev, cardId];
+      }
+      return updated;
+    });
+  };
+
+  const handleCardAmountChange = (cardId: string, val: string) => {
+    setCardAmounts(prev => ({
+      ...prev,
+      [cardId]: val
+    }));
+  };
+
+  const autofillRemaining = (cardId: string) => {
+    const sumOthers = selectedCardIds
+      .filter(id => id !== cardId)
+      .reduce((sum, id) => sum + (parseFloat(cardAmounts[id]) || 0), 0);
+    const rest = Math.max(0, remainingToPay - sumOthers);
+    setCardAmounts(prev => ({
+      ...prev,
+      [cardId]: rest.toFixed(2)
+    }));
+  };
+
+  const distributeEqually = () => {
+    if (selectedCardIds.length === 0) return;
+    const splitVal = (remainingToPay / selectedCardIds.length).toFixed(2);
+    const newAmounts: Record<string, string> = {};
+    selectedCardIds.forEach(id => {
+      newAmounts[id] = splitVal;
+    });
+    // Ajustar possíveis dízimas no último
+    const diff = remainingToPay - (parseFloat(splitVal) * selectedCardIds.length);
+    if (diff !== 0 && selectedCardIds.length > 0) {
+      const lastId = selectedCardIds[selectedCardIds.length - 1];
+      newAmounts[lastId] = (parseFloat(splitVal) + diff).toFixed(2);
+    }
+    setCardAmounts(newAmounts);
+  };
+
+  // Validação de pagamento
+  const cardAmountsSum = selectedCardIds.reduce((sum, id) => sum + (parseFloat(cardAmounts[id]) || 0), 0);
+  const isPaymentValid = Math.abs(cardAmountsSum - remainingToPay) < 0.01;
+
+  // --- STEP 3: REVISÃO E CONFIRMAÇÃO ---
+  const handleConfirmOrder = () => {
+    const address = activeCustomer.addresses.find(a => a.id === selectedAddressId);
+    if (!address) return;
+
+    const cardsForPayment = selectedCardIds.map(id => ({
+      cardId: id,
+      amount: parseFloat(cardAmounts[id]) || 0
+    }));
+
+    const appliedCoupons: Coupon[] = [];
+    if (promoCoupon) appliedCoupons.push(promoCoupon);
+    if (exchangeCoupon) appliedCoupons.push(exchangeCoupon);
+
+    const order = checkoutCart(
+      address,
+      cardsForPayment,
+      appliedCoupons,
+      subtotal,
+      totalDiscount,
+      remainingToPay
+    );
+
+    setCreatedOrder(order);
+    setStep(4);
+  };
+
+  const selectedAddressObj = activeCustomer.addresses.find(a => a.id === selectedAddressId);
+
+  return (
+    <div className="checkout-page">
+      <div className="checkout-container">
+        
+        {/* Passos do Checkout (Apenas passos 1, 2, 3 visíveis) */}
+        {step < 4 && (
+          <div className="checkout-wizard-header">
+            <div className={`wizard-step ${step === 1 ? 'active' : ''} ${step > 1 ? 'completed' : ''}`}>
+              <span className="step-num">1</span>
+              <span className="step-label">Endereço</span>
+            </div>
+            <div className="wizard-line"></div>
+            <div className={`wizard-step ${step === 2 ? 'active' : ''} ${step > 2 ? 'completed' : ''}`}>
+              <span className="step-num">2</span>
+              <span className="step-label">Pagamento</span>
+            </div>
+            <div className="wizard-line"></div>
+            <div className={`wizard-step ${step === 3 ? 'active' : ''}`}>
+              <span className="step-num">3</span>
+              <span className="step-label">Revisão</span>
+            </div>
+          </div>
+        )}
+
+        {/* ================= STEP 1: ENDEREÇO ================= */}
+        {step === 1 && (
+          <div className="checkout-step-content">
+            <h3 className="step-title">Selecione o Endereço de Entrega</h3>
+            
+            <div className="addresses-list">
+              {activeCustomer.addresses.map(addr => (
+                <label 
+                  key={addr.id} 
+                  className={`address-label-card ${selectedAddressId === addr.id ? 'selected' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="checkout-address"
+                    value={addr.id}
+                    checked={selectedAddressId === addr.id}
+                    onChange={() => setSelectedAddressId(addr.id)}
+                    className="address-radio-input"
+                  />
+                  <div className="address-card-info">
+                    <div className="addr-tag">{addr.label}</div>
+                    <p className="addr-street">{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`}</p>
+                    <p className="addr-loc">{addr.neighborhood} - {addr.city} / {addr.state}</p>
+                    <p className="addr-cep">CEP {addr.zipCode}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            <div className="address-actions">
+              <button 
+                onClick={() => setIsAddressModalOpen(true)} 
+                className="btn btn-secondary add-addr-btn"
+                type="button"
+              >
+                + ADICIONAR NOVO ENDEREÇO
+              </button>
+            </div>
+
+            {/* Previsão de frete (RF0034) */}
+            <div className="shipping-preview-box">
+              <div className="calc-row">
+                <span>Subtotal</span>
+                <span>{subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+              </div>
+              <div className="calc-row">
+                <span>Frete</span>
+                <span className={!hasSelectedAddress ? 'text-muted-italic' : ''}>
+                  {!hasSelectedAddress
+                    ? 'Selecione um endereço'
+                    : isFreeShipping
+                      ? 'Grátis'
+                      : shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                  }
+                </span>
+              </div>
+              <div className="calc-divider"></div>
+              <div className="calc-row total-row">
+                <span>Total Provisório</span>
+                <span>{(hasSelectedAddress ? subtotal + shippingCost : subtotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+              </div>
+            </div>
+
+            <div className="step-footer">
+              <Link to="/carrinho" className="btn btn-secondary">Voltar ao Carrinho</Link>
+              <button 
+                onClick={() => setStep(2)} 
+                disabled={!selectedAddressId}
+                className="btn btn-primary"
+                type="button"
+              >
+                Ir para o Pagamento
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ================= STEP 2: PAGAMENTO ================= */}
+        {step === 2 && (
+          <div className="checkout-step-content">
+            <h3 className="step-title">Forma de Pagamento e Cupons</h3>
+
+            <div className="payment-layout">
+              <div className="payment-inputs">
+                
+                {/* Cupons */}
+                <div className="payment-section">
+                  <h4 className="section-subtitle">Cupons Disponíveis</h4>
+                  
+                  {customerCoupons.length > 0 ? (
+                    <div className="coupons-checkout-list">
+                      {/* Promocionais */}
+                      {promoCoupons.map(c => (
+                        <label key={c.id} className="coupon-checkout-row">
+                          <input
+                            type="checkbox"
+                            checked={selectedPromoCouponId === c.id}
+                            onChange={() => setSelectedPromoCouponId(prev => prev === c.id ? '' : c.id)}
+                          />
+                          <div className="coupon-checkout-details">
+                            <span className="cp-code">{c.code}</span>
+                            <span className="cp-desc">{c.description}</span>
+                          </div>
+                        </label>
+                      ))}
+
+                      {/* De Troca */}
+                      {exchangeCoupons.map(c => (
+                        <label key={c.id} className="coupon-checkout-row">
+                          <input
+                            type="checkbox"
+                            checked={selectedExchangeCouponId === c.id}
+                            onChange={() => setSelectedExchangeCouponId(prev => prev === c.id ? '' : c.id)}
+                          />
+                          <div className="coupon-checkout-details">
+                            <span className="cp-code">{c.code}</span>
+                            <span className="cp-desc">{c.description} (Valor: {c.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="no-coupons-text">Você não possui cupons disponíveis.</p>
+                  )}
+                </div>
+
+                {/* Cartões de Crédito */}
+                <div className="payment-section">
+                  <h4 className="section-subtitle">Cartões de Crédito</h4>
+                  <p className="card-instructions">Selecione um ou mais cartões para realizar o pagamento.</p>
+
+                  <div className="cards-checkout-list">
+                    {activeCustomer.cards.map(card => {
+                      const isSelected = selectedCardIds.includes(card.id);
+                      return (
+                        <div key={card.id} className={`card-checkout-row ${isSelected ? 'selected' : ''}`}>
+                          <label className="card-selector-label">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleCardToggle(card.id)}
+                            />
+                            <div className="card-icon-info">
+                              <span className="card-brand-tag">{card.brand}</span>
+                              <span className="card-number-tag">final {card.lastFour}</span>
+                              {card.isPreferred && <span className="pref-badge">Pref</span>}
+                            </div>
+                          </label>
+
+                          {isSelected && selectedCardIds.length > 1 && (
+                            <div className="card-split-input">
+                              <span className="currency-prefix">R$</span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="0,00"
+                                value={cardAmounts[card.id] || ''}
+                                onChange={(e) => handleCardAmountChange(card.id, e.target.value)}
+                                className="card-amount-field"
+                              />
+                              <button 
+                                type="button" 
+                                onClick={() => autofillRemaining(card.id)}
+                                className="btn-use-rest"
+                              >
+                                Usar Restante
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {selectedCardIds.length > 1 && (
+                    <div className="split-actions-bar">
+                      <button 
+                        type="button" 
+                        onClick={distributeEqually} 
+                        className="btn btn-secondary btn-small"
+                      >
+                        DISTRIBUIR IGUALMENTE
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Box de Cálculo da Compra */}
+              <div className="payment-calc-sidebar">
+                <div className="calc-card">
+                  <h4 className="calc-title">Resumo Financeiro</h4>
+                  
+                  <div className="calc-row">
+                    <span>Produtos (Subtotal)</span>
+                    <span>{subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+                  
+                  <div className="calc-row">
+                    <span>Frete</span>
+                    <span>{shippingCost === 0 ? 'Grátis' : shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+
+                  {discountPromo > 0 && (
+                    <div className="calc-row discount-row">
+                      <span>Desconto Promocional</span>
+                      <span>-{discountPromo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  )}
+
+                  {discountExchange > 0 && (
+                    <div className="calc-row discount-row">
+                      <span>Cupom de Troca</span>
+                      <span>-{discountExchange.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  )}
+
+                  <div className="calc-divider"></div>
+
+                  <div className="calc-row total-row">
+                    <span>Total a Pagar</span>
+                    <span>{remainingToPay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+
+                  <div className="calc-divider"></div>
+
+                  {/* Detalhamento de Distribuição */}
+                  <div className="payment-distribution-info">
+                    <div className="dist-row">
+                      <span>Valor Pago nos Cartões:</span>
+                      <span className={isPaymentValid ? 'text-success' : 'text-danger'}>
+                        {cardAmountsSum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </span>
+                    </div>
+                    {!isPaymentValid && (
+                      <div className="dist-warning">
+                        {cardAmountsSum < remainingToPay ? (
+                          <span>Falta distribuir: <strong>{(remainingToPay - cardAmountsSum).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                        ) : (
+                          <span>Excedeu: <strong>{(cardAmountsSum - remainingToPay).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="step-footer">
+              <button onClick={() => setStep(1)} className="btn btn-secondary" type="button">Voltar</button>
+              <button 
+                onClick={() => setStep(3)} 
+                disabled={!isPaymentValid || selectedCardIds.length === 0}
+                className="btn btn-primary"
+                type="button"
+              >
+                Revisar Pedido
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ================= STEP 3: REVISÃO ================= */}
+        {step === 3 && (
+          <div className="checkout-step-content">
+            <h3 className="step-title">Revisão do seu Pedido</h3>
+
+            <div className="review-layout">
+              <div className="review-main">
+                {/* Endereço */}
+                <div className="review-section">
+                  <h4 className="review-subtitle">Endereço de Entrega</h4>
+                  {selectedAddressObj && (
+                    <div className="review-addr-card">
+                      <strong>{selectedAddressObj.label}</strong>
+                      <p>{selectedAddressObj.street}, {selectedAddressObj.number} {selectedAddressObj.complement && `- ${selectedAddressObj.complement}`}</p>
+                      <p>{selectedAddressObj.neighborhood} - {selectedAddressObj.city} / {selectedAddressObj.state}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Pagamento */}
+                <div className="review-section">
+                  <h4 className="review-subtitle">Forma de Pagamento</h4>
+                  <div className="review-payments-list">
+                    {selectedCardIds.map(id => {
+                      const c = activeCustomer.cards.find(x => x.id === id);
+                      return c ? (
+                        <div key={c.id} className="review-pay-item">
+                          <span>Cartão <strong>{c.brand}</strong> (final {c.lastFour})</span>
+                          <span><strong>{parseFloat(cardAmounts[c.id]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+
+                {/* Itens */}
+                <div className="review-section">
+                  <h4 className="review-subtitle">Itens do Pedido</h4>
+                  <div className="review-items-list">
+                    {cartItems.map(item => (
+                      <div key={`${item.product.id}-${item.size}`} className="review-item-row">
+                        <div className="rev-item-info">
+                          <span>{item.product.brand} - <strong>{item.product.name}</strong> (Tamanho {item.size})</span>
+                          <span className="rev-qty">Qtd: {item.quantity}</span>
+                        </div>
+                        <span className="rev-price">
+                          {(item.product.price * item.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Sumário */}
+              <div className="review-summary-sidebar">
+                <div className="calc-card">
+                  <h4 className="calc-title">Resumo do Pedido</h4>
+                  <div className="calc-row">
+                    <span>Subtotal</span>
+                    <span>{subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+                  <div className="calc-row">
+                    <span>Frete</span>
+                    <span>{shippingCost === 0 ? 'Grátis' : shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+                  {totalDiscount > 0 && (
+                    <div className="calc-row discount-row">
+                      <span>Descontos</span>
+                      <span>-{totalDiscount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  )}
+                  <div className="calc-divider"></div>
+                  <div className="calc-row total-row">
+                    <span>Total Final</span>
+                    <span>{remainingToPay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="step-footer">
+              <button onClick={() => setStep(2)} className="btn btn-secondary" type="button">Voltar</button>
+              <button 
+                onClick={handleConfirmOrder} 
+                className="btn btn-primary btn-confirm-order"
+                type="button"
+              >
+                CONFIRMAR PEDIDO
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ================= STEP 4: CONFIRMADO ================= */}
+        {step === 4 && createdOrder && (
+          <div className="order-confirmed-screen">
+            <div className="success-icon-wrapper">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary)' }}>
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>
+            
+            <h2 className="confirmed-title">PEDIDO REALIZADO!</h2>
+            <p className="confirmed-desc">Seu pedido foi confirmado e está sendo processado.</p>
+
+            <div className="confirmed-details-card">
+              <div className="conf-detail-row">
+                <span>Número do Pedido</span>
+                <strong className="neon-text">{createdOrder.id}</strong>
+              </div>
+              <div className="conf-detail-row">
+                <span>Status</span>
+                <span className="status-badge-open">{createdOrder.status}</span>
+              </div>
+              <div className="conf-detail-row">
+                <span>Total Pago</span>
+                <strong>{createdOrder.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+              </div>
+            </div>
+
+            <div className="confirmed-actions">
+              <Link to="/cliente?tab=pedidos" className="btn btn-secondary">
+                MEUS PEDIDOS
+              </Link>
+              <Link to="/catalogo" className="btn btn-primary">
+                CONTINUAR COMPRANDO
+              </Link>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* Modal Adicionar Endereço */}
+      <Modal
+        isOpen={isAddressModalOpen}
+        onClose={() => setIsAddressModalOpen(false)}
+        title="Adicionar Novo Endereço"
+      >
+        <form onSubmit={handleAddAddress} className="address-modal-form">
+          <div className="form-group">
+            <label htmlFor="addr-label">Identificação (ex: Casa, Trabalho)</label>
+            <input
+              type="text"
+              id="addr-label"
+              value={newAddress.label}
+              onChange={(e) => setNewAddress(prev => ({ ...prev, label: e.target.value }))}
+              placeholder="ex: Minha Casa"
+              required
+            />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group flex-2">
+              <label htmlFor="addr-street">Logradouro</label>
+              <input
+                type="text"
+                id="addr-street"
+                value={newAddress.street}
+                onChange={(e) => setNewAddress(prev => ({ ...prev, street: e.target.value }))}
+                placeholder="Rua, Avenida..."
+                required
+              />
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="addr-number">Número</label>
+              <input
+                type="text"
+                id="addr-number"
+                value={newAddress.number}
+                onChange={(e) => setNewAddress(prev => ({ ...prev, number: e.target.value }))}
+                placeholder="123"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label htmlFor="addr-comp">Complemento</label>
+              <input
+                type="text"
+                id="addr-comp"
+                value={newAddress.complement}
+                onChange={(e) => setNewAddress(prev => ({ ...prev, complement: e.target.value }))}
+                placeholder="Apto, Bloco..."
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="addr-neighborhood">Bairro</label>
+              <input
+                type="text"
+                id="addr-neighborhood"
+                value={newAddress.neighborhood}
+                onChange={(e) => setNewAddress(prev => ({ ...prev, neighborhood: e.target.value }))}
+                placeholder="Jardim..."
+                required
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group flex-1">
+              <label htmlFor="addr-zip">CEP</label>
+              <input
+                type="text"
+                id="addr-zip"
+                value={newAddress.zipCode}
+                onChange={(e) => setNewAddress(prev => ({ ...prev, zipCode: e.target.value }))}
+                placeholder="00000-000"
+                required
+              />
+            </div>
+            <div className="form-group flex-2">
+              <label htmlFor="addr-city">Cidade</label>
+              <input
+                type="text"
+                id="addr-city"
+                value={newAddress.city}
+                onChange={(e) => setNewAddress(prev => ({ ...prev, city: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="addr-state">Estado</label>
+              <input
+                type="text"
+                id="addr-state"
+                value={newAddress.state}
+                onChange={(e) => setNewAddress(prev => ({ ...prev, state: e.target.value }))}
+                placeholder="SP"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="modal-actions" style={{ marginTop: '1rem', border: 'none', padding: '0' }}>
+            <button 
+              type="button" 
+              className="btn btn-secondary"
+              onClick={() => setIsAddressModalOpen(false)}
+            >
+              CANCELAR
+            </button>
+            <button type="submit" className="btn btn-primary">
+              SALVAR ENDEREÇO
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}

@@ -1,0 +1,229 @@
+/* Estilos específicos do componente Header (Sóbrio/Figma) */
+.main-header {
+  width: 100%;
+  background-color: #050505;
+  border-bottom: 1px solid #1a1a1a;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  padding: 0.75rem 2rem;
+}
+
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Logo: RUN verde neon, WAY branco */
+.logo {
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  user-select: none;
+}
+
+.logo .highlight {
+  color: var(--color-primary); /* Verde neon */
+}
+
+/* Campo de Busca simples (sem botão interno) */
+.search-container {
+  flex: 1;
+  max-width: 320px;
+  margin: 0 2rem;
+}
+
+.search-input {
+  width: 100%;
+  background-color: #111111;
+  border: 1px solid #222222;
+  border-radius: 6px;
+  padding: 0.45rem 0.8rem;
+  color: #f5f5f5;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.search-input:focus {
+  border-color: #444444;
+}
+
+.search-input::placeholder {
+  color: #666666;
+}
+
+/* Navegação e Ações */
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.75rem;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #8f8f8f;
+  font-size: 0.88rem;
+  font-weight: 500;
+  transition: color 0.15s ease;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  color: #ffffff;
+}
+
+.nav-item svg {
+  color: #8f8f8f;
+  transition: color 0.15s ease;
+}
+
+.nav-item:hover svg {
+  color: #ffffff;
+}
+
+/* Chatbot Apenas Ícone */
+.chatbot-icon-only {
+  padding: 0.25rem;
+}
+
+/* Carrinho com Badge */
+.cart-btn {
+  position: relative;
+  padding: 0.25rem;
+}
+
+.cart-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  background-color: var(--color-primary);
+  color: #050505;
+  font-size: 0.68rem;
+  font-weight: 800;
+  border-radius: 50%;
+  width: 15px;
+  height: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dropdown Container */
+.user-dropdown-container {
+  position: relative;
+}
+
+/* Área do Cliente: Usuário Ana */
+.user-btn {
+  color: #ffffff;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.user-btn svg {
+  color: #ffffff;
+}
+
+.user-name {
+  color: #ffffff;
+}
+
+/* Menu Dropdown */
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: 130%;
+  background-color: #111111;
+  border: 1px solid #222222;
+  border-radius: 8px;
+  width: 200px;
+  padding: 0.5rem 0;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+  z-index: 2000;
+}
+
+.dropdown-section-title {
+  font-size: 0.7rem;
+  color: #555555;
+  padding: 0.3rem 1rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.dropdown-item {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0.5rem 1rem;
+  color: #c5c5c5;
+  font-size: 0.85rem;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dropdown-item:hover {
+  background-color: #161616;
+  color: #ffffff;
+}
+
+.dropdown-item.active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background-color: #222222;
+  margin: 0.4rem 0;
+}
+
+.admin-item {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.admin-item:hover {
+  background-color: #161616;
+  color: var(--color-primary-hover);
+}
+
+/* Status Tags */
+.status-tag {
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.status-tag.ativo {
+  background-color: rgba(67, 185, 86, 0.1);
+  color: var(--color-success);
+}
+
+.status-tag.inativo {
+  background-color: rgba(255, 69, 69, 0.1);
+  color: var(--color-danger);
+}
