@@ -25,16 +25,23 @@ interface AppContextType {
     usedCoupons: Coupon[],
     subtotal: number,
     discount: number,
-    total: number
+    total: number,
+    surplusAmount?: number,
+    extraDetails?: {
+      shippingCost?: number;
+      discountPromo?: number;
+      discountExchange?: number;
+    }
   ) => Order;
   cancelOrder: (orderId: string) => void;
+  confirmOrderReceipt: (orderId: string) => void;
   requestExchange: (orderId: string, productId: string, size: number, reason: string) => void;
   updateExchangeStatus: (exchangeId: string, status: Exchange['status'], returnToStockSimulated?: boolean) => void;
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
   updateCustomerProfile: (updatedCustomer: Customer) => void;
   addCustomerAddress: (customerId: string, address: Omit<Address, 'id'>) => void;
   updateCustomerAddress: (customerId: string, address: Address) => void;
-  addCustomerCard: (customerId: string, card: Omit<CreditCard, 'id'>) => void;
+  addCustomerCard: (customerId: string, card: Omit<CreditCard, 'id'>) => CreditCard;
   removeCustomerCard: (customerId: string, cardId: string) => void;
   setCardAsPreferred: (customerId: string, cardId: string) => void;
 }
@@ -70,6 +77,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       date: '10/05/2026',
       customerId: 'ana_carolina',
       status: 'ENTREGUE',
+      clientConfirmedReceipt: true,
       items: [
         {
           product: products.find(p => p.id === 'nike_pegasus_41') || products[0],
@@ -81,6 +89,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       paymentMethods: [{ cardId: 'ana_card_1', amount: 899.90 }],
       couponsUsed: [],
       subtotal: 899.90,
+      shippingCost: 0,
+      discountPromo: 0,
+      discountExchange: 0,
       discount: 0,
       total: 899.90
     },
@@ -89,6 +100,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       date: '15/06/2026',
       customerId: 'carlos_roberto',
       status: 'ENTREGUE',
+      clientConfirmedReceipt: true,
       items: [
         {
           product: products.find(p => p.id === 'adidas_terrex_agravic') || products[2],
@@ -100,6 +112,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       paymentMethods: [{ cardId: 'carlos_card_1', amount: 999.90 }],
       couponsUsed: [],
       subtotal: 999.90,
+      shippingCost: 0,
+      discountPromo: 0,
+      discountExchange: 0,
       discount: 0,
       total: 999.90
     },
@@ -119,6 +134,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       paymentMethods: [{ cardId: 'ana_card_2', amount: 1049.90 }],
       couponsUsed: [],
       subtotal: 1049.90,
+      shippingCost: 0,
+      discountPromo: 0,
+      discountExchange: 0,
       discount: 0,
       total: 1049.90
     }
@@ -223,7 +241,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     usedCoupons: Coupon[],
     subtotal: number,
     discount: number,
-    total: number
+    total: number,
+    surplusAmount?: number,
+    extraDetails?: {
+      shippingCost?: number;
+      discountPromo?: number;
+      discountExchange?: number;
+    }
   ) => {
     const customerCart = cartsByCustomer[activeCustomerId] || [];
     const newOrderId = `RW-2026-00${orders.length + 1}`;
@@ -238,6 +262,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       paymentMethods: paymentCards,
       couponsUsed: usedCoupons,
       subtotal,
+      shippingCost: extraDetails?.shippingCost ?? 0,
+      discountPromo: extraDetails?.discountPromo ?? 0,
+      discountExchange: extraDetails?.discountExchange ?? 0,
       discount,
       total
     };
@@ -247,7 +274,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Invalidadar cupons de uso único utilizados
     const usedCouponCodes = usedCoupons.map(c => c.code);
-    setCoupons(prev => prev.filter(c => !usedCouponCodes.includes(c.code)));
+
+    // Gerar novo cupom com o saldo excedente se houver
+    const exchangeCoupon = usedCoupons.find(c => c.type === 'exchange');
+    let newSurplusCoupon: Coupon | null = null;
+    if (exchangeCoupon && surplusAmount && surplusAmount > 0.005) {
+      const surplusCode = `TROCA-RW-${Math.floor(1000 + Math.random() * 9000)}`;
+      newSurplusCoupon = {
+        id: `coupon_${Math.random().toString(36).substr(2, 9)}`,
+        code: surplusCode,
+        type: 'exchange',
+        value: parseFloat(surplusAmount.toFixed(2)),
+        description: `Saldo restante de troca (${exchangeCoupon.code})`,
+        expirationDate: exchangeCoupon.expirationDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        customerId: activeCustomerId
+      };
+    }
+
+    setCoupons(prev => {
+      const filtered = prev.filter(c => !usedCouponCodes.includes(c.code));
+      return newSurplusCoupon ? [...filtered, newSurplusCoupon] : filtered;
+    });
 
     // Limpar o carrinho deste cliente
     clearCart(activeCustomerId);
@@ -257,8 +304,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Cancelar Pedido
   const cancelOrder = (orderId: string) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (!targetOrder || targetOrder.status !== 'EM ABERTO') return;
+
+    // 1. Calcular o valor efetivamente consumido do cupom de troca
+    const exchangeAmountUsed = targetOrder.discountExchange ?? 
+      (targetOrder.couponsUsed.find(c => c.type === 'exchange')?.value ?? 0);
+
+    let newRefundCouponCode: string | undefined;
+
+    // Se houve uso de cupom de troca, gerar um NOVO cupom de ressarcimento
+    if (exchangeAmountUsed > 0.005) {
+      newRefundCouponCode = `TROCA-REFUND-${Math.floor(1000 + Math.random() * 9000)}`;
+      const newRefundCoupon: Coupon = {
+        id: `coupon_${Math.random().toString(36).substr(2, 9)}`,
+        code: newRefundCouponCode,
+        type: 'exchange',
+        value: parseFloat(exchangeAmountUsed.toFixed(2)),
+        description: `Ressarcimento de cupom de troca do pedido cancelado ${targetOrder.id}`,
+        expirationDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+        customerId: targetOrder.customerId
+      };
+      setCoupons(prev => [...prev, newRefundCoupon]);
+    }
+
+    // 2. Total pago em cartão para registrar estorno
+    const cardTotalPaid = targetOrder.paymentMethods.reduce((sum, p) => sum + p.amount, 0);
+
+    // 3. Atualizar status para CANCELADO
     setOrders(prev =>
-      prev.map(o => (o.id === orderId && o.status === 'EM ABERTO' ? { ...o, status: 'CANCELADO' } : o))
+      prev.map(o =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: 'CANCELADO',
+              cancellationRefundCouponCode: newRefundCouponCode,
+              cardRefundedAmount: cardTotalPaid > 0 ? cardTotalPaid : undefined
+            }
+          : o
+      )
+    );
+  };
+
+  // Confirmar Recebimento pelo Cliente
+  const confirmOrderReceipt = (orderId: string) => {
+    setOrders(prev =>
+      prev.map(o =>
+        o.id === orderId && o.status === 'ENTREGUE'
+          ? { ...o, clientConfirmedReceipt: true }
+          : o
+      )
     );
   };
 
@@ -270,12 +365,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const item = order.items.find(i => i.product.id === productId && i.size === size);
     if (!item) return;
 
+    const customerObj = customers.find(c => c.id === order.customerId);
+
     const newExchangeId = `EXC-${Math.floor(100000 + Math.random() * 900000)}`;
     const newExchange: Exchange = {
       id: newExchangeId,
       orderId,
       customerId: order.customerId,
-      customerName: activeCustomer.name,
+      customerName: customerObj ? customerObj.name : activeCustomer.name,
       item: {
         productId,
         productName: item.product.name,
@@ -310,12 +407,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (returnToStockSimulated) {
       console.log(`[Reativo Simulação] Item da troca ${exchangeId} retornado ao estoque.`);
     }
+
+    const exchange = exchanges.find(exc => exc.id === exchangeId);
+
+    // Se for finalizado como TROCA PROCESSADA, gera cupom automaticamente correspondente ao valor do item
+    let couponCode: string | undefined;
+    if (exchange && status === 'TROCA PROCESSADA') {
+      couponCode = `TROCA-RW-${Math.floor(1000 + Math.random() * 9000)}`;
+      const newCoupon: Coupon = {
+        id: `coupon_${Math.random().toString(36).substr(2, 9)}`,
+        code: couponCode,
+        type: 'exchange',
+        value: exchange.item.price, // Valor do item devolvido
+        description: `Crédito de troca do pedido ${exchange.orderId}`,
+        expirationDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'), // 3 meses
+        customerId: exchange.customerId
+      };
+
+      setCoupons(prev => [...prev, newCoupon]);
+    }
+
     setExchanges(prev =>
-      prev.map(exc => (exc.id === exchangeId ? { ...exc, status } : exc))
+      prev.map(exc => {
+        if (exc.id === exchangeId) {
+          return {
+            ...exc,
+            status,
+            ...(couponCode ? { refundCouponCode: couponCode } : {})
+          };
+        }
+        return exc;
+      })
     );
 
     // Sincronizar com o pedido
-    const exchange = exchanges.find(exc => exc.id === exchangeId);
     if (exchange) {
       setOrders(prev =>
         prev.map(o =>
@@ -324,27 +449,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             : o
         )
       );
-
-      // Se for finalizado como PROCESSADA, gera cupom automaticamente
-      if (status === 'TROCA PROCESSADA') {
-        const couponCode = `TROCA-RW-${Math.floor(1000 + Math.random() * 9000)}`;
-        const newCoupon: Coupon = {
-          id: `coupon_${Math.random().toString(36).substr(2, 9)}`,
-          code: couponCode,
-          type: 'exchange',
-          value: exchange.item.price, // Valor do item devolvido
-          description: `Crédito de troca do pedido ${exchange.orderId}`,
-          expirationDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'), // 3 meses
-          customerId: exchange.customerId
-        };
-
-        setCoupons(prev => [...prev, newCoupon]);
-
-        // Guardar o código gerado no registro de troca para exibição
-        setExchanges(prev =>
-          prev.map(exc => (exc.id === exchangeId ? { ...exc, refundCouponCode: couponCode } : exc))
-        );
-      }
     }
   };
 
@@ -392,9 +496,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // Cartões
-  const addCustomerCard = (customerId: string, card: Omit<CreditCard, 'id'>) => {
+  const addCustomerCard = (customerId: string, card: Omit<CreditCard, 'id'>): CreditCard => {
+    const cleanNumber = card.cardNumber ? card.cardNumber.replace(/\D/g, '') : '';
+    const derivedLastFour = cleanNumber.length >= 4 
+      ? cleanNumber.slice(-4) 
+      : (card.lastFour || '1234');
+
     const newCard: CreditCard = {
       ...card,
+      cardNumber: card.cardNumber,
+      lastFour: derivedLastFour,
       id: `card_${Math.random().toString(36).substr(2, 9)}`
     };
 
@@ -412,6 +523,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return c;
       })
     );
+
+    return newCard;
   };
 
   const removeCustomerCard = (customerId: string, cardId: string) => {
@@ -466,6 +579,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clearCart,
         checkoutCart,
         cancelOrder,
+        confirmOrderReceipt,
         requestExchange,
         updateExchangeStatus,
         updateOrderStatus,

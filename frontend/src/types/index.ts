@@ -31,9 +31,11 @@ export interface Address {
 export interface CreditCard {
   id: string;
   brand: 'Visa' | 'Mastercard' | 'Elo';
+  cardNumber?: string; // Número completo cadastrado
   lastFour: string;
   holderName: string;
   expirationDate: string;
+  cvv?: string;
   isPreferred: boolean;
 }
 
@@ -57,7 +59,7 @@ export interface Order {
   id: string; // e.g. "RW-2026-007"
   date: string;
   customerId: string; // bound to a specific customer
-  status: 'EM ABERTO' | 'EM PROCESSAMENTO' | 'EM TRÂNSITO' | 'ENTREGUE' | 'CANCELADO';
+  status: 'EM ABERTO' | 'EM PROCESSAMENTO' | 'PAGAMENTO REALIZADO' | 'EM TRÂNSITO' | 'ENTREGUE' | 'CANCELADO';
   items: CartItem[];
   shippingAddress: Address;
   paymentMethods: {
@@ -66,8 +68,14 @@ export interface Order {
   }[];
   couponsUsed: Coupon[];
   subtotal: number;
+  shippingCost?: number;
+  discountPromo?: number;
+  discountExchange?: number;
   discount: number;
   total: number;
+  clientConfirmedReceipt?: boolean;
+  cancellationRefundCouponCode?: string;
+  cardRefundedAmount?: number;
   exchangeStatus?: 'TROCA SOLICITADA' | 'TROCA ACEITA' | 'ITEM ENVIADO' | 'ITEM RECEBIDO' | 'TROCA PROCESSADA' | 'TROCA NEGADA';
   exchangeReason?: string;
   exchangeItemId?: string; // product id being returned

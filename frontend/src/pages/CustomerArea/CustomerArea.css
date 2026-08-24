@@ -838,3 +838,78 @@
   border-color: rgba(198, 255, 0, 0.25);
 }
 
+/* Formulários em Modais (Endereço, Cartão, Troca) */
+.address-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.address-modal-form .form-row {
+  display: flex;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.address-modal-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  flex: 1;
+}
+
+.address-modal-form .form-group label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #c0c0c0;
+}
+
+.address-modal-form .form-group input,
+.address-modal-form .form-group select,
+.address-modal-form .form-group textarea {
+  background-color: #0b0b0b;
+  border: 1px solid #2a2a2a;
+  color: #ffffff;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  outline: none;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.address-modal-form .form-group input::placeholder,
+.address-modal-form .form-group textarea::placeholder {
+  color: #555555;
+  font-size: 0.82rem;
+}
+
+.address-modal-form .form-group input:focus,
+.address-modal-form .form-group select:focus,
+.address-modal-form .form-group textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(198, 255, 0, 0.12);
+  background-color: #101010;
+}
+
+.address-modal-form .flex-1 {
+  flex: 1;
+}
+
+.address-modal-form .flex-2 {
+  flex: 2;
+}
+
+.address-modal-form .flex-3 {
+  flex: 3;
+}
+
+@media (max-width: 580px) {
+  .address-modal-form .form-row {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+}
+

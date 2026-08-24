@@ -15,14 +15,12 @@ export default function ProductDetail() {
   const [prevId, setPrevId] = useState(id);
   const [selectedSize, setSelectedSize] = useState<number | null>(null);
   const [quantity, setQuantity] = useState(1);
-  const [selectedImage, setSelectedImage] = useState(product?.image || '');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   if (id !== prevId) {
     setPrevId(id);
     setSelectedSize(null);
     setQuantity(1);
-    setSelectedImage(product?.image || '');
     setSuccessMessage(null);
   }
 
@@ -79,36 +77,10 @@ export default function ProductDetail() {
         {/* Informações Principais do Produto */}
         <div className="product-main-view">
           
-          {/* Galeria de Imagens */}
+          {/* Imagem do Produto */}
           <div className="product-gallery">
             <div className="main-image-container">
-              <img src={selectedImage} alt={product.name} className="main-image" />
-            </div>
-            
-            {/* Miniaturas mockadas para simulação de galeria */}
-            <div className="thumbnails-list">
-              <button 
-                type="button"
-                className={`thumb-btn ${selectedImage === product.image ? 'active' : ''}`}
-                onClick={() => setSelectedImage(product.image)}
-              >
-                <img src={product.image} alt="Vista Lateral" />
-              </button>
-              {/* Variações de cor ou filtros para simular mais fotos */}
-              <button 
-                type="button"
-                className={`thumb-btn secondary-thumb ${selectedImage === 'alt1' ? 'active' : ''}`}
-                onClick={() => setSelectedImage(product.image)} // Mesma foto para simplificar
-              >
-                <img src={product.image} alt="Vista Superior" style={{ filter: 'hue-rotate(45deg)' }} />
-              </button>
-              <button 
-                type="button"
-                className={`thumb-btn secondary-thumb ${selectedImage === 'alt2' ? 'active' : ''}`}
-                onClick={() => setSelectedImage(product.image)} // Mesma foto para simplificar
-              >
-                <img src={product.image} alt="Vista Traseira" style={{ filter: 'brightness(0.7) contrast(1.2)' }} />
-              </button>
+              <img src={product.image} alt={product.name} className="main-image" />
             </div>
           </div>
 

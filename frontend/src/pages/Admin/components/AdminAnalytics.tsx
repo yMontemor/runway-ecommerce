@@ -96,10 +96,10 @@ export default function AdminAnalytics() {
   });
 
   // Somatório Total do Período Filtrado (representa o acumulado das categorias, com sobreposição)
-  // NOTA DE REGRA DE NEGÓCIO (RN0012): Como um tênis pode pertencer a mais de uma categoria,
-  // se houver vendas de um produto multicategoria, a venda será exibida em ambas as categorias
-  // quando analisadas no gráfico. Somar esses valores diretamente para obter o faturamento
-  // total geraria dupla contagem (double counting). O faturamento real do período expurga essa sobreposição.
+  // Como um tênis pode pertencer a mais de uma categoria, se houver vendas de um produto multicategoria,
+  // a venda será exibida em ambas as categorias quando analisadas no gráfico.
+  // Somar esses valores diretamente para obter o faturamento total geraria dupla contagem (double counting).
+  // O faturamento real do período expurga essa sobreposição.
   const totalSales = mockAnalyticsData
     .filter(d => {
       const mIdx = MONTHS.findIndex(m => m.id === d.date);
@@ -380,11 +380,7 @@ export default function AdminAnalytics() {
               </div>
             </div>
 
-            <div className="analytics-double-counting-warning" style={{ marginTop: '1.2rem', padding: '0.85rem', backgroundColor: 'rgba(255, 158, 79, 0.08)', border: '1px solid rgba(255, 158, 79, 0.4)', borderRadius: '8px', fontSize: '0.75rem', color: '#ff9e4f', lineHeight: '1.45' }}>
-              <strong>Regra de Negócio (RN0012):</strong> Como alguns tênis pertencem a múltiplas categorias (ex: <em>Pegasus 41</em> ou <em>Corre 4</em>), as vendas desses produtos são contabilizadas em todas as suas respectivas categorias no gráfico (vendas associadas por categoria). Somar o volume das categorias geraria dupla contagem, por isso o faturamento real é calculado expurgando a sobreposição de categorias.
-            </div>
-
-            <p className="summary-desc-small" style={{ marginTop: '1rem' }}>
+            <p className="summary-desc-small" style={{ marginTop: '1.2rem' }}>
               Período de visualização: <strong>{MONTHS[startIdx]?.label}</strong> a <strong>{MONTHS[endIdx]?.label}</strong>.
             </p>
           </div>

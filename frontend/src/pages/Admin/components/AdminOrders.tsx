@@ -41,6 +41,7 @@ export default function AdminOrders() {
             <option value="TODOS">Todos os status</option>
             <option value="EM ABERTO">EM ABERTO</option>
             <option value="EM PROCESSAMENTO">EM PROCESSAMENTO</option>
+            <option value="PAGAMENTO REALIZADO">PAGAMENTO REALIZADO</option>
             <option value="EM TRÂNSITO">EM TRÂNSITO</option>
             <option value="ENTREGUE">ENTREGUE</option>
             <option value="CANCELADO">CANCELADO</option>
@@ -72,7 +73,7 @@ export default function AdminOrders() {
                   <td>{itemsCount === 1 ? '1 item' : `${itemsCount} itens`}</td>
                   <td>{o.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                   <td>
-                    <span className={`order-status-tag ${o.status.replace(' ', '_').toLowerCase()}`}>
+                    <span className={`order-status-tag ${o.status.replace(/ /g, '_').toLowerCase()}`}>
                       {o.status}
                     </span>
                   </td>
@@ -89,6 +90,15 @@ export default function AdminOrders() {
                       )}
                       {o.status === 'EM PROCESSAMENTO' && (
                         <button
+                          onClick={() => updateOrderStatus(o.id, 'PAGAMENTO REALIZADO')}
+                          className="btn btn-primary btn-small btn-status-processing"
+                          type="button"
+                        >
+                          CONFIRMAR PAGAMENTO
+                        </button>
+                      )}
+                      {o.status === 'PAGAMENTO REALIZADO' && (
+                        <button
                           onClick={() => updateOrderStatus(o.id, 'EM TRÂNSITO')}
                           className="btn btn-primary btn-small btn-status-transit"
                           type="button"
@@ -102,7 +112,7 @@ export default function AdminOrders() {
                           className="btn btn-primary btn-small btn-status-delivered"
                           type="button"
                         >
-                          ENTREGAR
+                          CONFIRMAR ENTREGA
                         </button>
                       )}
                       {o.status === 'ENTREGUE' && (

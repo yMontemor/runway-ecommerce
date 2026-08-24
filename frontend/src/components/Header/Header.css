@@ -94,8 +94,9 @@
   color: #ffffff;
 }
 
-/* Chatbot Apenas Ícone */
-.chatbot-icon-only {
+/* Chatbot e Perfil Apenas Ícone */
+.chatbot-icon-only,
+.profile-icon-only {
   padding: 0.25rem;
 }
 

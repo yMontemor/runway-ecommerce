@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { products } from '../../data/products';
 import type { Product } from '../../types';
+import { generateBotResponse, initialChatContext, type ChatContext } from './chatbotEngine';
 import './Chatbot.css';
 
 interface Message {
@@ -14,14 +14,23 @@ interface Message {
 export default function Chatbot() {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  const [context, setContext] = useState<ChatContext>(initialChatContext);
+  const [suggestions, setSuggestions] = useState<string[]>([
+    'Quero um tênis para treino diário',
+    'Quero correr longas distâncias',
+    'Quero um tênis para velocidade',
+    'Quero opções até R$ 800',
+    'Me ajude a escolher'
+  ]);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       sender: 'bot',
-      text: 'Olá! Sou o assistente RunWay. Vou te ajudar a encontrar o tênis ideal para sua corrida. Qual é o seu foco de treino hoje?'
+      text: 'Olá! 👋 Sou o assistente da RunWay. Posso te ajudar a encontrar um tênis do nosso catálogo de acordo com seu tipo de treino, distância, numeração e orçamento. O que você está procurando?'
     }
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Escutar evento do Header para abrir o Chatbot
@@ -34,45 +43,37 @@ export default function Chatbot() {
   // Rolar para o final do chat ao receber mensagens
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isOpen]);
+  }, [messages, isOpen, isTyping]);
+
+  const processUserMessage = (userText: string) => {
+    // 1. Registrar mensagem do usuário
+    const userMsgId = `msg_${Date.now()}`;
+    const userMsg: Message = { id: userMsgId, sender: 'user', text: userText };
+    
+    setMessages(prev => [...prev, userMsg]);
+    setIsTyping(true);
+
+    // 2. Processar resposta via motor de recomendação
+    setTimeout(() => {
+      const reply = generateBotResponse(userText, context);
+      
+      const botMsgId = `msg_${Date.now() + 1}`;
+      const botMsg: Message = {
+        id: botMsgId,
+        sender: 'bot',
+        text: reply.text,
+        recommendations: reply.recommendations
+      };
+
+      setMessages(prev => [...prev, botMsg]);
+      setSuggestions(reply.suggestions);
+      setContext(reply.context);
+      setIsTyping(false);
+    }, 450);
+  };
 
   const handleSuggestionClick = (suggestion: string) => {
-    // 1. Mensagem do usuário
-    const userMsgId = `msg_${Date.now()}`;
-    const userMsg: Message = { id: userMsgId, sender: 'user', text: suggestion };
-    
-    // 2. Resposta do bot baseada no termo
-    const botMsgId = `msg_${Date.now() + 1}`;
-    let replyText: string;
-    let filteredRecs: Product[];
-
-    const norm = suggestion.toLowerCase();
-    if (norm.includes('trilha')) {
-      replyText = 'Para corrida em trilha (Trail), você precisa de tênis com tração superior, sola aderente (como Vibram) e proteção contra detritos. Aqui estão nossas melhores recomendações:';
-      filteredRecs = products.filter(p => p.category === 'TRAIL');
-    } else if (norm.includes('maratona')) {
-      replyText = 'Para maratonas e competições de alta performance, recomendo modelos com placa de fibra de carbono e entressola super responsiva para máxima economia de energia:';
-      filteredRecs = products.filter(p => p.category === 'COMPETIÇÃO');
-    } else if (norm.includes('velocidade')) {
-      replyText = 'Para treinos de tiro e ritmo (velocidade), procure calçados leves e dinâmicos com placa de nylon ou amortecimento ágil:';
-      filteredRecs = products.filter(p => p.category === 'VELOCIDADE');
-    } else if (norm.includes('10km') || norm.includes('longa')) {
-      replyText = 'Para rodagens longas e conforto contínuo (como provas de 10km a meia maratona), estes modelos garantem estabilidade e amortecimento máximo de impacto:';
-      filteredRecs = products.filter(p => p.category === 'LONGA DISTÂNCIA');
-    } else {
-      // Treino diário
-      replyText = 'Para rodagens diárias e treinos de volume com durabilidade e amortecimento equilibrado, sugiro estes modelos versáteis:';
-      filteredRecs = products.filter(p => p.category === 'TREINO DIÁRIO').slice(0, 3);
-    }
-
-    const botMsg: Message = {
-      id: botMsgId,
-      sender: 'bot',
-      text: replyText,
-      recommendations: filteredRecs
-    };
-
-    setMessages(prev => [...prev, userMsg, botMsg]);
+    processUserMessage(suggestion);
   };
 
   const handleSendText = (e: React.FormEvent) => {
@@ -81,20 +82,29 @@ export default function Chatbot() {
 
     const userText = inputValue;
     setInputValue('');
-
-    // Mensagem do usuário
-    const userMsg: Message = { id: `msg_${Date.now()}`, sender: 'user', text: userText };
-    setMessages(prev => [...prev, userMsg]);
-
-    // Resposta simulada do bot
-    setTimeout(() => {
-      handleSuggestionClick(userText);
-    }, 600);
+    processUserMessage(userText);
   };
 
   const handleViewProduct = (productId: string) => {
     setIsOpen(false);
     navigate(`/produto/${productId}`);
+  };
+
+  // Renderizar texto com quebras de linha e negritos simples
+  const renderFormattedText = (text: string) => {
+    return text.split('\n').map((line, lineIdx) => {
+      const parts = line.split(/(\*\*.*?\*\*)/g);
+      return (
+        <span key={lineIdx} style={{ display: 'block', minHeight: line === '' ? '0.4rem' : undefined }}>
+          {parts.map((part, partIdx) => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+              return <strong key={partIdx}>{part.slice(2, -2)}</strong>;
+            }
+            return part;
+          })}
+        </span>
+      );
+    });
   };
 
   return (
@@ -125,7 +135,7 @@ export default function Chatbot() {
               <span className="bot-avatar-dot"></span>
               <div>
                 <h4 className="bot-title">Assistente RunWay</h4>
-                <span className="bot-status">Online agora</span>
+                <span className="bot-status">Especialista em Corrida</span>
               </div>
             </div>
             <button 
@@ -143,27 +153,37 @@ export default function Chatbot() {
             {messages.map(msg => (
               <div key={msg.id} className={`chat-message ${msg.sender}`}>
                 <div className="message-bubble">
-                  {msg.text}
+                  {renderFormattedText(msg.text)}
                 </div>
                 
-                {/* Recomendações de tênis */}
+                {/* Recomendações em Cards */}
                 {msg.recommendations && msg.recommendations.length > 0 && (
                   <div className="chat-recommendations">
                     {msg.recommendations.map(prod => (
                       <div key={prod.id} className="chat-prod-card">
                         <img src={prod.image} alt={prod.name} className="chat-prod-img" />
                         <div className="chat-prod-details">
-                          <span className="chat-prod-brand">{prod.brand}</span>
+                          <div className="chat-prod-header-line">
+                            <span className="chat-prod-brand">{prod.brand}</span>
+                            <span className="chat-prod-cat-tag">{prod.categories[0]}</span>
+                          </div>
                           <h5 className="chat-prod-name">{prod.name}</h5>
-                          <span className="chat-prod-price">
-                            {prod.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </span>
+                          <div className="chat-prod-meta-line">
+                            <span className="chat-prod-sizes-info">
+                              {context.shoeSize && prod.sizes.includes(context.shoeSize)
+                                ? `Tam. ${context.shoeSize} disp.`
+                                : `Tam. ${Math.min(...prod.sizes)} ao ${Math.max(...prod.sizes)}`}
+                            </span>
+                            <span className="chat-prod-price">
+                              {prod.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </span>
+                          </div>
                           <button 
                             type="button" 
                             onClick={() => handleViewProduct(prod.id)}
                             className="chat-prod-view-btn"
                           >
-                            VER PRODUTO
+                            VER DETALHES
                           </button>
                         </div>
                       </div>
@@ -172,23 +192,32 @@ export default function Chatbot() {
                 )}
               </div>
             ))}
+            {isTyping && (
+              <div className="chat-message bot">
+                <div className="message-bubble" style={{ color: 'var(--color-text-secondary)', fontStyle: 'italic', fontSize: '0.75rem' }}>
+                  Consultando catálogo da RunWay...
+                </div>
+              </div>
+            )}
             <div ref={chatEndRef} />
           </div>
 
           {/* Sugestões de Cliques Rápidos */}
-          <div className="chatbot-suggestions">
-            <button type="button" onClick={() => handleSuggestionClick('10km')}>10km</button>
-            <button type="button" onClick={() => handleSuggestionClick('Maratona')}>Maratona</button>
-            <button type="button" onClick={() => handleSuggestionClick('Trilha')}>Trilha</button>
-            <button type="button" onClick={() => handleSuggestionClick('Treino diário')}>Treino diário</button>
-            <button type="button" onClick={() => handleSuggestionClick('Velocidade')}>Velocidade</button>
-          </div>
+          {suggestions.length > 0 && (
+            <div className="chatbot-suggestions">
+              {suggestions.map((sug, idx) => (
+                <button key={idx} type="button" onClick={() => handleSuggestionClick(sug)}>
+                  {sug}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Campo de Entrada de Mensagem */}
           <form onSubmit={handleSendText} className="chatbot-footer">
             <input
               type="text"
-              placeholder="Digite sua mensagem..."
+              placeholder="Digite sua dúvida ou preferência..."
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               className="chatbot-input"

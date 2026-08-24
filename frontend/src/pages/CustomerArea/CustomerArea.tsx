@@ -16,6 +16,7 @@ export default function CustomerArea() {
     exchanges,
     updateCustomerStatus,
     cancelOrder,
+    confirmOrderReceipt,
     requestExchange,
     updateExchangeStatus,
     updateCustomerProfile,
@@ -509,10 +510,12 @@ export default function CustomerArea() {
                             {/* Se aceita, cliente pode despachar */}
                             {order.exchangeStatus === 'TROCA ACEITA' && (
                               <button 
-                                onClick={() => updateExchangeStatus(
-                                  exchanges.find(e => e.orderId === order.id)?.id || '', 
-                                  'ITEM ENVIADO'
-                                )}
+                                onClick={() => {
+                                  const exc = exchanges.find(e => e.orderId === order.id);
+                                  if (exc) {
+                                    updateExchangeStatus(exc.id, 'ITEM ENVIADO');
+                                  }
+                                }}
                                 className="btn btn-primary btn-mini"
                                 type="button"
                               >
@@ -524,6 +527,22 @@ export default function CustomerArea() {
                             {order.exchangeStatus === 'TROCA PROCESSADA' && (
                               <div className="refund-coupon-hint">
                                 Cupom gerado: <strong>{exchanges.find(e => e.orderId === order.id)?.refundCouponCode}</strong>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Informações de Cancelamento / Ressarcimento */}
+                        {order.status === 'CANCELADO' && (
+                          <div className="order-cancellation-info" style={{ marginTop: '0.4rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                            {order.cancellationRefundCouponCode && (
+                              <div className="refund-coupon-hint">
+                                Cupom de ressarcimento gerado: <strong>{order.cancellationRefundCouponCode}</strong>
+                              </div>
+                            )}
+                            {order.cardRefundedAmount && (
+                              <div className="refund-coupon-hint" style={{ borderColor: 'rgba(255, 255, 255, 0.2)', color: '#bbb' }}>
+                                Estorno no cartão: <strong>{order.cardRefundedAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                               </div>
                             )}
                           </div>
@@ -549,8 +568,19 @@ export default function CustomerArea() {
                             </button>
                           )}
 
-                          {/* Solicitar Troca se entregue */}
-                          {isEntregue && !hasExchange && (
+                          {/* Confirmação de Recebimento pelo Cliente */}
+                          {isEntregue && !order.clientConfirmedReceipt && (
+                            <button
+                              onClick={() => confirmOrderReceipt(order.id)}
+                              className="btn btn-primary btn-small"
+                              type="button"
+                            >
+                              CONFIRMAR RECEBIMENTO
+                            </button>
+                          )}
+
+                          {/* Solicitar Troca se entregue e com recebimento confirmado */}
+                          {isEntregue && order.clientConfirmedReceipt && !hasExchange && (
                             <button 
                               onClick={() => handleOpenExchange(order)} 
                               className="btn btn-primary btn-small"
@@ -765,6 +795,7 @@ export default function CustomerArea() {
               id="m-addr-label"
               value={addrForm.label}
               onChange={e => setAddrForm(prev => ({ ...prev, label: e.target.value }))}
+              placeholder="Ex: Casa, Escritório"
               required
             />
           </div>
@@ -777,6 +808,7 @@ export default function CustomerArea() {
                 id="m-addr-street"
                 value={addrForm.street}
                 onChange={e => setAddrForm(prev => ({ ...prev, street: e.target.value }))}
+                placeholder="Rua, Avenida, Alameda..."
                 required
               />
             </div>
@@ -787,6 +819,7 @@ export default function CustomerArea() {
                 id="m-addr-num"
                 value={addrForm.number}
                 onChange={e => setAddrForm(prev => ({ ...prev, number: e.target.value }))}
+                placeholder="123"
                 required
               />
             </div>
@@ -800,6 +833,7 @@ export default function CustomerArea() {
                 id="m-addr-comp"
                 value={addrForm.complement}
                 onChange={e => setAddrForm(prev => ({ ...prev, complement: e.target.value }))}
+                placeholder="Apto 42, Bloco B (opcional)"
               />
             </div>
             <div className="form-group">
@@ -809,6 +843,7 @@ export default function CustomerArea() {
                 id="m-addr-neigh"
                 value={addrForm.neighborhood}
                 onChange={e => setAddrForm(prev => ({ ...prev, neighborhood: e.target.value }))}
+                placeholder="Bairro"
                 required
               />
             </div>
@@ -822,6 +857,7 @@ export default function CustomerArea() {
                 id="m-addr-zip"
                 value={addrForm.zipCode}
                 onChange={e => setAddrForm(prev => ({ ...prev, zipCode: e.target.value }))}
+                placeholder="00000-000"
                 required
               />
             </div>
@@ -832,6 +868,7 @@ export default function CustomerArea() {
                 id="m-addr-city"
                 value={addrForm.city}
                 onChange={e => setAddrForm(prev => ({ ...prev, city: e.target.value }))}
+                placeholder="Cidade"
                 required
               />
             </div>
@@ -841,7 +878,9 @@ export default function CustomerArea() {
                 type="text"
                 id="m-addr-state"
                 value={addrForm.state}
-                onChange={e => setAddrForm(prev => ({ ...prev, state: e.target.value }))}
+                onChange={e => setAddrForm(prev => ({ ...prev, state: e.target.value.toUpperCase() }))}
+                placeholder="UF"
+                maxLength={2}
                 required
               />
             </div>
@@ -982,16 +1021,6 @@ export default function CustomerArea() {
             <div className="order-details-section">
               <h4 className="details-sec-title">Método de Pagamento</h4>
               <div className="details-payment-list">
-                {/* Cartões de crédito */}
-                {selectedOrderForDetails.paymentMethods.map(pm => {
-                  const card = activeCustomer.cards.find(c => c.id === pm.cardId);
-                  return (
-                    <div key={pm.cardId} className="payment-method-row">
-                      <span>💳 Cartão {card ? `${card.brand} final ${card.lastFour}` : `final ${pm.cardId.slice(-4)}`}</span>
-                      <strong>{pm.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
-                    </div>
-                  );
-                })}
                 {/* Cupons usados */}
                 {selectedOrderForDetails.couponsUsed.map(coupon => (
                   <div key={coupon.id} className="payment-method-row coupon-row">
@@ -999,6 +1028,23 @@ export default function CustomerArea() {
                     <strong>- {coupon.type === 'promo' ? `${coupon.value}%` : coupon.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                   </div>
                 ))}
+                {/* Cartões de crédito ou aviso de pagamento integral por cupom */}
+                {selectedOrderForDetails.paymentMethods.length === 0 && selectedOrderForDetails.couponsUsed.length > 0 ? (
+                  <div className="payment-method-row">
+                    <span>💳 Cartão de Crédito</span>
+                    <strong style={{ color: 'var(--color-success)' }}>R$ 0,00 (Pago integralmente por cupom)</strong>
+                  </div>
+                ) : (
+                  selectedOrderForDetails.paymentMethods.map(pm => {
+                    const card = activeCustomer.cards.find(c => c.id === pm.cardId);
+                    return (
+                      <div key={pm.cardId} className="payment-method-row">
+                        <span>💳 Cartão {card ? `${card.brand} final ${card.lastFour}` : `final ${pm.cardId.slice(-4)}`}</span>
+                        <strong>{pm.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
 
@@ -1009,18 +1055,60 @@ export default function CustomerArea() {
                   <span>Subtotal</span>
                   <span>{selectedOrderForDetails.subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                 </div>
-                {selectedOrderForDetails.discount > 0 && (
+                <div className="totals-row">
+                  <span>Frete</span>
+                  <span>{(selectedOrderForDetails.shippingCost && selectedOrderForDetails.shippingCost > 0) ? selectedOrderForDetails.shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Grátis'}</span>
+                </div>
+                {selectedOrderForDetails.discountPromo && selectedOrderForDetails.discountPromo > 0 ? (
                   <div className="totals-row discount-text">
-                    <span>Desconto</span>
+                    <span>Desconto Promocional</span>
+                    <span>- {selectedOrderForDetails.discountPromo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+                ) : null}
+                {selectedOrderForDetails.discountExchange && selectedOrderForDetails.discountExchange > 0 ? (
+                  <div className="totals-row discount-text">
+                    <span>Cupom de Troca</span>
+                    <span>- {selectedOrderForDetails.discountExchange.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+                ) : null}
+                {(!selectedOrderForDetails.discountPromo && !selectedOrderForDetails.discountExchange && selectedOrderForDetails.discount > 0) ? (
+                  <div className="totals-row discount-text">
+                    <span>Descontos</span>
                     <span>- {selectedOrderForDetails.discount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                   </div>
-                )}
+                ) : null}
                 <div className="totals-row total-highlight">
                   <span>Total Pago</span>
                   <span>{selectedOrderForDetails.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                 </div>
               </div>
             </div>
+
+            {/* Informações de Cancelamento / Ressarcimento se cancelado */}
+            {selectedOrderForDetails.status === 'CANCELADO' && (
+              <div className="order-details-section" style={{ marginTop: '1.25rem', borderColor: 'rgba(255, 69, 69, 0.3)' }}>
+                <h4 className="details-sec-title" style={{ color: 'var(--color-danger)' }}>Informações de Cancelamento</h4>
+                <div className="details-payment-list">
+                  {selectedOrderForDetails.cancellationRefundCouponCode ? (
+                    <div className="payment-method-row coupon-row">
+                      <span>🎫 Novo Cupom de Troca Gerado</span>
+                      <strong>{selectedOrderForDetails.cancellationRefundCouponCode}</strong>
+                    </div>
+                  ) : null}
+                  {selectedOrderForDetails.cardRefundedAmount ? (
+                    <div className="payment-method-row">
+                      <span>💳 Estorno no Cartão de Crédito</span>
+                      <strong>{selectedOrderForDetails.cardRefundedAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                  ) : null}
+                  {!selectedOrderForDetails.cancellationRefundCouponCode && !selectedOrderForDetails.cardRefundedAmount && (
+                    <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                      Pedido cancelado pelo cliente.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {selectedOrderForDetails.exchangeStatus && (
               <div className="order-details-section exchange-details-box" style={{ marginTop: '1.25rem' }}>

@@ -16,7 +16,14 @@ export default function AdminExchanges() {
     updateExchangeStatus(id, 'TROCA NEGADA');
   };
 
-  const handleOpenReceiptModal = (exc: Exchange) => {
+  const handleConfirmReceiptClick = (exc: Exchange) => {
+    // Transição explícita para ITEM RECEBIDO e abertura da decisão de retorno ao estoque
+    updateExchangeStatus(exc.id, 'ITEM RECEBIDO');
+    setSelectedExchange(exc);
+    setIsStockModalOpen(true);
+  };
+
+  const handleOpenStockModalOnly = (exc: Exchange) => {
     setSelectedExchange(exc);
     setIsStockModalOpen(true);
   };
@@ -27,12 +34,8 @@ export default function AdminExchanges() {
     // Simular decisão de retorno ao estoque no console/histórico
     console.log(`[Troca ${selectedExchange.id}] Item retornado ao estoque: ${returnToStock ? 'SIM' : 'NÃO'}`);
     
-    // Atualizar status para ITEM RECEBIDO e depois TROCA PROCESSADA para gerar o cupom
-    updateExchangeStatus(selectedExchange.id, 'ITEM RECEBIDO');
-    
-    setTimeout(() => {
-      updateExchangeStatus(selectedExchange.id, 'TROCA PROCESSADA');
-    }, 500);
+    // Transição explícita para TROCA PROCESSADA e geração do cupom de troca
+    updateExchangeStatus(selectedExchange.id, 'TROCA PROCESSADA', returnToStock);
 
     setIsStockModalOpen(false);
     setSelectedExchange(null);
@@ -97,7 +100,7 @@ export default function AdminExchanges() {
                     )}
                     {exc.status === 'ITEM ENVIADO' && (
                       <button
-                        onClick={() => handleOpenReceiptModal(exc)}
+                        onClick={() => handleConfirmReceiptClick(exc)}
                         className="btn btn-primary btn-small"
                         type="button"
                         style={{ backgroundColor: 'var(--color-primary)', color: '#000' }}
@@ -106,7 +109,14 @@ export default function AdminExchanges() {
                       </button>
                     )}
                     {exc.status === 'ITEM RECEBIDO' && (
-                      <span className="admin-action-wait-text">Processando reembolso...</span>
+                      <button
+                        onClick={() => handleOpenStockModalOnly(exc)}
+                        className="btn btn-primary btn-small"
+                        type="button"
+                        style={{ backgroundColor: 'var(--color-primary)', color: '#000' }}
+                      >
+                        DECIDIR RETORNO AO ESTOQUE
+                      </button>
                     )}
                     {exc.status === 'TROCA PROCESSADA' && (
                       <div className="admin-coupon-code-hint">

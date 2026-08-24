@@ -101,6 +101,14 @@ export default function Header() {
             {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
           </Link>
 
+          {/* Perfil do Usuário (Apenas ícone de silhueta de busto) */}
+          <Link to="/cliente?tab=perfil" className="nav-item profile-icon-only" title="Meu Perfil">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+          </Link>
+
           {/* Cliente: Menu Dropdown de Demonstração */}
           <div className="user-dropdown-container">
             <button 
@@ -108,11 +116,8 @@ export default function Header() {
               className="nav-item user-btn"
               type="button"
               aria-expanded={showDropdown}
+              title="Alternar Cliente / Admin"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
-              </svg>
               <span className="user-name">{activeCustomer.name.split(' ')[0]}</span>
               <span className="dropdown-arrow" style={{ fontSize: '0.6rem', marginLeft: '0.15rem' }}>▼</span>
             </button>

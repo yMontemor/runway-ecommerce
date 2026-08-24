@@ -179,9 +179,16 @@
 .chat-prod-details {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.15rem;
   flex: 1;
   min-width: 0;
+}
+
+.chat-prod-header-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.3rem;
 }
 
 .chat-prod-brand {
@@ -191,14 +198,37 @@
   text-transform: uppercase;
 }
 
+.chat-prod-cat-tag {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  background-color: #141414;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
 .chat-prod-name {
   font-size: 0.75rem;
+  font-weight: 700;
   color: #ffffff;
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.2;
+}
+
+.chat-prod-meta-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.chat-prod-sizes-info {
+  font-size: 0.62rem;
+  color: var(--color-text-secondary);
 }
 
 .chat-prod-price {
@@ -213,7 +243,7 @@
   color: var(--color-primary);
   font-size: 0.65rem;
   font-weight: 700;
-  padding: 0.15rem 0.4rem;
+  padding: 0.15rem 0.45rem;
   border-radius: 4px;
   cursor: pointer;
   margin-top: 0.15rem;

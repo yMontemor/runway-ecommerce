@@ -12,7 +12,8 @@ export default function Checkout() {
     cartsByCustomer, 
     coupons, 
     checkoutCart,
-    addCustomerAddress 
+    addCustomerAddress,
+    addCustomerCard
   } = useApp();
 
   const cartItems = useMemo(() => {
@@ -84,6 +85,47 @@ export default function Checkout() {
   });
   const [cardAmounts, setCardAmounts] = useState<Record<string, string>>({});
 
+  // Modal de novo cartão no checkout
+  const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+  const [newCard, setNewCard] = useState({
+    brand: 'Visa' as 'Visa' | 'Mastercard' | 'Elo',
+    cardNumber: '',
+    holderName: '',
+    expirationDate: '',
+    cvv: '',
+    isPreferred: false
+  });
+
+  const handleAddNewCard = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCard.cardNumber || !newCard.holderName || !newCard.expirationDate) return;
+
+    const cleanNum = newCard.cardNumber.replace(/\D/g, '');
+    const derivedLastFour = cleanNum.length >= 4 ? cleanNum.slice(-4) : '1234';
+
+    const created = addCustomerCard(activeCustomer.id, {
+      brand: newCard.brand,
+      cardNumber: newCard.cardNumber,
+      lastFour: derivedLastFour,
+      holderName: newCard.holderName.toUpperCase(),
+      expirationDate: newCard.expirationDate,
+      cvv: newCard.cvv,
+      isPreferred: newCard.isPreferred
+    });
+
+    // Selecionar imediatamente o cartão adicionado
+    setSelectedCardIds(prev => [...prev, created.id]);
+    setIsCardModalOpen(false);
+    setNewCard({
+      brand: 'Visa',
+      cardNumber: '',
+      holderName: '',
+      expirationDate: '',
+      cvv: '',
+      isPreferred: false
+    });
+  };
+
   // Sincronizar mudança de cliente na renderização
   if (activeCustomer.id !== prevCustomerId) {
     setPrevCustomerId(activeCustomer.id);
@@ -99,12 +141,10 @@ export default function Checkout() {
   // Cálculos do checkout
   const subtotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   
-  // RF0034: Frete calculado somente após seleção do endereço
   const calculateShipping = (addressId: string): number => {
     const addr = activeCustomer.addresses.find(a => a.id === addressId);
     if (!addr) return 0;
     if (subtotal >= 500) return 0; // Frete grátis acima de R$ 500
-    // Valor mockado variável por estado
     const freteByState: Record<string, number> = {
       'SP': 18.90, 'RJ': 22.50, 'MG': 24.90, 'ES': 26.90,
       'PR': 25.90, 'SC': 27.90, 'RS': 29.90
@@ -121,11 +161,13 @@ export default function Checkout() {
   const exchangeCoupon = exchangeCoupons.find(c => c.id === selectedExchangeCouponId);
 
   const discountPromo = promoCoupon ? (subtotal * (promoCoupon.value / 100)) : 0;
-  const discountExchange = exchangeCoupon ? exchangeCoupon.value : 0;
-
-  const totalDiscount = discountPromo + discountExchange;
   const totalPayableBeforeExchange = Math.max(0, subtotal + shippingCost - discountPromo);
+  const discountExchange = exchangeCoupon ? exchangeCoupon.value : 0;
+  const discountExchangeApplied = Math.min(totalPayableBeforeExchange, discountExchange);
+
+  const totalDiscount = discountPromo + discountExchangeApplied;
   const remainingToPay = Math.max(0, totalPayableBeforeExchange - discountExchange);
+  const surplusExchangeCoupon = exchangeCoupon ? Math.max(0, discountExchange - totalPayableBeforeExchange) : 0;
 
   // Sincronizar autofill do cartão na renderização
   const [prevCardIds, setPrevCardIds] = useState(selectedCardIds);
@@ -178,7 +220,6 @@ export default function Checkout() {
     selectedCardIds.forEach(id => {
       newAmounts[id] = splitVal;
     });
-    // Ajustar possíveis dízimas no último
     const diff = remainingToPay - (parseFloat(splitVal) * selectedCardIds.length);
     if (diff !== 0 && selectedCardIds.length > 0) {
       const lastId = selectedCardIds[selectedCardIds.length - 1];
@@ -187,19 +228,38 @@ export default function Checkout() {
     setCardAmounts(newAmounts);
   };
 
-  // Validação de pagamento
+  // Validação de pagamento:
+  // Se remainingToPay === 0: 100% coberto por cupom de troca -> cartão NÃO é obrigatório
+  // Se remainingToPay > 0:
+  // - Exige ao menos um cartão selecionado
+  // - Soma dos valores distribuídos deve ser igual a remainingToPay
+  // - Cada cartão com valor deve pagar no mínimo R$ 10,00 (exceto se o próprio remainingToPay for inferior a R$ 10)
   const cardAmountsSum = selectedCardIds.reduce((sum, id) => sum + (parseFloat(cardAmounts[id]) || 0), 0);
-  const isPaymentValid = Math.abs(cardAmountsSum - remainingToPay) < 0.01;
+  
+  const isMinAmountPerCardValid = remainingToPay < 10
+    ? true
+    : selectedCardIds.every(id => {
+        const val = parseFloat(cardAmounts[id]) || 0;
+        return val >= 10.0 || val === 0;
+      });
+
+  const isPaymentValid = remainingToPay === 0 
+    ? (selectedCardIds.length === 0 || Math.abs(cardAmountsSum - remainingToPay) < 0.01)
+    : (selectedCardIds.length > 0 && Math.abs(cardAmountsSum - remainingToPay) < 0.01 && isMinAmountPerCardValid);
 
   // --- STEP 3: REVISÃO E CONFIRMAÇÃO ---
   const handleConfirmOrder = () => {
     const address = activeCustomer.addresses.find(a => a.id === selectedAddressId);
     if (!address) return;
 
-    const cardsForPayment = selectedCardIds.map(id => ({
-      cardId: id,
-      amount: parseFloat(cardAmounts[id]) || 0
-    }));
+    const cardsForPayment = remainingToPay === 0 
+      ? [] 
+      : selectedCardIds
+          .filter(id => (parseFloat(cardAmounts[id]) || 0) > 0)
+          .map(id => ({
+            cardId: id,
+            amount: parseFloat(cardAmounts[id]) || 0
+          }));
 
     const appliedCoupons: Coupon[] = [];
     if (promoCoupon) appliedCoupons.push(promoCoupon);
@@ -211,7 +271,13 @@ export default function Checkout() {
       appliedCoupons,
       subtotal,
       totalDiscount,
-      remainingToPay
+      remainingToPay,
+      surplusExchangeCoupon,
+      {
+        shippingCost,
+        discountPromo,
+        discountExchange: discountExchangeApplied
+      }
     );
 
     setCreatedOrder(order);
@@ -283,7 +349,7 @@ export default function Checkout() {
               </button>
             </div>
 
-            {/* Previsão de frete (RF0034) */}
+            {/* Previsão de frete */}
             <div className="shipping-preview-box">
               <div className="calc-row">
                 <span>Subtotal</span>
@@ -372,7 +438,17 @@ export default function Checkout() {
 
                 {/* Cartões de Crédito */}
                 <div className="payment-section">
-                  <h4 className="section-subtitle">Cartões de Crédito</h4>
+                  <div className="cards-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <h4 className="section-subtitle" style={{ margin: 0 }}>Cartões de Crédito</h4>
+                    <button 
+                      type="button" 
+                      onClick={() => setIsCardModalOpen(true)}
+                      className="btn btn-secondary btn-small"
+                      style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem' }}
+                    >
+                      + ADICIONAR NOVO CARTÃO
+                    </button>
+                  </div>
                   <p className="card-instructions">Selecione um ou mais cartões para realizar o pagamento.</p>
 
                   <div className="cards-checkout-list">
@@ -454,10 +530,17 @@ export default function Checkout() {
                     </div>
                   )}
 
-                  {discountExchange > 0 && (
+                  {discountExchangeApplied > 0 && (
                     <div className="calc-row discount-row">
                       <span>Cupom de Troca</span>
-                      <span>-{discountExchange.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                      <span>-{discountExchangeApplied.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  )}
+
+                  {surplusExchangeCoupon > 0 && (
+                    <div className="calc-row discount-row" style={{ color: 'var(--color-primary)', fontSize: '0.78rem' }}>
+                      <span>Saldo Excedente a Gerar</span>
+                      <span>+{surplusExchangeCoupon.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                     </div>
                   )}
 
@@ -471,23 +554,42 @@ export default function Checkout() {
                   <div className="calc-divider"></div>
 
                   {/* Detalhamento de Distribuição */}
-                  <div className="payment-distribution-info">
-                    <div className="dist-row">
-                      <span>Valor Pago nos Cartões:</span>
-                      <span className={isPaymentValid ? 'text-success' : 'text-danger'}>
-                        {cardAmountsSum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </span>
-                    </div>
-                    {!isPaymentValid && (
-                      <div className="dist-warning">
-                        {cardAmountsSum < remainingToPay ? (
-                          <span>Falta distribuir: <strong>{(remainingToPay - cardAmountsSum).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
-                        ) : (
-                          <span>Excedeu: <strong>{(cardAmountsSum - remainingToPay).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
-                        )}
+                  {remainingToPay === 0 ? (
+                    <div className="payment-distribution-info">
+                      <div className="dist-row">
+                        <span>Forma de Pagamento:</span>
+                        <span className="text-success">Cupom de Troca (100%)</span>
                       </div>
-                    )}
-                  </div>
+                      {surplusExchangeCoupon > 0 && (
+                        <div className="dist-row" style={{ marginTop: '0.25rem', fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
+                          <span>Novo cupom gerado após compra:</span>
+                          <strong style={{ color: 'var(--color-primary)' }}>{surplusExchangeCoupon.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="payment-distribution-info">
+                      <div className="dist-row">
+                        <span>Valor Pago nos Cartões:</span>
+                        <span className={isPaymentValid ? 'text-success' : 'text-danger'}>
+                          {cardAmountsSum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </span>
+                      </div>
+                      {!isPaymentValid && (
+                        <div className="dist-warning">
+                          {selectedCardIds.length === 0 ? (
+                            <span>Selecione ao menos um cartão para pagar o restante.</span>
+                          ) : !isMinAmountPerCardValid ? (
+                            <span>Cada cartão selecionado deve pagar no mínimo R$ 10,00.</span>
+                          ) : cardAmountsSum < remainingToPay ? (
+                            <span>Falta distribuir: <strong>{(remainingToPay - cardAmountsSum).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                          ) : (
+                            <span>Excedeu: <strong>{(cardAmountsSum - remainingToPay).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -496,7 +598,7 @@ export default function Checkout() {
               <button onClick={() => setStep(1)} className="btn btn-secondary" type="button">Voltar</button>
               <button 
                 onClick={() => setStep(3)} 
-                disabled={!isPaymentValid || selectedCardIds.length === 0}
+                disabled={!isPaymentValid}
                 className="btn btn-primary"
                 type="button"
               >
@@ -529,15 +631,35 @@ export default function Checkout() {
                 <div className="review-section">
                   <h4 className="review-subtitle">Forma de Pagamento</h4>
                   <div className="review-payments-list">
-                    {selectedCardIds.map(id => {
-                      const c = activeCustomer.cards.find(x => x.id === id);
-                      return c ? (
-                        <div key={c.id} className="review-pay-item">
-                          <span>Cartão <strong>{c.brand}</strong> (final {c.lastFour})</span>
-                          <span><strong>{parseFloat(cardAmounts[c.id]).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
-                        </div>
-                      ) : null;
-                    })}
+                    {promoCoupon && (
+                      <div className="review-pay-item">
+                        <span>Cupom Promocional <strong>{promoCoupon.code}</strong> ({promoCoupon.value}% OFF)</span>
+                        <span><strong>-{discountPromo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                      </div>
+                    )}
+                    {exchangeCoupon && (
+                      <div className="review-pay-item">
+                        <span>Cupom de Troca <strong>{exchangeCoupon.code}</strong></span>
+                        <span><strong>-{discountExchangeApplied.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                      </div>
+                    )}
+                    {remainingToPay === 0 ? (
+                      <div className="review-pay-item">
+                        <span>Cobrança em Cartão de Crédito</span>
+                        <span className="text-success"><strong>R$ 0,00 (Pago integralmente por cupom)</strong></span>
+                      </div>
+                    ) : (
+                      selectedCardIds.map(id => {
+                        const c = activeCustomer.cards.find(x => x.id === id);
+                        const amt = parseFloat(cardAmounts[id] || '0');
+                        return c && amt > 0 ? (
+                          <div key={c.id} className="review-pay-item">
+                            <span>Cartão <strong>{c.brand}</strong> (final {c.lastFour})</span>
+                            <span><strong>{amt.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                          </div>
+                        ) : null;
+                      })
+                    )}
                   </div>
                 </div>
 
@@ -628,11 +750,20 @@ export default function Checkout() {
             </div>
 
             <div className="confirmed-actions">
-              <Link to="/cliente?tab=pedidos" className="btn btn-secondary">
-                MEUS PEDIDOS
+              <Link to="/cliente?tab=pedidos" className="btn btn-confirmed-orders">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                  <line x1="3" y1="6" x2="21" y2="6"></line>
+                  <path d="M16 10a4 4 0 0 1-8 0"></path>
+                </svg>
+                <span>MEUS PEDIDOS</span>
               </Link>
-              <Link to="/catalogo" className="btn btn-primary">
-                CONTINUAR COMPRANDO
+              <Link to="/catalogo" className="btn btn-confirmed-continue">
+                <span>CONTINUAR COMPRANDO</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
               </Link>
             </div>
           </div>
@@ -753,6 +884,101 @@ export default function Checkout() {
             </button>
             <button type="submit" className="btn btn-primary">
               SALVAR ENDEREÇO
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Adicionar Cartão no Checkout */}
+      <Modal
+        isOpen={isCardModalOpen}
+        onClose={() => setIsCardModalOpen(false)}
+        title="Adicionar Novo Cartão"
+      >
+        <form onSubmit={handleAddNewCard} className="address-modal-form">
+          <div className="form-group">
+            <label htmlFor="chk-card-number">Número do Cartão</label>
+            <input
+              type="text"
+              id="chk-card-number"
+              placeholder="0000 0000 0000 0000"
+              maxLength={19}
+              value={newCard.cardNumber}
+              onChange={e => setNewCard(prev => ({ ...prev, cardNumber: e.target.value }))}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="chk-card-holder">Nome Impresso no Cartão</label>
+            <input
+              type="text"
+              id="chk-card-holder"
+              placeholder="NOME COMO NO CARTÃO"
+              value={newCard.holderName}
+              onChange={e => setNewCard(prev => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
+              required
+            />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group flex-2">
+              <label htmlFor="chk-card-brand">Bandeira</label>
+              <select
+                id="chk-card-brand"
+                value={newCard.brand}
+                onChange={e => setNewCard(prev => ({ ...prev, brand: e.target.value as 'Visa' | 'Mastercard' | 'Elo' }))}
+              >
+                <option value="Visa">Visa</option>
+                <option value="Mastercard">Mastercard</option>
+                <option value="Elo">Elo</option>
+              </select>
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="chk-card-exp">Validade</label>
+              <input
+                type="text"
+                id="chk-card-exp"
+                placeholder="MM/AA"
+                maxLength={5}
+                value={newCard.expirationDate}
+                onChange={e => setNewCard(prev => ({ ...prev, expirationDate: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="chk-card-cvv">CVV</label>
+              <input
+                type="text"
+                id="chk-card-cvv"
+                placeholder="123"
+                maxLength={4}
+                value={newCard.cvv}
+                onChange={e => setNewCard(prev => ({ ...prev, cvv: e.target.value.replace(/\D/g, '') }))}
+                required
+              />
+            </div>
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: '#a0a0a0', cursor: 'pointer', marginTop: '0.25rem' }}>
+            <input
+              type="checkbox"
+              checked={newCard.isPreferred}
+              onChange={e => setNewCard(prev => ({ ...prev, isPreferred: e.target.checked }))}
+            />
+            Definir como cartão preferencial
+          </label>
+
+          <div className="modal-actions" style={{ marginTop: '1rem', border: 'none', padding: '0' }}>
+            <button 
+              type="button" 
+              className="btn btn-secondary"
+              onClick={() => setIsCardModalOpen(false)}
+            >
+              CANCELAR
+            </button>
+            <button type="submit" className="btn btn-primary">
+              SALVAR E USAR CARTÃO
             </button>
           </div>
         </form>

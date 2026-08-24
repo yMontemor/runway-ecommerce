@@ -580,49 +580,162 @@
   display: flex;
   gap: 1rem;
   width: 100%;
+  margin-top: 0.5rem;
 }
 
-.confirmed-actions a {
+.btn-confirmed-orders {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 0.85rem 1.4rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-confirmed-orders svg {
+  color: var(--color-primary);
+  transition: transform 0.2s ease;
+}
+
+.btn-confirmed-orders:hover {
+  background: rgba(198, 255, 0, 0.08);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: 0 0 20px rgba(198, 255, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+.btn-confirmed-orders:hover svg {
+  transform: scale(1.1);
+}
+
+.btn-confirmed-orders:active {
+  transform: translateY(0);
+}
+
+.btn-confirmed-continue {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 0.85rem 1.4rem;
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 8px;
+  color: #050505;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(198, 255, 0, 0.25);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-confirmed-continue svg {
+  transition: transform 0.2s ease;
+}
+
+.btn-confirmed-continue:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  box-shadow: 0 0 25px rgba(198, 255, 0, 0.45);
+  transform: translateY(-2px);
+}
+
+.btn-confirmed-continue:hover svg {
+  transform: translateX(4px);
+}
+
+.btn-confirmed-continue:active {
+  transform: translateY(0);
 }
 
 /* Novo Endereço Form */
 .address-modal-form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
-.form-row {
+.address-modal-form .form-row {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.85rem;
+  width: 100%;
 }
 
-.form-group {
+.address-modal-form .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.35rem;
   font-size: 0.8rem;
   color: var(--color-text-secondary);
   flex: 1;
 }
 
-.form-group input {
-  background-color: #050505;
-  border: 1px solid var(--color-border);
+.address-modal-form .form-group label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #c0c0c0;
+}
+
+.address-modal-form .form-group input,
+.address-modal-form .form-group select,
+.address-modal-form .form-group textarea {
+  background-color: #0b0b0b;
+  border: 1px solid #2a2a2a;
   color: #ffffff;
-  padding: 0.5rem 0.75rem;
+  padding: 0.6rem 0.8rem;
   border-radius: 6px;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   outline: none;
+  transition: all 0.15s ease;
+  width: 100%;
 }
 
-.form-group input:focus {
-  border-color: #555555;
+.address-modal-form .form-group input::placeholder,
+.address-modal-form .form-group textarea::placeholder {
+  color: #555555;
+  font-size: 0.82rem;
 }
 
-.flex-2 {
+.address-modal-form .form-group input:focus,
+.address-modal-form .form-group select:focus,
+.address-modal-form .form-group textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(198, 255, 0, 0.12);
+  background-color: #101010;
+}
+
+.address-modal-form .flex-1 {
+  flex: 1;
+}
+
+.address-modal-form .flex-2 {
   flex: 2;
+}
+
+.address-modal-form .flex-3 {
+  flex: 3;
+}
+
+@media (max-width: 580px) {
+  .address-modal-form .form-row {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
 }
 
 @media (max-width: 992px) {

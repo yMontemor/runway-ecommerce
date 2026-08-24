@@ -4,26 +4,45 @@
 }
 
 .hero-section {
+  position: relative;
   width: 100%;
-  padding: 3rem 2rem;
+  padding: 4rem 2rem;
   min-height: calc(100vh - 65px);
   display: flex;
   align-items: center;
+  background-image: 
+    linear-gradient(
+      90deg,
+      rgba(5, 5, 5, 0.95) 0%,
+      rgba(5, 5, 5, 0.88) 35%,
+      rgba(5, 5, 5, 0.45) 70%,
+      rgba(5, 5, 5, 0.65) 100%
+    ),
+    linear-gradient(
+      0deg,
+      rgba(5, 5, 5, 1) 0%,
+      rgba(5, 5, 5, 0) 25%
+    ),
+    url('/images/hero_runner.png');
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
 }
 
 .hero-container {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   max-width: var(--max-width);
   margin: 0 auto;
-  gap: 3rem;
   width: 100%;
+  position: relative;
+  z-index: 2;
 }
 
 .hero-content {
   flex: 1;
-  max-width: 550px;
+  max-width: 620px;
 }
 
 .hero-tag {
@@ -36,12 +55,13 @@
 }
 
 .hero-title {
-  font-size: 4.8rem;
+  font-size: 5rem;
   font-weight: 900;
-  line-height: 1.05;
+  line-height: 1.02;
   color: #ffffff;
   margin: 0 0 1.5rem 0;
   letter-spacing: -2px;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.85);
 }
 
 .hero-title .neon-highlight {
@@ -49,10 +69,11 @@
 }
 
 .hero-subtitle {
-  font-size: 1.15rem;
-  color: var(--color-text-secondary);
+  font-size: 1.2rem;
+  color: #d1d5db;
   margin: 0 0 2.5rem 0;
   line-height: 1.6;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
 }
 
 .hero-btn {
@@ -65,38 +86,13 @@
   letter-spacing: 1px;
   display: inline-block;
   transition: all 0.15s ease;
-  box-shadow: 0 4px 10px rgba(198, 255, 0, 0.15);
+  box-shadow: 0 4px 15px rgba(198, 255, 0, 0.25);
 }
 
 .hero-btn:hover {
   background-color: var(--color-primary-hover);
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(198, 255, 0, 0.3);
-}
-
-/* Imagem */
-.hero-image-container {
-  flex: 1.2;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.hero-shoe-image {
-  max-width: 90%;
-  height: auto;
-  transform: rotate(-15deg) translateY(-20px);
-  filter: drop-shadow(0 25px 35px rgba(0, 0, 0, 0.9));
-  animation: floatShoe 4s ease-in-out infinite alternate;
-}
-
-@keyframes floatShoe {
-  0% {
-    transform: rotate(-15deg) translateY(-20px);
-  }
-  100% {
-    transform: rotate(-12deg) translateY(-5px);
-  }
+  box-shadow: 0 8px 25px rgba(198, 255, 0, 0.4);
 }
 
 /* Seção de Catálogo na Home */
@@ -192,11 +188,24 @@
 /* Responsivo para desktop pequeno e tablet */
 @media (max-width: 1024px) {
   .hero-title {
-    font-size: 3.5rem;
+    font-size: 3.8rem;
   }
 }
 
 @media (max-width: 768px) {
+  .hero-section {
+    background-image: 
+      linear-gradient(
+        180deg,
+        rgba(5, 5, 5, 0.9) 0%,
+        rgba(5, 5, 5, 0.8) 50%,
+        rgba(5, 5, 5, 0.95) 100%
+      ),
+      url('/images/hero_runner.png');
+    background-position: center center;
+    padding: 4rem 1.5rem;
+  }
+
   .hero-container {
     flex-direction: column;
     text-align: center;
@@ -211,10 +220,8 @@
     max-width: 100%;
   }
 
-  .hero-shoe-image {
-    max-width: 75%;
-    transform: rotate(-10deg) translateY(0);
-    animation: none;
+  .hero-title {
+    font-size: 3.2rem;
   }
 
   .home-catalog-grid {

@@ -49,7 +49,7 @@ export default function Home() {
       <section className="hero-section">
         <div className="hero-container">
           <div className="hero-content">
-            <span className="hero-tag">NOVA COLEÇÃO 2026</span>
+            <span className="hero-tag">NOSSA COLEÇÃO 2026</span>
             <h1 className="hero-title">
               CORRA<br />
               <span className="neon-highlight">MAIS</span><br />
@@ -61,14 +61,6 @@ export default function Home() {
             <a href="#catalogo-home" onClick={handleScrollToCatalog} className="btn btn-primary hero-btn">
               VER CATÁLOGO
             </a>
-          </div>
-          
-          <div className="hero-image-container">
-            <img 
-              src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&auto=format&fit=crop&q=80" 
-              alt="Tênis de Corrida Runway" 
-              className="hero-shoe-image"
-            />
           </div>
         </div>
       </section>

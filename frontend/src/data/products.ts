@@ -7,15 +7,15 @@ export const products: Product[] = [
     name: 'Pegasus 41',
     brand: 'Nike',
     category: 'TREINO DIÁRIO',
-    categories: ['TREINO DIÁRIO', 'LONGA DISTÂNCIA'],
+    categories: ['TREINO DIÁRIO'],
     price: 521.99,
     weight: '281g',
     drop: '10mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
-    color: 'Laranja Metálico / Preto',
+    color: 'Branco',
     description: 'Equilíbrio entre conforto e resposta, ideal para manter constância nos treinos do dia a dia.',
     image: '/images/nike_pegasus_41.png',
-    technologies: ['ReactX Foam', 'Zoom Air', 'Engineered Mesh']
+    technologies: ['ReactX', 'Unidades Air Zoom']
   },
   {
     id: 'nb_1080v15',
@@ -27,17 +27,17 @@ export const products: Product[] = [
     weight: '262g',
     drop: '6mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
-    color: 'Cinza / Azul Celeste',
-    description: 'Conforto, versatilidade e durabilidade para o uso cotidiano.',
+    color: 'Azul Celeste',
+    description: 'Conforto, versatilidade e durabilidade para o uso cotidiano e treinos de volume.',
     image: '/images/nb_1080v15.jpg',
-    technologies: ['Fresh Foam X', 'Ndurance Rubber', 'Hypoknit Upper']
+    technologies: ['Fresh Foam X', 'Tecnologia da geração v15']
   },
   {
     id: 'olympikus_corre_4',
     name: 'Corre 4',
     brand: 'Olympikus',
     category: 'TREINO DIÁRIO',
-    categories: ['TREINO DIÁRIO', 'VELOCIDADE'],
+    categories: ['TREINO DIÁRIO'],
     price: 449.90,
     weight: '230g',
     drop: '8mm',
@@ -45,22 +45,22 @@ export const products: Product[] = [
     color: 'Neon Citrus / Preto',
     description: 'Durabilidade e versatilidade a um preço acessível, ótimo para rodar bastante no asfalto.',
     image: '/images/olympikus_corre_4.jpg',
-    technologies: ['Tecnologia Eleva', 'Solado Grippa', 'Cabedal Oxitec']
+    technologies: ['Eleva Pro 2.0']
   },
   {
     id: 'adidas_ultraboost_light',
     name: 'Ultraboost Light',
     brand: 'Adidas',
     category: 'TREINO DIÁRIO',
-    categories: ['TREINO DIÁRIO', 'LONGA DISTÂNCIA'],
+    categories: ['TREINO DIÁRIO'],
     price: 699.90,
     weight: '290g',
     drop: '10mm',
     sizes: [37, 38, 39, 40, 41, 42, 43],
-    color: 'Branco Cloud / Spark',
+    color: 'Branco',
     description: 'Retorno de energia com a espuma BOOST, boa opção para treinos regulares.',
     image: '/images/adidas_ultraboost_light.jpg',
-    technologies: ['Light BOOST', 'Continental Rubber', 'Primeknit+']
+    technologies: ['Light BOOST']
   },
   {
     id: 'asics_nimbus_26',
@@ -72,10 +72,10 @@ export const products: Product[] = [
     weight: '305g',
     drop: '8mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
-    color: 'Preto / Verde Neon',
+    color: 'Azul / Verde Neon',
     description: 'Amortecimento em gel que reduz impacto, ideal para quem prioriza proteção articular.',
     image: '/images/asics_nimbus_26.jpg',
-    technologies: ['PureGEL', 'FF BLAST PLUS ECO', 'OrthoLite X-55']
+    technologies: ['PureGEL', 'FF BLAST PLUS ECO']
   },
 
   // --- LONGA DISTÂNCIA ---
@@ -89,10 +89,10 @@ export const products: Product[] = [
     weight: '295g',
     drop: '10mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
-    color: 'Azul Marinho / Branco',
-    description: 'Muito suporte no calcanhar e conforto para longas distâncias.',
+    color: 'Preto / Branco',
+    description: 'Muito suporte no calcanhar e conforto para treinos diários e longas distâncias.',
     image: '/images/nike_vomero_18.png',
-    technologies: ['ZoomX Foam', 'Cushioning Support', 'Mesh Upper']
+    technologies: ['ZoomX', 'ReactX']
   },
   {
     id: 'saucony_triumph_23',
@@ -107,7 +107,22 @@ export const products: Product[] = [
     color: 'Azul Marinho / Laranja',
     description: 'O tênis mais acolchoado da Saucony, para corredores neutros que buscam amortecimento máximo.',
     image: '/images/saucony_triumph_23.png',
-    technologies: ['PWRRUN+ Foam', 'FORMFIT Technology', 'Durable Outsole']
+    technologies: ['PWRRUN PB']
+  },
+  {
+    id: 'nike_vomero_plus',
+    name: 'Vomero Plus',
+    brand: 'Nike',
+    category: 'LONGA DISTÂNCIA',
+    categories: ['LONGA DISTÂNCIA', 'TREINO DIÁRIO'],
+    price: 1199.90,
+    weight: '292g',
+    drop: '8mm',
+    sizes: [37, 38, 39, 40, 41, 42, 43, 44],
+    color: 'Preto / Laranja Neon',
+    description: 'Foco em conforto com espuma elástica e macia para treinos diários e longas distâncias.',
+    image: '/images/nike_vomero_plus.jpg',
+    technologies: ['ZoomX integral']
   },
 
   // --- VELOCIDADE ---
@@ -116,30 +131,15 @@ export const products: Product[] = [
     name: 'Endorphin Speed 5',
     brand: 'Saucony',
     category: 'VELOCIDADE',
-    categories: ['VELOCIDADE', 'COMPETIÇÃO'],
+    categories: ['VELOCIDADE'],
     price: 1299.90,
     weight: '233g',
     drop: '8mm',
     sizes: [38, 39, 40, 41, 42, 43, 44],
-    color: 'Amarelo Volt / Azul',
-    description: 'Placa de nylon + espuma PWRRUN PB, equilíbrio entre estabilidade e resposta para treinos de ritmo, do moderado ao sprint.',
+    color: 'Amarelo / Rosa',
+    description: 'Placa de nylon + espuma PWRRUN PB, equilíbrio entre estabilidade e resposta para treinos de ritmo e velocidade.',
     image: '/images/saucony_endorphin_speed_5.jpg',
-    technologies: ['PWRRUN PB Foam', 'Winged Nylon Plate', 'SPEEDROLL Technology']
-  },
-  {
-    id: 'nike_vomero_plus',
-    name: 'Vomero Plus',
-    brand: 'Nike',
-    category: 'VELOCIDADE',
-    categories: ['VELOCIDADE', 'TREINO DIÁRIO'],
-    price: 1199.90,
-    weight: '250g',
-    drop: '8mm',
-    sizes: [37, 38, 39, 40, 41, 42, 43, 44],
-    color: 'Preto / Laranja Neon',
-    description: 'Foco em conforto com um extra de velocidade, entressola ZoomX leve e elástica.',
-    image: '/images/nike_vomero_plus.jpg',
-    technologies: ['ZoomX Entressola', 'Cushlon Foam', 'Flywire Cables']
+    technologies: ['PWRRUN PB', 'Placa de nylon']
   },
   {
     id: 'adidas_adizero_boston',
@@ -151,10 +151,10 @@ export const products: Product[] = [
     weight: '240g',
     drop: '6.5mm',
     sizes: [38, 39, 40, 41, 42, 43],
-    color: 'Branco / Verde Spark',
-    description: 'Treinos de ritmo/tempo run, mais leve que os modelos de treino diário.',
+    color: 'Branco / Verde',
+    description: 'Treinos de ritmo/tempo run e velocidade, mais leve que os modelos de treino diário.',
     image: '/images/adidas_adizero_boston.jpg',
-    technologies: ['Lightstrike Pro', 'ENERGYRODS', 'Continental Rubber']
+    technologies: ['Lightstrike Pro', 'EnergyRods']
   },
 
   // --- COMPETIÇÃO ---
@@ -163,52 +163,52 @@ export const products: Product[] = [
     name: 'Vaporfly 4',
     brand: 'Nike',
     category: 'COMPETIÇÃO',
-    categories: ['COMPETIÇÃO', 'VELOCIDADE'],
+    categories: ['COMPETIÇÃO'],
     price: 1099.90,
     weight: '195g',
     drop: '8mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
-    color: 'Vermelho Carmim / Neon',
-    description: 'Tênis de competição ou ritmo ultra rápido e leve.',
+    color: 'Vermelho / Branco',
+    description: 'Tênis de competição com resposta rápida e propulsão de placa de carbono.',
     image: '/images/nike_vaporfly_4_v2.png',
-    technologies: ['ZoomX Foam', 'Carbon Plate', 'Vaporweave Upper']
+    technologies: ['ZoomX', 'Placa Flyplate de carbono']
   },
   {
     id: 'adidas_adios_pro_4',
     name: 'Adios Pro 4',
     brand: 'Adidas',
     category: 'COMPETIÇÃO',
-    categories: ['COMPETIÇÃO', 'VELOCIDADE'],
+    categories: ['COMPETIÇÃO'],
     price: 1399.90,
     weight: '215g',
     drop: '6mm',
     sizes: [38, 39, 40, 41, 42, 43],
-    color: 'Azul Solar / Laranja',
-    description: 'Máquina de velocidade pronta para competir, cabedal confortável e espuma elástica em longas distâncias.',
+    color: 'Azul / Laranja',
+    description: 'Máquina de velocidade pronta para competir, cabedal confortável e espuma elástica em provas.',
     image: '/images/adidas_adios_pro_4.jpg',
-    technologies: ['Lightstrike Pro Foam', 'ENERGYRODS 2.0', 'Continental Rubber']
+    technologies: ['Lightstrike Pro', 'EnergyRods']
   },
   {
     id: 'nike_alphafly_3',
     name: 'Alphafly 3',
     brand: 'Nike',
     category: 'COMPETIÇÃO',
-    categories: ['COMPETIÇÃO', 'VELOCIDADE'],
+    categories: ['COMPETIÇÃO'],
     price: 2299.90,
     weight: '185g',
     drop: '8mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
-    color: 'Branco / Laranja Volt',
-    description: 'Sapato leve e extremamente rápido, com ZoomX, ZoomAIR e placa de carbono para longas distâncias.',
+    color: 'Branco / Laranja ',
+    description: 'Sapato leve e extremamente rápido com ZoomX, Air Zoom e placa de carbono para maratonas e competições.',
     image: '/images/nike_alphafly_3.jpg',
-    technologies: ['ZoomX Foam', 'Dual Zoom Air Units', 'Flyplate Carbon']
+    technologies: ['ZoomX', 'Air Zoom', 'Placa de carbono']
   },
   {
     id: 'saucony_endorphin_pro',
     name: 'Endorphin Pro',
     brand: 'Saucony',
     category: 'COMPETIÇÃO',
-    categories: ['COMPETIÇÃO', 'VELOCIDADE'],
+    categories: ['COMPETIÇÃO'],
     price: 1799.90,
     weight: '212g',
     drop: '8mm',
@@ -216,7 +216,7 @@ export const products: Product[] = [
     color: 'Branco / Azul',
     description: 'Placa de carbono full-length, foco em maratonas e provas de rua.',
     image: '/images/saucony_endorphin_pro.jpg',
-    technologies: ['PWRRUN PB', 'Carbon Fiber Plate', 'SPEEDROLL Technology']
+    technologies: ['PWRRUN PB', 'Placa de carbono']
   },
 
   // --- TRAIL ---
@@ -230,10 +230,10 @@ export const products: Product[] = [
     weight: '260g',
     drop: '8mm',
     sizes: [38, 39, 40, 41, 42, 43],
-    color: 'Verde Limão / Preto',
+    color: 'Branco / Laranja ',
     description: 'Modelo de competição da Adidas para trail longo.',
-    image: '/images/adidas_terrex_agravic.jpg',
-    technologies: ['Lightstrike Pro', 'TPE Energy Rods', 'Continental Rubber Trail']
+    image: '/images/adidas_terrex_agravic.png',
+    technologies: ['Lightstrike Pro', 'EnergyRods']
   },
   {
     id: 'salomon_speedcross',
@@ -248,22 +248,22 @@ export const products: Product[] = [
     color: 'Vermelho Corrida / Preto',
     description: 'Trail técnico, solado agressivo para terrenos irregulares e lama.',
     image: '/images/salomon_speedcross.jpg',
-    technologies: ['Contagrip TA', 'Quicklace', 'SensiFit']
+    technologies: ['Contagrip', 'Construção voltada a terreno técnico']
   },
   {
     id: 'nike_pegasus_trail',
     name: 'Pegasus Trail',
     brand: 'Nike',
     category: 'TRAIL',
-    categories: ['TRAIL', 'TREINO DIÁRIO'],
+    categories: ['TRAIL'],
     price: 899.90,
     weight: '285g',
     drop: '9mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
     color: 'Bege / Laranja',
-    description: 'Treino diário de trail, boa tração e estabilidade em trilhas leves/moderadas.',
+    description: 'Treino de trail com versatilidade híbrida para transição entre asfalto e terra.',
     image: '/images/nike_pegasus_trail.png',
-    technologies: ['React Foam', 'Generative Rub Outsole', 'GORE-TEX Layer']
+    technologies: ['Linha híbrida estrada/trilha']
   },
 
   // --- VELOCIDADE (Nacional) ---
@@ -277,9 +277,9 @@ export const products: Product[] = [
     weight: '225g',
     drop: '6mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
-    color: 'Branco / Vermelho Coral',
+    color: 'Bege ',
     description: 'O Corre Turbo é aquele parceiro ideal para os treinos mais intensos. Além de ser muito confortável, ele tem tudo que você precisa para elevar o seu desempenho e bater o seu recorde pessoal.',
     image: '/images/olympikus_corre_turbo.png',
-    technologies: ['Placa NT-X 2.0', 'Espuma Eleva Pro', 'Cabedal Oxitec Mesh']
+    technologies: ['Placa NT-X 2.0', 'Eleva Pro', 'Cabedal Oxitec']
   }
 ];
