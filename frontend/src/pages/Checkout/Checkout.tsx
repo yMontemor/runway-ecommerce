@@ -79,10 +79,7 @@ export default function Checkout() {
   const [selectedExchangeCouponId, setSelectedExchangeCouponId] = useState<string>('');
 
   const [prevCustomerId, setPrevCustomerId] = useState(activeCustomer.id);
-  const [selectedCardIds, setSelectedCardIds] = useState<string[]>(() => {
-    const pref = activeCustomer.cards.find(c => c.isPreferred) || activeCustomer.cards[0];
-    return pref ? [pref.id] : [];
-  });
+  const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [cardAmounts, setCardAmounts] = useState<Record<string, string>>({});
 
   // Modal de novo cartão no checkout
@@ -133,8 +130,7 @@ export default function Checkout() {
     setSelectedAddressId(newAddrId);
     setSelectedPromoCouponId('');
     setSelectedExchangeCouponId('');
-    const preferredCard = activeCustomer.cards.find(c => c.isPreferred) || activeCustomer.cards[0];
-    setSelectedCardIds(preferredCard ? [preferredCard.id] : []);
+    setSelectedCardIds([]);
     setCardAmounts({});
   }
 
@@ -176,7 +172,9 @@ export default function Checkout() {
   if (selectedCardIds !== prevCardIds || remainingToPay !== prevRemainingToPay) {
     setPrevCardIds(selectedCardIds);
     setPrevRemainingToPay(remainingToPay);
-    if (selectedCardIds.length === 1) {
+    if (selectedCardIds.length === 0) {
+      setCardAmounts({});
+    } else if (selectedCardIds.length === 1) {
       setCardAmounts({
         [selectedCardIds[0]]: remainingToPay.toFixed(2)
       });

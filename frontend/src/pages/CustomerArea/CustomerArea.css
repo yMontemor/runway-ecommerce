@@ -160,21 +160,23 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 1.25rem;
+  width: 100%;
 }
 
 .data-field {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.35rem;
 }
 
 .field-label {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
+  font-weight: 600;
   color: var(--color-text-secondary);
 }
 
 .field-val {
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   color: #ffffff;
   font-weight: 600;
 }
@@ -183,7 +185,57 @@
 .personal-data-form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.personal-data-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  width: 100%;
+}
+
+.personal-data-form .form-group label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #c0c0c0;
+}
+
+.personal-data-form .form-group input,
+.personal-data-form .form-group select {
+  background-color: #0b0b0b;
+  border: 1px solid #2a2a2a;
+  color: #ffffff;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  outline: none;
+  transition: all 0.15s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.personal-data-form .form-group input::placeholder {
+  color: #555555;
+  font-size: 0.82rem;
+}
+
+.personal-data-form .form-group input:focus,
+.personal-data-form .form-group select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(198, 255, 0, 0.12);
+  background-color: #101010;
+}
+
+.personal-data-form .form-group input.disabled-field,
+.personal-data-form .form-group input:disabled {
+  background-color: #070707 !important;
+  border-color: #1f1f1f !important;
+  color: #666666 !important;
+  cursor: not-allowed;
 }
 
 .form-actions-edit {
@@ -192,24 +244,6 @@
   gap: 0.75rem;
   border-top: 1px solid #1a1a1a;
   padding-top: 1rem;
-}
-
-.disabled-field {
-  background-color: #0b0b0b !important;
-  border: 1px solid var(--color-border) !important;
-  color: #555555 !important;
-  cursor: not-allowed;
-}
-
-.form-group select {
-  background-color: #050505;
-  border: 1px solid var(--color-border);
-  color: #ffffff;
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  outline: none;
-  cursor: pointer;
 }
 
 /* Endereços */
@@ -912,4 +946,278 @@
     gap: 0.75rem;
   }
 }
+
+/* --- ESTILOS DO MODAL DE TROCA MULTI-ITENS --- */
+.exchange-group-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin-bottom: 0.25rem;
+}
+
+.exchange-items-selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.exchange-item-card {
+  background-color: #0c0c0c;
+  border: 1px solid #222;
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.exchange-item-card:hover {
+  border-color: #333;
+  background-color: #111;
+}
+
+.exchange-item-card.selected {
+  border-color: rgba(198, 255, 0, 0.4);
+  background-color: rgba(198, 255, 0, 0.03);
+  box-shadow: 0 0 10px rgba(198, 255, 0, 0.05);
+}
+
+.exchange-item-main-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.exchange-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  flex: 1;
+  user-select: none;
+}
+
+.exchange-checkbox {
+  width: 18px !important;
+  height: 18px !important;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.exchange-item-thumb {
+  width: 44px;
+  height: 44px;
+  background-color: #1a1a1a;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid #282828;
+}
+
+.exchange-item-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.exchange-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.exchange-item-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.exchange-item-meta-tags {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.exchange-tag {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  background-color: #1a1a1a;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  border: 1px solid #282828;
+}
+
+.exchange-item-unit-price {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.exchange-item-unit-price .unit-label {
+  font-size: 0.7rem;
+  color: #777;
+  font-weight: normal;
+}
+
+.exchange-item-qty-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 0.4rem;
+  margin-top: 0.15rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+}
+
+.exchange-qty-selector-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.exchange-qty-label {
+  color: #bbb;
+  font-size: 0.75rem;
+}
+
+.exchange-qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  background-color: #161616;
+  border: 1px solid #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.exchange-qty-stepper .qty-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  width: 26px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.15s ease;
+}
+
+.exchange-qty-stepper .qty-btn:hover:not(:disabled) {
+  background-color: #2a2a2a;
+  color: var(--color-primary);
+}
+
+.exchange-qty-stepper .qty-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.exchange-qty-stepper .qty-value {
+  padding: 0 0.5rem;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--color-primary);
+}
+
+.qty-max-hint {
+  font-size: 0.7rem;
+  color: #777;
+  margin-left: 0.25rem;
+}
+
+.qty-single-tag {
+  font-size: 0.72rem;
+  color: var(--color-primary);
+  background-color: rgba(198, 255, 0, 0.08);
+  border: 1px solid rgba(198, 255, 0, 0.2);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.exchange-item-subtotal-box {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.exchange-item-subtotal-box .subtotal-label {
+  color: #888;
+}
+
+.exchange-item-subtotal-box .subtotal-val {
+  color: var(--color-primary);
+  font-weight: 800;
+}
+
+.exchange-item-retention-hint {
+  font-size: 0.72rem;
+  color: #888;
+  background-color: rgba(255, 255, 255, 0.02);
+  padding: 0.25rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.exchange-item-retention-hint strong {
+  color: #ccc;
+}
+
+.exchange-summary-banner {
+  background: linear-gradient(135deg, rgba(198, 255, 0, 0.08) 0%, rgba(20, 20, 20, 0.6) 100%);
+  border: 1px solid rgba(198, 255, 0, 0.3);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.exchange-summary-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.exchange-summary-info .summary-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.exchange-summary-info .summary-count {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+}
+
+.exchange-summary-total {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+}
+
+.exchange-summary-total .total-label {
+  font-size: 0.7rem;
+  color: #bbb;
+}
+
+.exchange-summary-total .total-val {
+  font-size: 1.05rem;
+  color: var(--color-primary);
+  font-weight: 900;
+}
+
 

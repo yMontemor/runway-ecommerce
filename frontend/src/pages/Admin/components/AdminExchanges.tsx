@@ -54,8 +54,8 @@ export default function AdminExchanges() {
               <th>Código Troca</th>
               <th>Pedido</th>
               <th>Cliente</th>
-              <th>Item Devolvido</th>
-              <th>Valor do Item</th>
+              <th>Itens Devolvidos</th>
+              <th>Valor da Troca</th>
               <th>Motivo</th>
               <th>Status</th>
               <th>Ações</th>
@@ -67,8 +67,29 @@ export default function AdminExchanges() {
                 <td><strong>{exc.id}</strong></td>
                 <td>{exc.orderId}</td>
                 <td>{exc.customerName}</td>
-                <td>{exc.item.productName} (Tam {exc.item.size})</td>
-                <td>{exc.item.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                <td>
+                  <div className="admin-exchange-items-col" style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    {exc.items && exc.items.length > 0 ? (
+                      exc.items.map((it, idx) => (
+                        <div key={idx} className="admin-exchange-item-row" style={{ fontSize: '0.82rem' }}>
+                          <strong style={{ color: '#fff' }}>{it.productName}</strong> <span style={{ color: '#aaa' }}>(Tam {it.size})</span>
+                          <span style={{ color: 'var(--color-primary)', marginLeft: '0.35rem', fontWeight: 600 }}>
+                            • {it.quantity} {it.quantity === 1 ? 'un.' : 'un.'}
+                          </span>
+                        </div>
+                      ))
+                    ) : exc.item ? (
+                      <div style={{ fontSize: '0.82rem' }}>
+                        <strong style={{ color: '#fff' }}>{exc.item.productName}</strong> (Tam {exc.item.size}) • 1 un.
+                      </div>
+                    ) : null}
+                  </div>
+                </td>
+                <td>
+                  <strong style={{ color: '#fff' }}>
+                    {(exc.totalValue ?? (exc.items ? exc.items.reduce((s, it) => s + it.price * it.quantity, 0) : exc.item?.price || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </strong>
+                </td>
                 <td><span className="exc-reason-text">{exc.reason}</span></td>
                 <td>
                   <span className={`status-badge ${exc.status.replace(' ', '_').toLowerCase()}`}>
@@ -149,7 +170,7 @@ export default function AdminExchanges() {
       >
         <div className="inactive-confirm-modal">
           <p className="modal-description-txt">
-            O item devolvido está em perfeitas condições? Deseja retornar o produto ao estoque disponível para venda?
+            Os itens e quantidades devolvidos estão em perfeitas condições? Deseja retornar os produtos ao estoque disponível para venda?
           </p>
           <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1.25rem' }}>
             <button 

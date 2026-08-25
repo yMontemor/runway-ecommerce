@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { Customer, CartItem, Order, Coupon, Exchange, Address, CreditCard } from '../types';
+import type { Customer, CartItem, Order, Coupon, Exchange, ExchangeItem, Address, CreditCard } from '../types';
 import { mockCustomers } from '../data/customers';
 import { mockCoupons } from '../data/coupons';
 import { products } from '../data/products';
@@ -35,7 +35,11 @@ interface AppContextType {
   ) => Order;
   cancelOrder: (orderId: string) => void;
   confirmOrderReceipt: (orderId: string) => void;
-  requestExchange: (orderId: string, productId: string, size: number, reason: string) => void;
+  requestExchange: (
+    orderId: string,
+    itemsToExchange: { productId: string; size: number; quantity: number }[],
+    reason: string
+  ) => void;
   updateExchangeStatus: (exchangeId: string, status: Exchange['status'], returnToStockSimulated?: boolean) => void;
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
   updateCustomerProfile: (updatedCustomer: Customer) => void;
@@ -139,6 +143,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
       discountExchange: 0,
       discount: 0,
       total: 1049.90
+    },
+    {
+      id: 'RW-2026-004',
+      date: '22/08/2026',
+      customerId: 'ana_carolina',
+      status: 'ENTREGUE',
+      clientConfirmedReceipt: true,
+      items: [
+        {
+          product: products.find(p => p.id === 'olympikus_corre_turbo') || products[0],
+          size: 39,
+          quantity: 2
+        },
+        {
+          product: products.find(p => p.id === 'saucony_triumph_23') || products[1],
+          size: 40,
+          quantity: 1
+        },
+        {
+          product: products.find(p => p.id === 'olympikus_corre_turbo') || products[0],
+          size: 44,
+          quantity: 1
+        }
+      ],
+      shippingAddress: mockCustomers[0].addresses[0],
+      paymentMethods: [{ cardId: 'ana_card_1', amount: 3949.87 }],
+      couponsUsed: [],
+      subtotal: 3949.87,
+      shippingCost: 0,
+      discountPromo: 0,
+      discountExchange: 0,
+      discount: 0,
+      total: 3949.87
     }
   ]);
 
@@ -358,12 +395,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // Solicitar Troca
-  const requestExchange = (orderId: string, productId: string, size: number, reason: string) => {
+  const requestExchange = (
+    orderId: string,
+    itemsToExchange: { productId: string; size: number; quantity: number }[],
+    reason: string
+  ) => {
     const order = orders.find(o => o.id === orderId);
-    if (!order) return;
+    if (!order || itemsToExchange.length === 0) return;
 
-    const item = order.items.find(i => i.product.id === productId && i.size === size);
-    if (!item) return;
+    const matchedItems: ExchangeItem[] = [];
+    let totalExchangeValue = 0;
+
+    for (const req of itemsToExchange) {
+      const orderItem = order.items.find(i => i.product.id === req.productId && i.size === req.size);
+      if (orderItem) {
+        const validQty = Math.max(1, Math.min(req.quantity, orderItem.quantity));
+        matchedItems.push({
+          productId: orderItem.product.id,
+          productName: orderItem.product.name,
+          size: orderItem.size,
+          price: orderItem.product.price,
+          quantity: validQty
+        });
+        totalExchangeValue += orderItem.product.price * validQty;
+      }
+    }
+
+    if (matchedItems.length === 0) return;
 
     const customerObj = customers.find(c => c.id === order.customerId);
 
@@ -373,12 +431,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       orderId,
       customerId: order.customerId,
       customerName: customerObj ? customerObj.name : activeCustomer.name,
-      item: {
-        productId,
-        productName: item.product.name,
-        size,
-        price: item.product.price
-      },
+      items: matchedItems,
+      item: matchedItems[0], // retrocompatibilidade
+      totalValue: parseFloat(totalExchangeValue.toFixed(2)),
       reason,
       date: new Date().toLocaleDateString('pt-BR'),
       status: 'TROCA SOLICITADA'
@@ -386,15 +441,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     setExchanges(prev => [newExchange, ...prev]);
     
-    // Atualizar o status de troca do item no próprio pedido
+    // Atualizar o status e itens de troca no próprio pedido
     setOrders(prev =>
       prev.map(o =>
         o.id === orderId
           ? {
               ...o,
               exchangeStatus: 'TROCA SOLICITADA',
-              exchangeItemId: productId,
-              exchangeItemSize: size,
+              exchangeItems: matchedItems,
+              exchangeItemId: matchedItems[0]?.productId,
+              exchangeItemSize: matchedItems[0]?.size,
               exchangeReason: reason
             }
           : o
@@ -405,20 +461,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Fluxo de Troca (Administrador / Cliente)
   const updateExchangeStatus = (exchangeId: string, status: Exchange['status'], returnToStockSimulated: boolean = false) => {
     if (returnToStockSimulated) {
-      console.log(`[Reativo Simulação] Item da troca ${exchangeId} retornado ao estoque.`);
+      console.log(`[Reativo Simulação] Itens da troca ${exchangeId} retornados ao estoque.`);
     }
 
     const exchange = exchanges.find(exc => exc.id === exchangeId);
 
-    // Se for finalizado como TROCA PROCESSADA, gera cupom automaticamente correspondente ao valor do item
+    // Se for finalizado como TROCA PROCESSADA, gera cupom automaticamente correspondente ao valor total dos itens devolvidos
     let couponCode: string | undefined;
     if (exchange && status === 'TROCA PROCESSADA') {
       couponCode = `TROCA-RW-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const totalAmount = exchange.totalValue ?? (
+        exchange.items && exchange.items.length > 0
+          ? exchange.items.reduce((sum, it) => sum + it.price * it.quantity, 0)
+          : (exchange.item ? exchange.item.price : 0)
+      );
+
       const newCoupon: Coupon = {
         id: `coupon_${Math.random().toString(36).substr(2, 9)}`,
         code: couponCode,
         type: 'exchange',
-        value: exchange.item.price, // Valor do item devolvido
+        value: parseFloat(totalAmount.toFixed(2)),
         description: `Crédito de troca do pedido ${exchange.orderId}`,
         expirationDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'), // 3 meses
         customerId: exchange.customerId

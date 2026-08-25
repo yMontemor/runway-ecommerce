@@ -78,8 +78,9 @@ export interface Order {
   cardRefundedAmount?: number;
   exchangeStatus?: 'TROCA SOLICITADA' | 'TROCA ACEITA' | 'ITEM ENVIADO' | 'ITEM RECEBIDO' | 'TROCA PROCESSADA' | 'TROCA NEGADA';
   exchangeReason?: string;
-  exchangeItemId?: string; // product id being returned
-  exchangeItemSize?: number; // size of product being returned
+  exchangeItemId?: string; // product id being returned (retrocompatibilidade)
+  exchangeItemSize?: number; // size of product being returned (retrocompatibilidade)
+  exchangeItems?: ExchangeItem[];
 }
 
 export interface Customer {
@@ -95,17 +96,22 @@ export interface Customer {
   cards: CreditCard[];
 }
 
+export interface ExchangeItem {
+  productId: string;
+  productName: string;
+  size: number;
+  price: number;
+  quantity: number;
+}
+
 export interface Exchange {
   id: string;
   orderId: string;
   customerId: string;
   customerName: string;
-  item: {
-    productId: string;
-    productName: string;
-    size: number;
-    price: number;
-  };
+  items: ExchangeItem[];
+  item?: ExchangeItem; // retrocompatibilidade
+  totalValue: number;
   reason: string;
   date: string;
   status: 'TROCA SOLICITADA' | 'TROCA ACEITA' | 'ITEM ENVIADO' | 'ITEM RECEBIDO' | 'TROCA PROCESSADA' | 'TROCA NEGADA';

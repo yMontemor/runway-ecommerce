@@ -147,25 +147,51 @@ export default function CustomerArea() {
   };
 
   // --- CONTROLE DE TROCA ---
+  interface SelectedExchangeItemState {
+    productId: string;
+    size: number;
+    quantity: number;
+  }
+
   const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
   const [selectedOrderForExc, setSelectedOrderForExc] = useState<Order | null>(null);
-  const [selectedExcProductId, setSelectedExcProductId] = useState('');
-  const [selectedExcProductSize, setSelectedExcProductSize] = useState<number | null>(null);
+  const [selectedExcItems, setSelectedExcItems] = useState<SelectedExchangeItemState[]>([]);
   const [exchangeReason, setExchangeReason] = useState('');
 
   const handleOpenExchange = (order: Order) => {
     setSelectedOrderForExc(order);
-    setSelectedExcProductId(order.items[0]?.product.id || '');
-    setSelectedExcProductSize(order.items[0]?.size || null);
+    setSelectedExcItems([]);
     setExchangeReason('');
     setIsExchangeModalOpen(true);
   };
 
+  const handleToggleItemSelection = (productId: string, size: number, maxQty: number) => {
+    setSelectedExcItems(prev => {
+      const exists = prev.find(i => i.productId === productId && i.size === size);
+      if (exists) {
+        return prev.filter(i => !(i.productId === productId && i.size === size));
+      } else {
+        return [...prev, { productId, size, quantity: Math.min(1, maxQty) }];
+      }
+    });
+  };
+
+  const handleUpdateItemQuantity = (productId: string, size: number, newQty: number, maxQty: number) => {
+    const clampedQty = Math.max(1, Math.min(newQty, maxQty));
+    setSelectedExcItems(prev =>
+      prev.map(item =>
+        item.productId === productId && item.size === size
+          ? { ...item, quantity: clampedQty }
+          : item
+      )
+    );
+  };
+
   const handleConfirmExchangeRequest = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedOrderForExc || !selectedExcProductId || selectedExcProductSize === null || !exchangeReason) return;
+    if (!selectedOrderForExc || selectedExcItems.length === 0 || !exchangeReason.trim()) return;
     
-    requestExchange(selectedOrderForExc.id, selectedExcProductId, selectedExcProductSize, exchangeReason);
+    requestExchange(selectedOrderForExc.id, selectedExcItems, exchangeReason.trim());
     setIsExchangeModalOpen(false);
   };
 
@@ -293,8 +319,8 @@ export default function CustomerArea() {
                 </div>
               ) : (
                 <form onSubmit={handleSaveProfile} className="personal-data-form">
-                  <div className="form-row">
-                    <div className="form-group flex-2">
+                  <div className="personal-data-grid">
+                    <div className="form-group">
                       <label htmlFor="edit-name">Nome Completo</label>
                       <input
                         type="text"
@@ -304,13 +330,6 @@ export default function CustomerArea() {
                         required
                       />
                     </div>
-                    <div className="form-group flex-1">
-                      <label>CPF (Apenas Leitura)</label>
-                      <input type="text" value={activeCustomer.cpf} disabled className="disabled-field" />
-                    </div>
-                  </div>
-
-                  <div className="form-row">
                     <div className="form-group">
                       <label htmlFor="edit-email">E-mail</label>
                       <input
@@ -322,6 +341,10 @@ export default function CustomerArea() {
                       />
                     </div>
                     <div className="form-group">
+                      <label>CPF (Apenas Leitura)</label>
+                      <input type="text" value={activeCustomer.cpf} disabled className="disabled-field" />
+                    </div>
+                    <div className="form-group">
                       <label htmlFor="edit-phone">Telefone</label>
                       <input
                         type="text"
@@ -331,9 +354,6 @@ export default function CustomerArea() {
                         required
                       />
                     </div>
-                  </div>
-
-                  <div className="form-row">
                     <div className="form-group">
                       <label htmlFor="edit-gender">Gênero</label>
                       <select
@@ -362,12 +382,21 @@ export default function CustomerArea() {
                   <div className="form-actions-edit">
                     <button 
                       type="button" 
-                      onClick={() => setIsEditingProfile(false)} 
-                      className="btn btn-secondary"
+                      onClick={() => {
+                        setProfileForm({
+                          name: activeCustomer.name,
+                          email: activeCustomer.email,
+                          phone: activeCustomer.phone,
+                          gender: activeCustomer.gender,
+                          birthDate: activeCustomer.birthDate
+                        });
+                        setIsEditingProfile(false);
+                      }} 
+                      className="btn btn-secondary btn-small"
                     >
                       CANCELAR
                     </button>
-                    <button type="submit" className="btn btn-primary">
+                    <button type="submit" className="btn btn-primary btn-small">
                       SALVAR ALTERAÇÕES
                     </button>
                   </div>
@@ -903,50 +932,192 @@ export default function CustomerArea() {
           {selectedOrderForExc && (
             <>
               <div className="form-group">
-                <label htmlFor="exc-product">Selecione o Item para Trocar</label>
-                <select
-                  id="exc-product"
-                  value={selectedExcProductId}
-                  onChange={e => {
-                    const id = e.target.value;
-                    setSelectedExcProductId(id);
-                    const it = selectedOrderForExc.items.find(x => x.product.id === id);
-                    setSelectedExcProductSize(it ? it.size : null);
-                  }}
-                >
-                  {selectedOrderForExc.items.map(item => (
-                    <option key={`${item.product.id}-${item.size}`} value={item.product.id}>
-                      {item.product.name} (Tamanho {item.size})
-                    </option>
-                  ))}
-                </select>
+                <label className="exchange-group-title">
+                  Selecione os itens que deseja trocar:
+                </label>
+                <div className="exchange-items-selection-list">
+                  {selectedOrderForExc.items.map((item, idx) => {
+                    const isChecked = selectedExcItems.some(
+                      x => x.productId === item.product.id && x.size === item.size
+                    );
+                    const selectedItemState = selectedExcItems.find(
+                      x => x.productId === item.product.id && x.size === item.size
+                    );
+                    const selectedQty = selectedItemState?.quantity || 1;
+                    const remainingQty = item.quantity - (isChecked ? selectedQty : 0);
+
+                    return (
+                      <div
+                        key={`${item.product.id}-${item.size}-${idx}`}
+                        className={`exchange-item-card ${isChecked ? 'selected' : ''}`}
+                      >
+                        <div className="exchange-item-main-row">
+                          <label className="exchange-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() =>
+                                handleToggleItemSelection(item.product.id, item.size, item.quantity)
+                              }
+                              className="exchange-checkbox"
+                            />
+                            <div className="exchange-item-thumb">
+                              <img src={item.product.image} alt={item.product.name} />
+                            </div>
+                            <div className="exchange-item-info">
+                              <span className="exchange-item-name">
+                                {item.product.brand} {item.product.name}
+                              </span>
+                              <div className="exchange-item-meta-tags">
+                                <span className="exchange-tag">Tamanho {item.size}</span>
+                                <span className="exchange-tag">Comprado: {item.quantity} un.</span>
+                              </div>
+                            </div>
+                          </label>
+
+                          <div className="exchange-item-unit-price">
+                            <span>
+                              {item.product.price.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL'
+                              })}
+                              <small className="unit-label"> /un.</small>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Detalhe de quantidade quando selecionado */}
+                        {isChecked && (
+                          <div className="exchange-item-qty-row">
+                            <div className="exchange-qty-selector-container">
+                              <span className="exchange-qty-label">Quantidade para troca:</span>
+                              {item.quantity > 1 ? (
+                                <div className="exchange-qty-stepper">
+                                  <button
+                                    type="button"
+                                    className="qty-btn"
+                                    disabled={selectedQty <= 1}
+                                    onClick={() =>
+                                      handleUpdateItemQuantity(
+                                        item.product.id,
+                                        item.size,
+                                        selectedQty - 1,
+                                        item.quantity
+                                      )
+                                    }
+                                  >
+                                    -
+                                  </button>
+                                  <span className="qty-value">{selectedQty}</span>
+                                  <button
+                                    type="button"
+                                    className="qty-btn"
+                                    disabled={selectedQty >= item.quantity}
+                                    onClick={() =>
+                                      handleUpdateItemQuantity(
+                                        item.product.id,
+                                        item.size,
+                                        selectedQty + 1,
+                                        item.quantity
+                                      )
+                                    }
+                                  >
+                                    +
+                                  </button>
+                                  <span className="qty-max-hint">(Máx: {item.quantity})</span>
+                                </div>
+                              ) : (
+                                <span className="qty-single-tag">1 unidade</span>
+                              )}
+                            </div>
+
+                            <div className="exchange-item-subtotal-box">
+                              <span className="subtotal-label">Subtotal do item:</span>
+                              <strong className="subtotal-val">
+                                {(item.product.price * selectedQty).toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL'
+                                })}
+                              </strong>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Informação sobre quantidade restante que fica com o cliente */}
+                        {isChecked && item.quantity > 1 && (
+                          <div className="exchange-item-retention-hint">
+                            {remainingQty > 0 ? (
+                              <span>
+                                ℹ️ <strong>{remainingQty} {remainingQty === 1 ? 'unidade' : 'unidades'}</strong> deste item permanecerá(ão) normalmente com você.
+                              </span>
+                            ) : (
+                              <span>ℹ️ Todas as {item.quantity} unidades deste item serão trocadas.</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="form-group">
-                <label htmlFor="exc-reason">Motivo da Troca</label>
+              {/* Resumo da Troca */}
+              {selectedExcItems.length > 0 && (
+                <div className="exchange-summary-banner">
+                  <div className="exchange-summary-info">
+                    <span className="summary-title">Resumo da Solicitação</span>
+                    <span className="summary-count">
+                      {selectedExcItems.reduce((sum, i) => sum + i.quantity, 0)}{' '}
+                      {selectedExcItems.reduce((sum, i) => sum + i.quantity, 0) === 1
+                        ? 'unidade selecionada'
+                        : 'unidades selecionadas'}{' '}
+                      ({selectedExcItems.length}{' '}
+                      {selectedExcItems.length === 1 ? 'item' : 'itens'})
+                    </span>
+                  </div>
+                  <div className="exchange-summary-total">
+                    <span className="total-label">Crédito Estimado:</span>
+                    <strong className="total-val">
+                      {selectedExcItems
+                        .reduce((sum, req) => {
+                          const it = selectedOrderForExc.items.find(
+                            i => i.product.id === req.productId && i.size === req.size
+                          );
+                          return sum + (it ? it.product.price * req.quantity : 0);
+                        }, 0)
+                        .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </strong>
+                  </div>
+                </div>
+              )}
+
+              <div className="form-group" style={{ marginTop: '0.5rem' }}>
+                <label htmlFor="exc-reason">Motivo da Troca *</label>
                 <textarea
                   id="exc-reason"
-                  rows={4}
+                  rows={3}
                   value={exchangeReason}
                   onChange={e => setExchangeReason(e.target.value)}
                   placeholder="Por favor, descreva o motivo da troca (ex: ficou apertado, defeito...)"
-                  style={{
-                    backgroundColor: '#050505',
-                    border: '1px solid var(--color-border)',
-                    color: '#fff',
-                    padding: '0.5rem',
-                    borderRadius: '6px',
-                    fontFamily: 'inherit',
-                    fontSize: '0.85rem',
-                    outline: 'none'
-                  }}
                   required
                 />
               </div>
 
               <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setIsExchangeModalOpen(false)}>CANCELAR</button>
-                <button type="submit" className="btn btn-primary">SOLICITAR DEVOLUÇÃO</button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setIsExchangeModalOpen(false)}
+                >
+                  CANCELAR
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={selectedExcItems.length === 0 || !exchangeReason.trim()}
+                >
+                  SOLICITAR TROCA
+                </button>
               </div>
             </>
           )}
@@ -986,20 +1157,40 @@ export default function CustomerArea() {
             <div className="order-details-section">
               <h4 className="details-sec-title">Itens Comprados</h4>
               <div className="details-items-list">
-                {selectedOrderForDetails.items.map(item => (
-                  <div key={`${item.product.id}-${item.size}`} className="details-item-row">
-                    <div className="details-item-img-wrapper">
-                      <img src={item.product.image} alt={item.product.name} className="details-item-img" />
+                {selectedOrderForDetails.items.map(item => {
+                  const exchangedItem = selectedOrderForDetails.exchangeItems?.find(
+                    ex => ex.productId === item.product.id && ex.size === item.size
+                  );
+                  const exchangedQty = exchangedItem?.quantity || 0;
+                  const keptQty = item.quantity - exchangedQty;
+
+                  return (
+                    <div key={`${item.product.id}-${item.size}`} className="details-item-row">
+                      <div className="details-item-img-wrapper">
+                        <img src={item.product.image} alt={item.product.name} className="details-item-img" />
+                      </div>
+                      <div className="details-item-info">
+                        <span className="details-item-name">{item.product.brand} - {item.product.name}</span>
+                        <span className="details-item-meta">Tamanho: {item.size} | Qtd Comprada: {item.quantity}</span>
+                        {exchangedQty > 0 && (
+                          <div className="details-item-exchange-breakdown" style={{ marginTop: '0.35rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span className="item-badge-exchange" style={{ fontSize: '0.72rem', color: 'var(--color-primary)', backgroundColor: 'rgba(198, 255, 0, 0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(198, 255, 0, 0.25)' }}>
+                              🔄 {exchangedQty} {exchangedQty === 1 ? 'unidade em troca' : 'unidades em troca'}
+                            </span>
+                            {keptQty > 0 && (
+                              <span className="item-badge-kept" style={{ fontSize: '0.72rem', color: '#aaa', backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                ✓ {keptQty} {keptQty === 1 ? 'unidade permanece com você' : 'unidades permanecem com você'}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="details-item-price">
+                        <span>{(item.product.price * item.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                      </div>
                     </div>
-                    <div className="details-item-info">
-                      <span className="details-item-name">{item.product.brand} - {item.product.name}</span>
-                      <span className="details-item-meta">Tamanho: {item.size} | Qtd: {item.quantity}</span>
-                    </div>
-                    <div className="details-item-price">
-                      <span>{(item.product.price * item.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -1125,6 +1316,32 @@ export default function CustomerArea() {
                     </div>
                   )}
                 </div>
+
+                {selectedOrderForDetails.exchangeItems && selectedOrderForDetails.exchangeItems.length > 0 && (
+                  <div className="details-exchange-items-box" style={{ marginTop: '0.85rem', backgroundColor: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '6px', padding: '0.75rem' }}>
+                    <span className="info-label" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 700, color: '#e0e0e0' }}>
+                      Itens em processo de troca:
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                      {selectedOrderForDetails.exchangeItems.map((exItem, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', paddingBottom: '0.35rem', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                          <div>
+                            <strong style={{ color: '#fff' }}>{exItem.productName}</strong>
+                            <span style={{ color: 'var(--color-text-secondary)', marginLeft: '0.5rem' }}>
+                              Tam {exItem.size} • <span style={{ color: 'var(--color-primary)' }}>{exItem.quantity} {exItem.quantity === 1 ? 'unidade' : 'unidades'}</span>
+                            </span>
+                          </div>
+                          <div style={{ fontWeight: 700, color: '#fff' }}>
+                            {(exItem.price * exItem.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: '#888', margin: '0.5rem 0 0 0' }}>
+                      ✓ Itens e unidades não listados acima continuam normalmente sob sua posse.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
