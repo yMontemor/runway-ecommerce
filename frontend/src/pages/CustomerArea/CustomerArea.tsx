@@ -8,11 +8,11 @@ import './CustomerArea.css';
 export default function CustomerArea() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  
-  const { 
-    activeCustomer, 
-    orders, 
-    coupons, 
+
+  const {
+    activeCustomer,
+    orders,
+    coupons,
     exchanges,
     updateCustomerStatus,
     cancelOrder,
@@ -230,7 +230,7 @@ export default function CustomerArea() {
   const handleConfirmExchangeRequest = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrderForExc || selectedExcItems.length === 0 || !exchangeReason.trim()) return;
-    
+
     requestExchange(selectedOrderForExc.id, selectedExcItems, exchangeReason.trim());
     setIsExchangeModalOpen(false);
   };
@@ -251,7 +251,7 @@ export default function CustomerArea() {
   return (
     <div className="customer-area-page">
       <div className="customer-container">
-        
+
         {/* Banner do Perfil do Cliente */}
         <div className="profile-header-banner">
           <div className="profile-avatar">
@@ -267,16 +267,16 @@ export default function CustomerArea() {
 
           <div className="profile-header-action">
             {activeCustomer.status === 'ATIVO' ? (
-              <button 
-                onClick={() => setIsInactivateModalOpen(true)} 
+              <button
+                onClick={() => setIsInactivateModalOpen(true)}
                 className="btn btn-secondary btn-inactivate"
                 type="button"
               >
                 INATIVAR MEU CADASTRO
               </button>
             ) : (
-              <button 
-                onClick={() => setIsReactivateModalOpen(true)} 
+              <button
+                onClick={() => setIsReactivateModalOpen(true)}
                 className="btn btn-primary btn-reactivate"
                 type="button"
               >
@@ -288,22 +288,22 @@ export default function CustomerArea() {
 
         {/* Abas */}
         <div className="profile-tabs-bar">
-          <button 
-            onClick={() => handleTabChange('perfil')} 
+          <button
+            onClick={() => handleTabChange('perfil')}
             className={`profile-tab-btn ${activeTab === 'perfil' ? 'active' : ''}`}
             type="button"
           >
             PERFIL
           </button>
-          <button 
-            onClick={() => handleTabChange('pedidos')} 
+          <button
+            onClick={() => handleTabChange('pedidos')}
             className={`profile-tab-btn ${activeTab === 'pedidos' ? 'active' : ''}`}
             type="button"
           >
             PEDIDOS
           </button>
-          <button 
-            onClick={() => handleTabChange('cupons')} 
+          <button
+            onClick={() => handleTabChange('cupons')}
             className={`profile-tab-btn ${activeTab === 'cupons' ? 'active' : ''}`}
             type="button"
           >
@@ -314,14 +314,14 @@ export default function CustomerArea() {
         {/* ================= ABA 1: PERFIL ================= */}
         {activeTab === 'perfil' && (
           <div className="tab-content-wrapper">
-            
+
             {/* Dados Pessoais */}
             <div className="profile-card-section">
               <div className="section-card-header">
                 <h3 className="section-card-title">Dados Pessoais</h3>
                 {!isEditingProfile && (
-                  <button 
-                    onClick={() => setIsEditingProfile(true)} 
+                  <button
+                    onClick={() => setIsEditingProfile(true)}
                     className="btn btn-secondary btn-small"
                     type="button"
                   >
@@ -420,8 +420,8 @@ export default function CustomerArea() {
                   </div>
 
                   <div className="form-actions-edit">
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       onClick={() => {
                         setProfileForm({
                           name: activeCustomer.name,
@@ -431,7 +431,7 @@ export default function CustomerArea() {
                           birthDate: activeCustomer.birthDate
                         });
                         setIsEditingProfile(false);
-                      }} 
+                      }}
                       className="btn btn-secondary btn-small"
                     >
                       CANCELAR
@@ -448,8 +448,8 @@ export default function CustomerArea() {
             <div className="profile-card-section">
               <div className="section-card-header">
                 <h3 className="section-card-title">Meus Endereços</h3>
-                <button 
-                  onClick={handleOpenAddAddr} 
+                <button
+                  onClick={handleOpenAddAddr}
                   className="btn btn-secondary btn-small"
                   type="button"
                 >
@@ -462,9 +462,9 @@ export default function CustomerArea() {
                   <div key={addr.id} className="profile-address-card">
                     <div className="addr-card-header">
                       <span className="profile-addr-label">{addr.label}</span>
-                      <button 
-                        type="button" 
-                        onClick={() => handleOpenEditAddr(addr)} 
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditAddr(addr)}
                         className="btn-edit-link"
                       >
                         Editar
@@ -482,8 +482,8 @@ export default function CustomerArea() {
             <div className="profile-card-section">
               <div className="section-card-header">
                 <h3 className="section-card-title">Cartões de Crédito</h3>
-                <button 
-                  onClick={handleOpenAddCard} 
+                <button
+                  onClick={handleOpenAddCard}
                   className="btn btn-secondary btn-small"
                   type="button"
                 >
@@ -503,24 +503,24 @@ export default function CustomerArea() {
                       </div>
 
                       <div className="card-row-actions">
-                        <button 
-                          onClick={() => handleOpenEditCard(card)} 
+                        <button
+                          onClick={() => handleOpenEditCard(card)}
                           className="btn-text-action"
                           type="button"
                         >
                           Editar
                         </button>
                         {!card.isPreferred && (
-                          <button 
-                            onClick={() => setCardAsPreferred(activeCustomer.id, card.id)} 
+                          <button
+                            onClick={() => setCardAsPreferred(activeCustomer.id, card.id)}
                             className="btn-text-action"
                             type="button"
                           >
                             Tornar preferencial
                           </button>
                         )}
-                        <button 
-                          onClick={() => setCardToRemoveId(card.id)} 
+                        <button
+                          onClick={() => setCardToRemoveId(card.id)}
                           className="btn-text-action remove-action"
                           type="button"
                         >
@@ -542,7 +542,7 @@ export default function CustomerArea() {
         {activeTab === 'pedidos' && (
           <div className="tab-content-wrapper">
             <h3 className="tab-section-title">Histórico de Pedidos</h3>
-            
+
             {customerOrders.length > 0 ? (
               <div className="profile-orders-list">
                 {customerOrders.map(order => {
@@ -582,10 +582,10 @@ export default function CustomerArea() {
                           <div className="order-exchange-status-box">
                             <span className="exc-tag-label">Troca:</span>
                             <span className="exc-tag-val">{order.exchangeStatus}</span>
-                            
+
                             {/* Se aceita, cliente pode despachar */}
                             {order.exchangeStatus === 'TROCA ACEITA' && (
-                              <button 
+                              <button
                                 onClick={() => {
                                   const exc = exchanges.find(e => e.orderId === order.id);
                                   if (exc) {
@@ -625,8 +625,8 @@ export default function CustomerArea() {
                         )}
 
                         <div className="order-card-actions">
-                          <button 
-                            onClick={() => handleOpenOrderDetails(order)} 
+                          <button
+                            onClick={() => handleOpenOrderDetails(order)}
                             className="btn btn-secondary btn-small"
                             type="button"
                           >
@@ -635,8 +635,8 @@ export default function CustomerArea() {
 
                           {/* Cancelar em Aberto */}
                           {isAberto && (
-                            <button 
-                              onClick={() => cancelOrder(order.id)} 
+                            <button
+                              onClick={() => cancelOrder(order.id)}
                               className="btn btn-secondary btn-danger-border btn-small"
                               type="button"
                             >
@@ -657,8 +657,8 @@ export default function CustomerArea() {
 
                           {/* Solicitar Troca se entregue e com recebimento confirmado */}
                           {isEntregue && order.clientConfirmedReceipt && !hasExchange && (
-                            <button 
-                              onClick={() => handleOpenExchange(order)} 
+                            <button
+                              onClick={() => handleOpenExchange(order)}
                               className="btn btn-primary btn-small"
                               type="button"
                             >
@@ -681,7 +681,7 @@ export default function CustomerArea() {
         {activeTab === 'cupons' && (
           <div className="tab-content-wrapper">
             <h3 className="tab-section-title">Meus Cupons</h3>
-            
+
             {customerCoupons.length > 0 ? (
               <div className="profile-coupons-grid">
                 {customerCoupons.map(coupon => (
@@ -717,11 +717,11 @@ export default function CustomerArea() {
           </p>
           <div className="modal-actions">
             <button onClick={() => setIsInactivateModalOpen(false)} className="btn btn-secondary">CANCELAR</button>
-            <button 
+            <button
               onClick={() => {
                 updateCustomerStatus(activeCustomer.id, 'INATIVO');
                 setIsInactivateModalOpen(false);
-              }} 
+              }}
               className="btn btn-primary"
             >
               CONFIRMAR INATIVAÇÃO
@@ -742,11 +742,11 @@ export default function CustomerArea() {
           </p>
           <div className="modal-actions">
             <button onClick={() => setIsReactivateModalOpen(false)} className="btn btn-secondary">CANCELAR</button>
-            <button 
+            <button
               onClick={() => {
                 updateCustomerStatus(activeCustomer.id, 'ATIVO');
                 setIsReactivateModalOpen(false);
-              }} 
+              }}
               className="btn btn-primary"
             >
               CONFIRMAR REATIVAÇÃO
@@ -767,13 +767,13 @@ export default function CustomerArea() {
           </p>
           <div className="modal-actions">
             <button onClick={() => setCardToRemoveId(null)} className="btn btn-secondary">CANCELAR</button>
-            <button 
+            <button
               onClick={() => {
                 if (cardToRemoveId) {
                   removeCustomerCard(activeCustomer.id, cardToRemoveId);
                 }
                 setCardToRemoveId(null);
-              }} 
+              }}
               className="btn btn-primary"
             >
               EXCLUIR CARTÃO
@@ -855,9 +855,9 @@ export default function CustomerArea() {
           </label>
 
           <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
+            <button
+              type="button"
+              className="btn btn-secondary"
               onClick={() => {
                 setIsCardModalOpen(false);
                 setEditingCard(null);
@@ -1197,7 +1197,7 @@ export default function CustomerArea() {
       >
         {selectedOrderForDetails && (
           <div className="order-details-modal-content">
-            
+
             <div className="order-details-section">
               <h4 className="details-sec-title">Informações Gerais</h4>
               <div className="details-grid-2">
@@ -1408,9 +1408,9 @@ export default function CustomerArea() {
             )}
 
             <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1.5rem' }}>
-              <button 
-                type="button" 
-                className="btn btn-primary" 
+              <button
+                type="button"
+                className="btn btn-primary"
                 onClick={() => {
                   setIsOrderDetailsModalOpen(false);
                   setSelectedOrderForDetails(null);
