@@ -95,11 +95,7 @@ export default function AdminAnalytics() {
     return { category: cat, points };
   });
 
-  // Somatório Total do Período Filtrado (representa o acumulado das categorias, com sobreposição)
-  // Como um tênis pode pertencer a mais de uma categoria, se houver vendas de um produto multicategoria,
-  // a venda será exibida em ambas as categorias quando analisadas no gráfico.
-  // Somar esses valores diretamente para obter o faturamento total geraria dupla contagem (double counting).
-  // O faturamento real do período expurga essa sobreposição.
+  // Somatório Total do Volume de Vendas no Período Filtrado
   const totalSales = mockAnalyticsData
     .filter(d => {
       const mIdx = MONTHS.findIndex(m => m.id === d.date);
@@ -365,19 +361,9 @@ export default function AdminAnalytics() {
 
           {/* Sumário / Totalizador */}
           <div className="analytics-summary-card">
-            <span className="summary-title-small">Volume Financeiro Acumulado das Categorias:</span>
+            <span className="summary-title-small">Volume Financeiro de Vendas no Período:</span>
             <div className="summary-value-big">
               {totalSales.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-            </div>
-
-            {/* Faturamento Real do Período (sem dupla contagem de produtos multicategoria) */}
-            <div className="real-revenue-box" style={{ marginTop: '1.2rem', paddingTop: '1rem', borderTop: '1px dashed #2a2a2a' }}>
-              <span className="summary-title-small" style={{ color: 'var(--color-primary)', display: 'block', marginBottom: '0.2rem' }}>
-                Faturamento Real Estimado do Período (Sem Sobreposição):
-              </span>
-              <div className="summary-value-medium" style={{ fontSize: '1.35rem', fontWeight: '800', color: '#ffffff' }}>
-                {(totalSales * 0.85).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </div>
             </div>
 
             <p className="summary-desc-small" style={{ marginTop: '1.2rem' }}>
