@@ -46,6 +46,7 @@ interface AppContextType {
   addCustomerAddress: (customerId: string, address: Omit<Address, 'id'>) => void;
   updateCustomerAddress: (customerId: string, address: Address) => void;
   addCustomerCard: (customerId: string, card: Omit<CreditCard, 'id'>) => CreditCard;
+  updateCustomerCard: (customerId: string, card: CreditCard) => void;
   removeCustomerCard: (customerId: string, cardId: string) => void;
   setCardAsPreferred: (customerId: string, cardId: string) => void;
 }
@@ -590,6 +591,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return newCard;
   };
 
+  const updateCustomerCard = (customerId: string, updatedCard: CreditCard) => {
+    const cleanNumber = updatedCard.cardNumber ? updatedCard.cardNumber.replace(/\D/g, '') : '';
+    const derivedLastFour = cleanNumber.length >= 4 
+      ? cleanNumber.slice(-4) 
+      : (updatedCard.lastFour || '1234');
+
+    const cardToSave: CreditCard = {
+      ...updatedCard,
+      lastFour: derivedLastFour,
+      holderName: updatedCard.holderName.toUpperCase()
+    };
+
+    setCustomers(prev =>
+      prev.map(c => {
+        if (c.id === customerId) {
+          let cards = c.cards.map(card => (card.id === cardToSave.id ? cardToSave : card));
+          if (cardToSave.isPreferred) {
+            cards = cards.map(x => ({
+              ...x,
+              isPreferred: x.id === cardToSave.id
+            }));
+          }
+          return { ...c, cards };
+        }
+        return c;
+      })
+    );
+  };
+
   const removeCustomerCard = (customerId: string, cardId: string) => {
     setCustomers(prev =>
       prev.map(c => {
@@ -650,6 +680,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addCustomerAddress,
         updateCustomerAddress,
         addCustomerCard,
+        updateCustomerCard,
         removeCustomerCard,
         setCardAsPreferred
       }}

@@ -23,6 +23,7 @@ export default function CustomerArea() {
     addCustomerAddress,
     updateCustomerAddress,
     addCustomerCard,
+    updateCustomerCard,
     removeCustomerCard,
     setCardAsPreferred
   } = useApp();
@@ -41,11 +42,8 @@ export default function CustomerArea() {
     setSearchParams({ tab: tabName });
   };
 
-  // --- MOCK E ESTADOS DOS FORMS ---
+  // Módulos de Edição de Perfil
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  
-  const [prevCustomerId, setPrevCustomerId] = useState(activeCustomer.id);
-  const [prevIsEditing, setPrevIsEditing] = useState(isEditingProfile);
   const [profileForm, setProfileForm] = useState({
     name: activeCustomer.name,
     email: activeCustomer.email,
@@ -54,9 +52,9 @@ export default function CustomerArea() {
     birthDate: activeCustomer.birthDate
   });
 
-  if (activeCustomer.id !== prevCustomerId || isEditingProfile !== prevIsEditing) {
-    setPrevCustomerId(activeCustomer.id);
-    setPrevIsEditing(isEditingProfile);
+  const [prevCustomerForProfile, setPrevCustomerForProfile] = useState(activeCustomer.id);
+  if (activeCustomer.id !== prevCustomerForProfile) {
+    setPrevCustomerForProfile(activeCustomer.id);
     setProfileForm({
       name: activeCustomer.name,
       email: activeCustomer.email,
@@ -81,7 +79,8 @@ export default function CustomerArea() {
 
   // Módulos de Cartões
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
-  const [newCard, setNewCard] = useState({
+  const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
+  const [cardForm, setCardForm] = useState({
     brand: 'Visa' as CreditCard['brand'],
     lastFour: '',
     holderName: '',
@@ -90,12 +89,53 @@ export default function CustomerArea() {
   });
   const [cardToRemoveId, setCardToRemoveId] = useState<string | null>(null);
 
-  const handleAddCard = (e: React.FormEvent) => {
+  const handleOpenAddCard = () => {
+    setEditingCard(null);
+    setCardForm({
+      brand: 'Visa',
+      lastFour: '',
+      holderName: '',
+      expirationDate: '',
+      isPreferred: false
+    });
+    setIsCardModalOpen(true);
+  };
+
+  const handleOpenEditCard = (card: CreditCard) => {
+    setEditingCard(card);
+    setCardForm({
+      brand: card.brand,
+      lastFour: card.lastFour,
+      holderName: card.holderName,
+      expirationDate: card.expirationDate,
+      isPreferred: card.isPreferred
+    });
+    setIsCardModalOpen(true);
+  };
+
+  const handleSaveCard = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCard.lastFour || !newCard.holderName || !newCard.expirationDate) return;
-    addCustomerCard(activeCustomer.id, newCard);
+    if (!cardForm.lastFour || !cardForm.holderName || !cardForm.expirationDate) return;
+
+    if (editingCard) {
+      updateCustomerCard(activeCustomer.id, {
+        ...editingCard,
+        ...cardForm,
+        lastFour: cardForm.lastFour.replace(/\D/g, '').slice(-4),
+        holderName: cardForm.holderName.toUpperCase()
+      });
+    } else {
+      addCustomerCard(activeCustomer.id, {
+        brand: cardForm.brand,
+        lastFour: cardForm.lastFour.replace(/\D/g, '').slice(-4),
+        holderName: cardForm.holderName.toUpperCase(),
+        expirationDate: cardForm.expirationDate,
+        isPreferred: cardForm.isPreferred
+      });
+    }
     setIsCardModalOpen(false);
-    setNewCard({ brand: 'Visa', lastFour: '', holderName: '', expirationDate: '', isPreferred: false });
+    setEditingCard(null);
+    setCardForm({ brand: 'Visa', lastFour: '', holderName: '', expirationDate: '', isPreferred: false });
   };
 
   // Módulos de Endereços
@@ -443,7 +483,7 @@ export default function CustomerArea() {
               <div className="section-card-header">
                 <h3 className="section-card-title">Cartões de Crédito</h3>
                 <button 
-                  onClick={() => setIsCardModalOpen(true)} 
+                  onClick={handleOpenAddCard} 
                   className="btn btn-secondary btn-small"
                   type="button"
                 >
@@ -463,6 +503,13 @@ export default function CustomerArea() {
                       </div>
 
                       <div className="card-row-actions">
+                        <button 
+                          onClick={() => handleOpenEditCard(card)} 
+                          className="btn-text-action"
+                          type="button"
+                        >
+                          Editar
+                        </button>
                         {!card.isPreferred && (
                           <button 
                             onClick={() => setCardAsPreferred(activeCustomer.id, card.id)} 
@@ -735,19 +782,23 @@ export default function CustomerArea() {
         </div>
       </Modal>
 
-      {/* MODAL: Adicionar Cartão */}
+      {/* MODAL: Adicionar / Editar Cartão */}
       <Modal
         isOpen={isCardModalOpen}
-        onClose={() => setIsCardModalOpen(false)}
-        title="Adicionar Novo Cartão"
+        onClose={() => {
+          setIsCardModalOpen(false);
+          setEditingCard(null);
+        }}
+        title={editingCard ? 'Editar Cartão' : 'Adicionar Novo Cartão'}
       >
-        <form onSubmit={handleAddCard} className="address-modal-form">
+        <form onSubmit={handleSaveCard} className="address-modal-form">
           <div className="form-row">
             <div className="form-group flex-2">
-              <label htmlFor="card-number">Bandeira</label>
+              <label htmlFor="card-brand">Bandeira</label>
               <select
-                value={newCard.brand}
-                onChange={e => setNewCard(prev => ({ ...prev, brand: e.target.value as CreditCard['brand'] }))}
+                id="card-brand"
+                value={cardForm.brand}
+                onChange={e => setCardForm(prev => ({ ...prev, brand: e.target.value as CreditCard['brand'] }))}
               >
                 <option value="Visa">Visa</option>
                 <option value="Mastercard">Mastercard</option>
@@ -760,8 +811,8 @@ export default function CustomerArea() {
                 type="text"
                 id="card-digits"
                 maxLength={4}
-                value={newCard.lastFour}
-                onChange={e => setNewCard(prev => ({ ...prev, lastFour: e.target.value.replace(/\D/g, '') }))}
+                value={cardForm.lastFour}
+                onChange={e => setCardForm(prev => ({ ...prev, lastFour: e.target.value.replace(/\D/g, '') }))}
                 placeholder="4821"
                 required
               />
@@ -774,8 +825,8 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="card-holder"
-                value={newCard.holderName}
-                onChange={e => setNewCard(prev => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
+                value={cardForm.holderName}
+                onChange={e => setCardForm(prev => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
                 placeholder="ANA C SILVA"
                 required
               />
@@ -787,8 +838,8 @@ export default function CustomerArea() {
                 id="card-exp"
                 placeholder="MM/AA"
                 maxLength={5}
-                value={newCard.expirationDate}
-                onChange={e => setNewCard(prev => ({ ...prev, expirationDate: e.target.value }))}
+                value={cardForm.expirationDate}
+                onChange={e => setCardForm(prev => ({ ...prev, expirationDate: e.target.value }))}
                 required
               />
             </div>
@@ -797,15 +848,26 @@ export default function CustomerArea() {
           <label className="checkbox-preferred-label" style={{ display: 'flex', gap: '0.5rem', fontSize: '0.8rem', color: '#888', cursor: 'pointer', marginTop: '0.5rem' }}>
             <input
               type="checkbox"
-              checked={newCard.isPreferred}
-              onChange={e => setNewCard(prev => ({ ...prev, isPreferred: e.target.checked }))}
+              checked={cardForm.isPreferred}
+              onChange={e => setCardForm(prev => ({ ...prev, isPreferred: e.target.checked }))}
             />
             Definir como cartão preferencial de pagamento
           </label>
 
           <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setIsCardModalOpen(false)}>CANCELAR</button>
-            <button type="submit" className="btn btn-primary">SALVAR CARTÃO</button>
+            <button 
+              type="button" 
+              className="btn btn-secondary" 
+              onClick={() => {
+                setIsCardModalOpen(false);
+                setEditingCard(null);
+              }}
+            >
+              CANCELAR
+            </button>
+            <button type="submit" className="btn btn-primary">
+              {editingCard ? 'SALVAR ALTERAÇÕES' : 'SALVAR CARTÃO'}
+            </button>
           </div>
         </form>
       </Modal>
