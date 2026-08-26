@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useApp } from '../../../store/AppContext';
+import OrderDetailsModal from '../../../components/OrderDetailsModal/OrderDetailsModal';
+import type { Order } from '../../../types';
 
 export default function AdminOrders() {
   const { orders, customers, updateOrderStatus } = useApp();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('TODOS');
+  const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null);
 
   const getCustomerName = (customerId: string) => {
     const cust = customers.find(c => c.id === customerId);
@@ -59,6 +62,7 @@ export default function AdminOrders() {
               <th>Itens</th>
               <th>Valor Total</th>
               <th>Status</th>
+              <th>Detalhes</th>
               <th>Ações de Avanço</th>
             </tr>
           </thead>
@@ -76,6 +80,15 @@ export default function AdminOrders() {
                     <span className={`order-status-tag ${o.status.replace(/ /g, '_').toLowerCase()}`}>
                       {o.status}
                     </span>
+                  </td>
+                  <td>
+                    <button
+                      onClick={() => setSelectedOrderForDetails(o)}
+                      className="btn btn-secondary btn-small"
+                      type="button"
+                    >
+                      VER DETALHES
+                    </button>
                   </td>
                   <td>
                     <div className="admin-order-adv-actions">
@@ -128,7 +141,7 @@ export default function AdminOrders() {
             })}
             {filteredOrders.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>
+                <td colSpan={8} style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>
                   Nenhum pedido encontrado.
                 </td>
               </tr>
@@ -136,6 +149,13 @@ export default function AdminOrders() {
           </tbody>
         </table>
       </div>
+
+      {/* Modal de Detalhes do Pedido para o Admin */}
+      <OrderDetailsModal
+        isOpen={!!selectedOrderForDetails}
+        onClose={() => setSelectedOrderForDetails(null)}
+        order={selectedOrderForDetails}
+      />
     </div>
   );
 }

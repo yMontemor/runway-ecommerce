@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../../store/AppContext';
 import Modal from '../../components/Modal/Modal';
-import type { Coupon, Order } from '../../types';
+import type { Address, Coupon, Order } from '../../types';
 import './Checkout.css';
 
 export default function Checkout() {
@@ -13,6 +13,7 @@ export default function Checkout() {
     coupons, 
     checkoutCart,
     addCustomerAddress,
+    updateCustomerAddress,
     addCustomerCard
   } = useApp();
 
@@ -35,7 +36,8 @@ export default function Checkout() {
     activeCustomer.addresses[0]?.id || ''
   );
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
-  const [newAddress, setNewAddress] = useState({
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+  const [addressForm, setAddressForm] = useState({
     label: '',
     street: '',
     number: '',
@@ -48,15 +50,60 @@ export default function Checkout() {
     observations: ''
   });
 
-  const handleAddAddress = (e: React.FormEvent) => {
+  const handleOpenAddAddress = () => {
+    setEditingAddress(null);
+    setAddressForm({
+      label: '',
+      street: '',
+      number: '',
+      complement: '',
+      neighborhood: '',
+      zipCode: '',
+      city: '',
+      state: '',
+      country: 'Brasil',
+      observations: ''
+    });
+    setIsAddressModalOpen(true);
+  };
+
+  const handleOpenEditAddress = (addr: Address, e: React.MouseEvent) => {
     e.preventDefault();
-    if (!newAddress.label || !newAddress.street || !newAddress.number || !newAddress.zipCode) return;
+    e.stopPropagation();
+    setEditingAddress(addr);
+    setAddressForm({
+      label: addr.label,
+      street: addr.street,
+      number: addr.number,
+      complement: addr.complement || '',
+      neighborhood: addr.neighborhood,
+      zipCode: addr.zipCode,
+      city: addr.city,
+      state: addr.state,
+      country: addr.country || 'Brasil',
+      observations: addr.observations || ''
+    });
+    setIsAddressModalOpen(true);
+  };
+
+  const handleSaveAddress = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addressForm.label || !addressForm.street || !addressForm.number || !addressForm.zipCode) return;
     
-    addCustomerAddress(activeCustomer.id, newAddress);
+    if (editingAddress) {
+      updateCustomerAddress(activeCustomer.id, {
+        ...editingAddress,
+        ...addressForm
+      });
+      setSelectedAddressId(editingAddress.id);
+    } else {
+      addCustomerAddress(activeCustomer.id, addressForm);
+    }
     setIsAddressModalOpen(false);
+    setEditingAddress(null);
     
     // Reset form
-    setNewAddress({
+    setAddressForm({
       label: '',
       street: '',
       number: '',
@@ -235,11 +282,11 @@ export default function Checkout() {
   const cardAmountsSum = selectedCardIds.reduce((sum, id) => sum + (parseFloat(cardAmounts[id]) || 0), 0);
   
   const isMinAmountPerCardValid = remainingToPay < 10
-    ? true
-    : selectedCardIds.every(id => {
+    ? (selectedCardIds.length === 1 && (parseFloat(cardAmounts[selectedCardIds[0]]) || 0) > 0)
+    : (selectedCardIds.length > 0 && selectedCardIds.every(id => {
         const val = parseFloat(cardAmounts[id]) || 0;
-        return val >= 10.0 || val === 0;
-      });
+        return val >= 10.0;
+      }));
 
   const isPaymentValid = remainingToPay === 0 
     ? (selectedCardIds.length === 0 || Math.abs(cardAmountsSum - remainingToPay) < 0.01)
@@ -327,8 +374,18 @@ export default function Checkout() {
                     onChange={() => setSelectedAddressId(addr.id)}
                     className="address-radio-input"
                   />
-                  <div className="address-card-info">
-                    <div className="addr-tag">{addr.label}</div>
+                  <div className="address-card-info" style={{ width: '100%' }}>
+                    <div className="addr-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                      <div className="addr-tag">{addr.label}</div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleOpenEditAddress(addr, e)}
+                        className="btn-edit-link"
+                        style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: '0.78rem', textDecoration: 'underline', padding: '0 0.25rem' }}
+                      >
+                        Editar
+                      </button>
+                    </div>
                     <p className="addr-street">{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`}</p>
                     <p className="addr-loc">{addr.neighborhood} - {addr.city} / {addr.state}</p>
                     <p className="addr-cep">CEP {addr.zipCode}</p>
@@ -339,7 +396,7 @@ export default function Checkout() {
 
             <div className="address-actions">
               <button 
-                onClick={() => setIsAddressModalOpen(true)} 
+                onClick={handleOpenAddAddress} 
                 className="btn btn-secondary add-addr-btn"
                 type="button"
               >
@@ -578,7 +635,11 @@ export default function Checkout() {
                           {selectedCardIds.length === 0 ? (
                             <span>Selecione ao menos um cartão para pagar o restante.</span>
                           ) : !isMinAmountPerCardValid ? (
-                            <span>Cada cartão selecionado deve pagar no mínimo R$ 10,00.</span>
+                            <span>
+                              {remainingToPay < 10 
+                                ? 'Para valores inferiores a R$ 10,00, utilize apenas um cartão.' 
+                                : 'Cada cartão selecionado deve pagar no mínimo R$ 10,00 (sem valores zerados).'}
+                            </span>
                           ) : cardAmountsSum < remainingToPay ? (
                             <span>Falta distribuir: <strong>{(remainingToPay - cardAmountsSum).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
                           ) : (
@@ -769,20 +830,23 @@ export default function Checkout() {
 
       </div>
 
-      {/* Modal Adicionar Endereço */}
+      {/* Modal Adicionar / Editar Endereço no Checkout */}
       <Modal
         isOpen={isAddressModalOpen}
-        onClose={() => setIsAddressModalOpen(false)}
-        title="Adicionar Novo Endereço"
+        onClose={() => {
+          setIsAddressModalOpen(false);
+          setEditingAddress(null);
+        }}
+        title={editingAddress ? 'Editar Endereço' : 'Adicionar Novo Endereço'}
       >
-        <form onSubmit={handleAddAddress} className="address-modal-form">
+        <form onSubmit={handleSaveAddress} className="address-modal-form">
           <div className="form-group">
             <label htmlFor="addr-label">Identificação (ex: Casa, Trabalho)</label>
             <input
               type="text"
               id="addr-label"
-              value={newAddress.label}
-              onChange={(e) => setNewAddress(prev => ({ ...prev, label: e.target.value }))}
+              value={addressForm.label}
+              onChange={(e) => setAddressForm(prev => ({ ...prev, label: e.target.value }))}
               placeholder="ex: Minha Casa"
               required
             />
@@ -794,8 +858,8 @@ export default function Checkout() {
               <input
                 type="text"
                 id="addr-street"
-                value={newAddress.street}
-                onChange={(e) => setNewAddress(prev => ({ ...prev, street: e.target.value }))}
+                value={addressForm.street}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, street: e.target.value }))}
                 placeholder="Rua, Avenida..."
                 required
               />
@@ -805,8 +869,8 @@ export default function Checkout() {
               <input
                 type="text"
                 id="addr-number"
-                value={newAddress.number}
-                onChange={(e) => setNewAddress(prev => ({ ...prev, number: e.target.value }))}
+                value={addressForm.number}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, number: e.target.value }))}
                 placeholder="123"
                 required
               />
@@ -819,8 +883,8 @@ export default function Checkout() {
               <input
                 type="text"
                 id="addr-comp"
-                value={newAddress.complement}
-                onChange={(e) => setNewAddress(prev => ({ ...prev, complement: e.target.value }))}
+                value={addressForm.complement}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, complement: e.target.value }))}
                 placeholder="Apto, Bloco..."
               />
             </div>
@@ -829,8 +893,8 @@ export default function Checkout() {
               <input
                 type="text"
                 id="addr-neighborhood"
-                value={newAddress.neighborhood}
-                onChange={(e) => setNewAddress(prev => ({ ...prev, neighborhood: e.target.value }))}
+                value={addressForm.neighborhood}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, neighborhood: e.target.value }))}
                 placeholder="Jardim..."
                 required
               />
@@ -843,8 +907,8 @@ export default function Checkout() {
               <input
                 type="text"
                 id="addr-zip"
-                value={newAddress.zipCode}
-                onChange={(e) => setNewAddress(prev => ({ ...prev, zipCode: e.target.value }))}
+                value={addressForm.zipCode}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, zipCode: e.target.value }))}
                 placeholder="00000-000"
                 required
               />
@@ -854,8 +918,8 @@ export default function Checkout() {
               <input
                 type="text"
                 id="addr-city"
-                value={newAddress.city}
-                onChange={(e) => setNewAddress(prev => ({ ...prev, city: e.target.value }))}
+                value={addressForm.city}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, city: e.target.value }))}
                 required
               />
             </div>
@@ -864,8 +928,8 @@ export default function Checkout() {
               <input
                 type="text"
                 id="addr-state"
-                value={newAddress.state}
-                onChange={(e) => setNewAddress(prev => ({ ...prev, state: e.target.value }))}
+                value={addressForm.state}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, state: e.target.value }))}
                 placeholder="SP"
                 required
               />
@@ -876,12 +940,15 @@ export default function Checkout() {
             <button 
               type="button" 
               className="btn btn-secondary"
-              onClick={() => setIsAddressModalOpen(false)}
+              onClick={() => {
+                setIsAddressModalOpen(false);
+                setEditingAddress(null);
+              }}
             >
               CANCELAR
             </button>
             <button type="submit" className="btn btn-primary">
-              SALVAR ENDEREÇO
+              {editingAddress ? 'SALVAR ALTERAÇÕES' : 'SALVAR ENDEREÇO'}
             </button>
           </div>
         </form>
