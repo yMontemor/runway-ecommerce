@@ -48,6 +48,21 @@ export const products: Product[] = [
     technologies: ['Eleva Pro 2.0']
   },
   {
+    id: 'olympikus_corre_5',
+    name: 'Corre 5',
+    brand: 'Olympikus',
+    category: 'TREINO DIÁRIO',
+    categories: ['TREINO DIÁRIO'],
+    price: 599.99,
+    weight: '217g',
+    drop: '8mm',
+    sizes: [37, 38, 39, 40, 41, 42, 43, 44],
+    color: 'Preto / Branco',
+    description: 'Tênis versátil para rodagens, longões, treinos intensos e provas de diferentes distâncias.',
+    image: '/images/olympikus_corre_5.jpg',
+    technologies: ['Oxitec 2.0', 'Palmilha NT-X', 'Solado PY-VA', 'ULTRAX']
+  },
+  {
     id: 'adidas_ultraboost_light',
     name: 'Ultraboost Light',
     brand: 'Adidas',
@@ -264,6 +279,21 @@ export const products: Product[] = [
     description: 'Treino de trail com versatilidade híbrida para transição entre asfalto e terra.',
     image: '/images/nike_pegasus_trail.png',
     technologies: ['Linha híbrida estrada/trilha']
+  },
+  {
+    id: 'olympikus_corre_trilha_3',
+    name: 'Corre Trilha 3',
+    brand: 'Olympikus',
+    category: 'TRAIL',
+    categories: ['TRAIL'],
+    price: 599.99,
+    weight: '260g',
+    drop: '8mm',
+    sizes: [37, 38, 39, 40, 41, 42, 43, 44],
+    color: 'Preto',
+    description: 'Tênis leve para corrida off-road, indicado para estradas de terra, pedras e trilhas leves, com foco em tração, respirabilidade e retorno de energia.',
+    image: '/images/olympikus_corre_trilha_3.jpg',
+    technologies: ['PY-VA', 'Vibram', 'Oxitec 2.0']
   },
 
   // --- VELOCIDADE (Nacional) ---
