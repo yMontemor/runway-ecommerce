@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../../store/AppContext';
 import Modal from '../../components/Modal/Modal';
 import type { Address, Coupon, Order } from '../../types';
+import { getInstallmentOptions, getMaxInstallments } from '../../utils/payment';
 import './Checkout.css';
 
 export default function Checkout() {
@@ -135,6 +136,7 @@ export default function Checkout() {
   const [prevCustomerId, setPrevCustomerId] = useState(activeCustomer.id);
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [cardAmounts, setCardAmounts] = useState<Record<string, string>>({});
+  const [cardInstallments, setCardInstallments] = useState<Record<string, number>>({});
 
   // Modal de novo cartão no checkout
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
@@ -186,6 +188,7 @@ export default function Checkout() {
     setSelectedExchangeCouponId('');
     setSelectedCardIds([]);
     setCardAmounts({});
+    setCardInstallments({});
   }
 
   // Cálculos do checkout
@@ -240,11 +243,23 @@ export default function Checkout() {
       let updated;
       if (prev.includes(cardId)) {
         updated = prev.filter(id => id !== cardId);
+        setCardInstallments(instPrev => {
+          const next = { ...instPrev };
+          delete next[cardId];
+          return next;
+        });
       } else {
         updated = [...prev, cardId];
       }
       return updated;
     });
+  };
+
+  const handleCardInstallmentsChange = (cardId: string, inst: number) => {
+    setCardInstallments(prev => ({
+      ...prev,
+      [cardId]: inst
+    }));
   };
 
   const handleCardAmountChange = (cardId: string, val: string) => {
@@ -308,10 +323,16 @@ export default function Checkout() {
       ? [] 
       : selectedCardIds
           .filter(id => (parseFloat(cardAmounts[id]) || 0) > 0)
-          .map(id => ({
-            cardId: id,
-            amount: parseFloat(cardAmounts[id]) || 0
-          }));
+          .map(id => {
+            const amount = parseFloat(cardAmounts[id]) || 0;
+            const maxInst = getMaxInstallments(amount);
+            const chosenInst = cardInstallments[id] || 1;
+            return {
+              cardId: id,
+              amount,
+              installments: Math.min(chosenInst, maxInst)
+            };
+          });
 
     const appliedCoupons: Coupon[] = [];
     if (promoCoupon) appliedCoupons.push(promoCoupon);
@@ -516,6 +537,10 @@ export default function Checkout() {
                   <div className="cards-checkout-list">
                     {activeCustomer.cards.map(card => {
                       const isSelected = selectedCardIds.includes(card.id);
+                      const cardAmountVal = parseFloat(cardAmounts[card.id]) || (selectedCardIds.length === 1 ? remainingToPay : 0);
+                      const installmentOptions = getInstallmentOptions(cardAmountVal);
+                      const currentInstallment = Math.min(cardInstallments[card.id] || 1, getMaxInstallments(cardAmountVal));
+
                       return (
                         <div key={card.id} className={`card-checkout-row ${isSelected ? 'selected' : ''}`}>
                           <label className="card-selector-label">
@@ -531,24 +556,45 @@ export default function Checkout() {
                             </div>
                           </label>
 
-                          {isSelected && selectedCardIds.length > 1 && (
-                            <div className="card-split-input">
-                              <span className="currency-prefix">R$</span>
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                placeholder="0,00"
-                                value={cardAmounts[card.id] || ''}
-                                onChange={(e) => handleCardAmountChange(card.id, e.target.value)}
-                                className="card-amount-field"
-                              />
-                              <button 
-                                type="button" 
-                                onClick={() => autofillRemaining(card.id)}
-                                className="btn-use-rest"
-                              >
-                                Usar Restante
-                              </button>
+                          {isSelected && (
+                            <div className="card-controls-wrapper">
+                              {selectedCardIds.length > 1 && (
+                                <div className="card-split-input">
+                                  <span className="currency-prefix">R$</span>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    placeholder="0,00"
+                                    value={cardAmounts[card.id] || ''}
+                                    onChange={(e) => handleCardAmountChange(card.id, e.target.value)}
+                                    className="card-amount-field"
+                                  />
+                                  <button 
+                                    type="button" 
+                                    onClick={() => autofillRemaining(card.id)}
+                                    className="btn-use-rest"
+                                  >
+                                    Usar Restante
+                                  </button>
+                                </div>
+                              )}
+
+                              <div className="card-installments-row">
+                                <label className="installments-label" htmlFor={`installments-${card.id}`}>Parcelas:</label>
+                                <select
+                                  id={`installments-${card.id}`}
+                                  value={currentInstallment}
+                                  onChange={(e) => handleCardInstallmentsChange(card.id, parseInt(e.target.value, 10))}
+                                  className="card-installments-select"
+                                  disabled={cardAmountVal <= 0}
+                                >
+                                  {installmentOptions.map(opt => (
+                                    <option key={opt.count} value={opt.count}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -718,9 +764,18 @@ export default function Checkout() {
                       selectedCardIds.map(id => {
                         const c = activeCustomer.cards.find(x => x.id === id);
                         const amt = parseFloat(cardAmounts[id] || '0');
+                        const maxInst = getMaxInstallments(amt);
+                        const inst = Math.min(cardInstallments[id] || 1, maxInst);
                         return c && amt > 0 ? (
                           <div key={c.id} className="review-pay-item">
-                            <span>Cartão <strong>{c.brand}</strong> (final {c.lastFour})</span>
+                            <div>
+                              <span>Cartão <strong>{c.brand}</strong> (final {c.lastFour})</span>
+                              <div className="review-pay-subtext">
+                                {inst === 1
+                                  ? '1x à vista'
+                                  : `${inst}x de ${(amt / inst).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} sem juros`}
+                              </div>
+                            </div>
                             <span><strong>{amt.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
                           </div>
                         ) : null;
@@ -813,6 +868,23 @@ export default function Checkout() {
                 <span>Total Pago</span>
                 <strong>{createdOrder.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
               </div>
+              {createdOrder.paymentMethods.length > 0 && (
+                <div className="conf-detail-payments" style={{ marginTop: '0.6rem', paddingTop: '0.6rem', borderTop: '1px solid #222' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginBottom: '0.35rem', fontWeight: 700, textTransform: 'uppercase', textAlign: 'left' }}>
+                    Pagamento nos Cartões
+                  </div>
+                  {createdOrder.paymentMethods.map(pm => {
+                    const card = activeCustomer.cards.find(c => c.id === pm.cardId);
+                    const inst = pm.installments ?? 1;
+                    return (
+                      <div key={pm.cardId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginTop: '0.25rem', color: '#ccc' }}>
+                        <span>💳 {card ? `${card.brand} (final ${card.lastFour})` : `Cartão final ${pm.cardId.slice(-4)}`} ({inst === 1 ? '1x à vista' : `${inst}x de ${(pm.amount / inst).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} sem juros`})</span>
+                        <strong style={{ color: '#fff' }}>{pm.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="confirmed-actions">

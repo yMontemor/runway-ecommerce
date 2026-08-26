@@ -65,6 +65,7 @@ export interface Order {
   paymentMethods: {
     cardId: string;
     amount: number;
+    installments?: number;
   }[];
   couponsUsed: Coupon[];
   subtotal: number;

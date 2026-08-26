@@ -21,7 +21,7 @@ interface AppContextType {
   clearCart: (customerId: string) => void;
   checkoutCart: (
     shippingAddress: Address,
-    paymentCards: { cardId: string; amount: number }[],
+    paymentCards: { cardId: string; amount: number; installments?: number }[],
     usedCoupons: Coupon[],
     subtotal: number,
     discount: number,
@@ -92,7 +92,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       ],
       shippingAddress: mockCustomers[0].addresses[0],
-      paymentMethods: [{ cardId: 'ana_card_1', amount: 899.90 }],
+      paymentMethods: [{ cardId: 'ana_card_1', amount: 899.90, installments: 1 }],
       couponsUsed: [],
       subtotal: 899.90,
       shippingCost: 0,
@@ -115,7 +115,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       ],
       shippingAddress: mockCustomers[1].addresses[0],
-      paymentMethods: [{ cardId: 'carlos_card_1', amount: 999.90 }],
+      paymentMethods: [{ cardId: 'carlos_card_1', amount: 999.90, installments: 1 }],
       couponsUsed: [],
       subtotal: 999.90,
       shippingCost: 0,
@@ -137,7 +137,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       ],
       shippingAddress: mockCustomers[0].addresses[1],
-      paymentMethods: [{ cardId: 'ana_card_2', amount: 1049.90 }],
+      paymentMethods: [{ cardId: 'ana_card_2', amount: 1049.90, installments: 1 }],
       couponsUsed: [],
       subtotal: 1049.90,
       shippingCost: 0,
@@ -170,7 +170,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       ],
       shippingAddress: mockCustomers[0].addresses[0],
-      paymentMethods: [{ cardId: 'ana_card_1', amount: 3949.87 }],
+      paymentMethods: [{ cardId: 'ana_card_1', amount: 3949.87, installments: 1 }],
       couponsUsed: [],
       subtotal: 3949.87,
       shippingCost: 0,
@@ -276,7 +276,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Finalizar Compra
   const checkoutCart = (
     shippingAddress: Address,
-    paymentCards: { cardId: string; amount: number }[],
+    paymentCards: { cardId: string; amount: number; installments?: number }[],
     usedCoupons: Coupon[],
     subtotal: number,
     discount: number,
@@ -298,7 +298,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       status: 'EM ABERTO',
       items: [...customerCart],
       shippingAddress: { ...shippingAddress },
-      paymentMethods: paymentCards,
+      paymentMethods: paymentCards.map(c => ({
+        cardId: c.cardId,
+        amount: c.amount,
+        installments: c.installments ?? 1
+      })),
       couponsUsed: usedCoupons,
       subtotal,
       shippingCost: extraDetails?.shippingCost ?? 0,

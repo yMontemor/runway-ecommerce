@@ -138,9 +138,17 @@ export default function OrderDetailsModal({ isOpen, onClose, order }: OrderDetai
             ) : (
               order.paymentMethods.map(pm => {
                 const card = customer?.cards.find(c => c.id === pm.cardId);
+                const inst = pm.installments ?? 1;
+                const installmentText = inst === 1
+                  ? '1x à vista'
+                  : `${inst}x de ${(pm.amount / inst).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} sem juros`;
+
                 return (
                   <div key={pm.cardId} className="payment-method-row">
-                    <span>💳 Cartão {card ? `${card.brand} final ${card.lastFour}` : `final ${pm.cardId.slice(-4)}`}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                      <span>💳 Cartão {card ? `${card.brand} final ${card.lastFour}` : `final ${pm.cardId.slice(-4)}`}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: 600 }}>{installmentText}</span>
+                    </div>
                     <strong>{pm.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                   </div>
                 );

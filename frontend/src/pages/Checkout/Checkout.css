@@ -350,6 +350,59 @@
   text-decoration: underline;
 }
 
+.card-controls-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.card-installments-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #1e1e1e;
+}
+
+.installments-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.card-installments-select {
+  flex: 1;
+  background-color: #050505 !important;
+  border: 1px solid var(--color-border) !important;
+  color: #ffffff;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.card-installments-select:focus {
+  border-color: #555555 !important;
+}
+
+.card-installments-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.review-pay-subtext {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  margin-top: 0.15rem;
+}
+
 .split-actions-bar {
   display: flex;
   justify-content: flex-end;
