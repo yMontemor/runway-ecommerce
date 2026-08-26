@@ -25,9 +25,23 @@ export default function Catalog() {
   
   const searchParam = searchParams.get('busca') || '';
   
-  const [selectedCategory, setSelectedCategory] = useState('TODOS');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedBrand, setSelectedBrand] = useState('');
   const [sortOption, setSortOption] = useState('relevancia');
+
+  const handleCategoryToggle = (cat: string) => {
+    if (cat === 'TODOS') {
+      setSelectedCategories([]);
+      return;
+    }
+    setSelectedCategories(prev => {
+      if (prev.includes(cat)) {
+        return prev.filter(c => c !== cat);
+      } else {
+        return [...prev, cat];
+      }
+    });
+  };
 
   // Controle de Modais
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -43,7 +57,8 @@ export default function Catalog() {
 
   // Filtragem e ordenação
   const filteredProducts = products.filter(p => {
-    const matchesCategory = selectedCategory === 'TODOS' || p.categories.includes(selectedCategory);
+    const matchesCategory = selectedCategories.length === 0 || 
+      selectedCategories.some(cat => p.categories.includes(cat));
     const matchesBrand = !selectedBrand || p.brand === selectedBrand;
     const matchesSearch = !searchParam || 
       p.name.toLowerCase().includes(searchParam.toLowerCase()) || 
@@ -92,14 +107,16 @@ export default function Catalog() {
           <div className="category-tabs">
             {CATEGORIES.map(cat => {
               const emoji = CATEGORY_EMOJIS[cat];
+              const isActive = cat === 'TODOS' 
+                ? selectedCategories.length === 0 
+                : selectedCategories.includes(cat);
+
               return (
                 <button
                   key={cat}
                   type="button"
-                  className={`category-tab-btn ${selectedCategory === cat ? 'active' : ''}`}
-                  onClick={() => {
-                    setSelectedCategory(cat);
-                  }}
+                  className={`category-tab-btn ${isActive ? 'active' : ''}`}
+                  onClick={() => handleCategoryToggle(cat)}
                 >
                   {emoji && <span className="tab-emoji">{emoji}</span>}
                   {cat}

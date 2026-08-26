@@ -85,7 +85,7 @@ export default function Home() {
 
           <div className="home-catalog-footer">
             <Link to="/catalogo" className="btn btn-secondary home-catalog-btn">
-              VER CATÁLOGO COMPLETO COM FILTROS →
+              VER CATÁLOGO COMPLETO →
             </Link>
           </div>
         </div>

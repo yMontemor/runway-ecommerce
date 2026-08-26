@@ -271,14 +271,14 @@ export const products: Product[] = [
     brand: 'Nike',
     category: 'TRAIL',
     categories: ['TRAIL'],
-    price: 899.90,
-    weight: '285g',
-    drop: '9mm',
+    price: 1044.99,
+    weight: '332g',
+    drop: '8mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
     color: 'Bege / Laranja',
-    description: 'Treino de trail com versatilidade híbrida para transição entre asfalto e terra.',
+    description: 'Amortecimento confortável e tração aderente para trilhas com terrenos molhados e acidentados, com antepé mais largo para maior espaço e estabilidade.',
     image: '/images/nike_pegasus_trail.png',
-    technologies: ['Linha híbrida estrada/trilha']
+    technologies: ['ReactX', 'All Terrain Compound (ATC)', 'Parte de cima em tela estruturada']
   },
   {
     id: 'olympikus_corre_trilha_3',
