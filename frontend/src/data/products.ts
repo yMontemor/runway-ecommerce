@@ -175,7 +175,7 @@ export const products: Product[] = [
   // --- COMPETIÇÃO ---
   {
     id: 'nike_vaporfly_4',
-    name: 'Vaporfly 4',
+    name: 'ZoomX VaporFly 4',
     brand: 'Nike',
     category: 'COMPETIÇÃO',
     categories: ['COMPETIÇÃO'],
