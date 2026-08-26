@@ -45,6 +45,7 @@ interface AppContextType {
   updateCustomerProfile: (updatedCustomer: Customer) => void;
   addCustomerAddress: (customerId: string, address: Omit<Address, 'id'>) => void;
   updateCustomerAddress: (customerId: string, address: Address) => void;
+  removeCustomerAddress: (customerId: string, addressId: string) => void;
   addCustomerCard: (customerId: string, card: Omit<CreditCard, 'id'>) => CreditCard;
   updateCustomerCard: (customerId: string, card: CreditCard) => void;
   removeCustomerCard: (customerId: string, cardId: string) => void;
@@ -296,7 +297,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       customerId: activeCustomerId,
       status: 'EM ABERTO',
       items: [...customerCart],
-      shippingAddress,
+      shippingAddress: { ...shippingAddress },
       paymentMethods: paymentCards,
       couponsUsed: usedCoupons,
       subtotal,
@@ -559,6 +560,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const removeCustomerAddress = (customerId: string, addressId: string) => {
+    setCustomers(prev =>
+      prev.map(c => {
+        if (c.id === customerId) {
+          // Proteção do protótipo: impede remoção se restar apenas 1 endereço
+          if (c.addresses.length <= 1) return c;
+          return {
+            ...c,
+            addresses: c.addresses.filter(a => a.id !== addressId)
+          };
+        }
+        return c;
+      })
+    );
+  };
+
   // Cartões
   const addCustomerCard = (customerId: string, card: Omit<CreditCard, 'id'>): CreditCard => {
     const cleanNumber = card.cardNumber ? card.cardNumber.replace(/\D/g, '') : '';
@@ -679,6 +696,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateCustomerProfile,
         addCustomerAddress,
         updateCustomerAddress,
+        removeCustomerAddress,
         addCustomerCard,
         updateCustomerCard,
         removeCustomerCard,

@@ -35,6 +35,13 @@ export default function Checkout() {
   const [selectedAddressId, setSelectedAddressId] = useState<string>(
     activeCustomer.addresses[0]?.id || ''
   );
+
+  // Se o endereço selecionado deixar de existir, limpa e exige seleção explícita do cliente
+  useEffect(() => {
+    if (selectedAddressId && !activeCustomer.addresses.some(a => a.id === selectedAddressId)) {
+      setSelectedAddressId('');
+    }
+  }, [activeCustomer.addresses, selectedAddressId]);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
   const [addressForm, setAddressForm] = useState({

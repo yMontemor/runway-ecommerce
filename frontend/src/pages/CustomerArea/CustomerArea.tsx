@@ -23,11 +23,14 @@ export default function CustomerArea() {
     updateCustomerProfile,
     addCustomerAddress,
     updateCustomerAddress,
+    removeCustomerAddress,
     addCustomerCard,
     updateCustomerCard,
     removeCustomerCard,
     setCardAsPreferred
   } = useApp();
+
+  const [addressToRemove, setAddressToRemove] = useState<Address | null>(null);
 
   const tabParamVal = tabParam === 'pedidos' ? 'pedidos' : tabParam === 'cupons' ? 'cupons' : 'perfil';
   const [prevTabParam, setPrevTabParam] = useState(tabParamVal);
@@ -463,13 +466,28 @@ export default function CustomerArea() {
                   <div key={addr.id} className="profile-address-card">
                     <div className="addr-card-header">
                       <span className="profile-addr-label">{addr.label}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditAddr(addr)}
-                        className="btn-edit-link"
-                      >
-                        Editar
-                      </button>
+                      <div className="addr-card-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditAddr(addr)}
+                          className="btn-edit-link"
+                        >
+                          Editar
+                        </button>
+                        {activeCustomer.addresses.length > 1 && (
+                          <>
+                            <span style={{ color: 'var(--color-border)', fontSize: '0.75rem' }}>|</span>
+                            <button
+                              type="button"
+                              onClick={() => setAddressToRemove(addr)}
+                              className="btn-edit-link"
+                              style={{ color: 'var(--color-danger)' }}
+                            >
+                              Remover
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                     <p className="addr-txt">{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`}</p>
                     <p className="addr-txt">{addr.neighborhood} - {addr.city} / {addr.state}</p>
@@ -477,6 +495,11 @@ export default function CustomerArea() {
                   </div>
                 ))}
               </div>
+              {activeCustomer.addresses.length <= 1 && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.5rem', marginBottom: 0 }}>
+                  * Pelo menos um endereço deve ser mantido cadastrado no seu perfil.
+                </p>
+              )}
             </div>
 
             {/* Cartões de Crédito */}
@@ -983,6 +1006,44 @@ export default function CustomerArea() {
             <button type="submit" className="btn btn-primary">SALVAR ENDEREÇO</button>
           </div>
         </form>
+      </Modal>
+
+      {/* MODAL: Confirmação de Remoção de Endereço */}
+      <Modal
+        isOpen={!!addressToRemove}
+        onClose={() => setAddressToRemove(null)}
+        title="Remover endereço?"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem', lineHeight: '1.5', margin: 0 }}>
+            Tem certeza de que deseja remover o endereço <strong>"{addressToRemove?.label}"</strong> ({addressToRemove?.street}, nº {addressToRemove?.number}) do seu perfil?
+          </p>
+          <p style={{ color: '#888', fontSize: '0.8rem', margin: 0 }}>
+            Esta ação removerá o endereço para compras futuras. Pedidos já realizados não serão afetados.
+          </p>
+          <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '0.5rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setAddressToRemove(null)}
+            >
+              CANCELAR
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ backgroundColor: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
+              onClick={() => {
+                if (addressToRemove) {
+                  removeCustomerAddress(activeCustomer.id, addressToRemove.id);
+                  setAddressToRemove(null);
+                }
+              }}
+            >
+              REMOVER ENDEREÇO
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* MODAL: Solicitar Troca */}
