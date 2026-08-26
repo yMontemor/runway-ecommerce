@@ -37,22 +37,22 @@ export const products: Product[] = [
     name: 'Corre 4',
     brand: 'Olympikus',
     category: 'TREINO DIÁRIO',
-    categories: ['TREINO DIÁRIO'],
+    categories: ['TREINO DIÁRIO', 'LONGA DISTÂNCIA'],
     price: 449.90,
-    weight: '230g',
+    weight: '219g',
     drop: '8mm',
     sizes: [37, 38, 39, 40, 41, 42, 43, 44],
-    color: 'Neon Citrus / Preto',
-    description: 'Durabilidade e versatilidade a um preço acessível, ótimo para rodar bastante no asfalto.',
+    color: 'Branco',
+    description: 'Versátil e ideal para treinos de rodagem e longões, com solado mais resistente ao desgaste — o queridinho dos brasileiros para longas distâncias e provas.',
     image: '/images/olympikus_corre_4.jpg',
-    technologies: ['Eleva Pro 2.0']
+    technologies: ['Eleva Pro 2.0', 'Gripper Plus', 'Oxitec 2.0', 'Palmilha NT-X']
   },
   {
     id: 'olympikus_corre_5',
     name: 'Corre 5',
     brand: 'Olympikus',
     category: 'TREINO DIÁRIO',
-    categories: ['TREINO DIÁRIO'],
+    categories: ['TREINO DIÁRIO', 'LONGA DISTÂNCIA'],
     price: 599.99,
     weight: '217g',
     drop: '8mm',
@@ -60,7 +60,7 @@ export const products: Product[] = [
     color: 'Preto / Branco',
     description: 'Tênis versátil para rodagens, longões, treinos intensos e provas de diferentes distâncias.',
     image: '/images/olympikus_corre_5.jpg',
-    technologies: ['Oxitec 2.0', 'Palmilha NT-X', 'Solado PY-VA', 'ULTRAX']
+    technologies: ['Oxitec 2.0', 'Palmilha NT-X', 'Solado PY-VA', 'Borracha ULTRAX']
   },
   {
     id: 'adidas_ultraboost_light',
