@@ -36,7 +36,7 @@ export default function ProductCard({ product, onAddToCartClick }: ProductCardPr
         <h4 className="product-card-title">{product.name}</h4>
         
         <div className="product-card-specs">
-          {product.weight}
+          {product.weight} • Drop {product.drop}
         </div>
 
         <div className="product-card-sizes">

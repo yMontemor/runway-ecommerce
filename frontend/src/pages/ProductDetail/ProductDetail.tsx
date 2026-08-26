@@ -111,6 +111,10 @@ export default function ProductDetail() {
                 <span className="spec-value">{product.weight}</span>
               </div>
               <div className="spec-item">
+                <span className="spec-label">Drop</span>
+                <span className="spec-value">{product.drop}</span>
+              </div>
+              <div className="spec-item">
                 <span className="spec-label">Tecnologias</span>
                 <span className="spec-value">{product.technologies.join(', ')}</span>
               </div>
