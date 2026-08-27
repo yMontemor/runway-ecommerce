@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import type { Product } from '../../types';
 import { generateBotResponse, initialChatContext, type ChatContext } from './chatbotEngine';
 import './Chatbot.css';
@@ -13,6 +13,8 @@ interface Message {
 
 export default function Chatbot() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const showFloatingTrigger = location.pathname === '/' || location.pathname === '/catalogo';
   const [isOpen, setIsOpen] = useState(false);
   const [context, setContext] = useState<ChatContext>(initialChatContext);
   const [suggestions, setSuggestions] = useState<string[]>([
@@ -111,7 +113,7 @@ export default function Chatbot() {
     <div className="chatbot-wrapper">
       
       {/* Botão Flutuante Verde Neon */}
-      {!isOpen && (
+      {!isOpen && showFloatingTrigger && (
         <button 
           onClick={() => setIsOpen(true)} 
           className="chatbot-trigger-btn"
