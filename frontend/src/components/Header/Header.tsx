@@ -5,7 +5,7 @@ import './Header.css';
 
 export default function Header() {
   const [showDropdown, setShowDropdown] = useState(false);
-  const { customers, activeCustomer, setActiveCustomer, cartsByCustomer } = useApp();
+  const { customers, activeCustomer, setActiveCustomer, cartsByCustomer, toggleChatbot } = useApp();
   const navigate = useNavigate();
 
   const currentCart = cartsByCustomer[activeCustomer.id] || [];
@@ -23,8 +23,7 @@ export default function Header() {
 
   const triggerChatbot = (e: React.MouseEvent) => {
     e.preventDefault();
-    // Disparar evento global para abrir o chatbot flutuante
-    window.dispatchEvent(new Event('open-chatbot'));
+    toggleChatbot();
   };
 
   return (
@@ -56,11 +55,17 @@ export default function Header() {
         {/* NAVEGAÇÃO E AÇÕES (Ordem: Chatbot -> Catálogo -> Cupons -> Pedidos -> Carrinho -> Cliente) */}
         <nav className="header-nav">
           {/* Chatbot (apenas ícone de conversa) */}
-          <a href="#chatbot" onClick={triggerChatbot} className="nav-item chatbot-icon-only" title="Chatbot">
+          <button 
+            type="button" 
+            onClick={triggerChatbot} 
+            className="nav-item chatbot-icon-only" 
+            title="Chatbot"
+            aria-label="Abrir ou fechar assistente virtual"
+          >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
-          </a>
+          </button>
 
           {/* Catálogo com ícone de grid/módulos */}
           <Link to="/catalogo" className="nav-item">

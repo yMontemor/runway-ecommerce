@@ -1,0 +1,115 @@
+/* ============================================================
+   RUNWAY TOAST NOTIFICATION
+   ============================================================ */
+.rw-toast-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  max-width: 440px;
+  min-width: 300px;
+  padding: 0.95rem 1.25rem;
+  background-color: #141414;
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.8), 0 0 1px rgba(255, 255, 255, 0.15);
+  animation: rwToastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+}
+
+@keyframes rwToastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Tipos de Toast */
+.rw-toast-error {
+  border: 1px solid rgba(255, 69, 69, 0.45);
+  border-left: 4px solid #ff4545;
+}
+
+.rw-toast-error .rw-toast-icon {
+  color: #ff4545;
+}
+
+.rw-toast-warning {
+  border: 1px solid rgba(243, 156, 18, 0.45);
+  border-left: 4px solid #f39c12;
+}
+
+.rw-toast-warning .rw-toast-icon {
+  color: #f39c12;
+}
+
+.rw-toast-success {
+  border: 1px solid rgba(46, 204, 113, 0.45);
+  border-left: 4px solid #2ecc71;
+}
+
+.rw-toast-success .rw-toast-icon {
+  color: #2ecc71;
+}
+
+.rw-toast-info {
+  border: 1px solid rgba(52, 152, 219, 0.45);
+  border-left: 4px solid #3498db;
+}
+
+.rw-toast-info .rw-toast-icon {
+  color: #3498db;
+}
+
+.rw-toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rw-toast-message {
+  flex: 1;
+  color: #ffffff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.rw-toast-close {
+  background: transparent;
+  border: none;
+  color: #888888;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.2rem;
+  margin-left: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.rw-toast-close:hover {
+  color: #ffffff;
+  transform: scale(1.15);
+}
+
+@media (max-width: 600px) {
+  .rw-toast-container {
+    top: 16px;
+    right: 16px;
+    left: 16px;
+    max-width: none;
+    min-width: 0;
+  }
+}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useApp } from '../../store/AppContext';
 import type { Product } from '../../types';
 import { generateBotResponse, initialChatContext, type ChatContext } from './chatbotEngine';
 import './Chatbot.css';
@@ -14,8 +15,8 @@ interface Message {
 export default function Chatbot() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isChatbotOpen: isOpen, setIsChatbotOpen: setIsOpen, toggleChatbot } = useApp();
   const showFloatingTrigger = location.pathname === '/' || location.pathname === '/catalogo';
-  const [isOpen, setIsOpen] = useState(false);
   const [context, setContext] = useState<ChatContext>(initialChatContext);
   const [suggestions, setSuggestions] = useState<string[]>([
     'Quero um tênis para treino diário',
@@ -35,12 +36,19 @@ export default function Chatbot() {
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Escutar evento do Header para abrir o Chatbot
+  // Escutar eventos do Header e de outros pontos para alternar (toggle) ou abrir o Chatbot
   useEffect(() => {
+    const handleToggleChat = () => toggleChatbot();
     const handleOpenChat = () => setIsOpen(true);
+
+    window.addEventListener('toggle-chatbot', handleToggleChat);
     window.addEventListener('open-chatbot', handleOpenChat);
-    return () => window.removeEventListener('open-chatbot', handleOpenChat);
-  }, []);
+
+    return () => {
+      window.removeEventListener('toggle-chatbot', handleToggleChat);
+      window.removeEventListener('open-chatbot', handleOpenChat);
+    };
+  }, [toggleChatbot, setIsOpen]);
 
   // Rolar para o final do chat ao receber mensagens
   useEffect(() => {

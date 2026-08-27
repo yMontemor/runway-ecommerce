@@ -8,7 +8,7 @@ export const mockCoupons: Coupon[] = [
     value: 20, // 20% de desconto
     description: 'Cupom promocional de 20% de desconto',
     expirationDate: '30/12/2026',
-    customerId: 'ana_carolina'
+    customerId: 'CLI-0001'
   },
   {
     id: 'coupon_ana_2',
@@ -17,6 +17,6 @@ export const mockCoupons: Coupon[] = [
     value: 849.90, // R$ 849,90 de saldo
     description: 'Cupom de troca de R$ 849,90',
     expirationDate: '29/09/2026',
-    customerId: 'ana_carolina'
+    customerId: 'CLI-0001'
   }
 ];

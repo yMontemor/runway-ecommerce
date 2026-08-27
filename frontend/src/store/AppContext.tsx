@@ -1,10 +1,11 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { Customer, CartItem, Order, Coupon, Exchange, ExchangeItem, Address, CreditCard } from '../types';
+import type { Customer, CartItem, Order, Coupon, Exchange, ExchangeItem, Address, CreditCard, NewCustomerInput } from '../types';
 import { mockCustomers } from '../data/customers';
 import { mockCoupons } from '../data/coupons';
 import { products } from '../data/products';
+import { validateBirthDate, validatePhoneFields, validateZipCode, maskZipCode } from '../utils/maskAndValidate';
 
 interface AppContextType {
   customers: Customer[];
@@ -14,6 +15,7 @@ interface AppContextType {
   coupons: Coupon[];
   exchanges: Exchange[];
   setActiveCustomer: (id: string) => void;
+  addCustomer: (data: NewCustomerInput) => { success: boolean; error?: string; customer?: Customer };
   updateCustomerStatus: (id: string, status: 'ATIVO' | 'INATIVO') => void;
   addToCart: (productId: string, size: number, quantity: number) => { success: boolean; isInactive?: boolean };
   updateCartQuantity: (productId: string, size: number, delta: number) => void;
@@ -50,6 +52,9 @@ interface AppContextType {
   updateCustomerCard: (customerId: string, card: CreditCard) => void;
   removeCustomerCard: (customerId: string, cardId: string) => void;
   setCardAsPreferred: (customerId: string, cardId: string) => void;
+  isChatbotOpen: boolean;
+  setIsChatbotOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  toggleChatbot: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -64,13 +69,16 @@ export function useApp() {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [customers, setCustomers] = useState<Customer[]>(mockCustomers);
-  const [activeCustomerId, setActiveCustomerId] = useState<string>('ana_carolina');
+  const [activeCustomerId, setActiveCustomerId] = useState<string>('CLI-0001');
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
+
+  const toggleChatbot = () => setIsChatbotOpen(prev => !prev);
   
   // Carrinhos isolados por cliente
   const [cartsByCustomer, setCartsByCustomer] = useState<Record<string, CartItem[]>>({
-    ana_carolina: [],
-    carlos_roberto: [],
-    maria_oliveira: [],
+    'CLI-0001': [],
+    'CLI-0002': [],
+    'CLI-0003': [],
   });
 
   // Cupons iniciais
@@ -81,7 +89,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     {
       id: 'RW-2026-001',
       date: '10/05/2026',
-      customerId: 'ana_carolina',
+      customerId: 'CLI-0001',
       status: 'ENTREGUE',
       clientConfirmedReceipt: true,
       items: [
@@ -104,7 +112,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     {
       id: 'RW-2026-002',
       date: '15/06/2026',
-      customerId: 'carlos_roberto',
+      customerId: 'CLI-0002',
       status: 'ENTREGUE',
       clientConfirmedReceipt: true,
       items: [
@@ -127,7 +135,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     {
       id: 'RW-2026-003',
       date: '20/08/2026',
-      customerId: 'ana_carolina',
+      customerId: 'CLI-0001',
       status: 'EM ABERTO',
       items: [
         {
@@ -149,7 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     {
       id: 'RW-2026-004',
       date: '22/08/2026',
-      customerId: 'ana_carolina',
+      customerId: 'CLI-0001',
       status: 'ENTREGUE',
       clientConfirmedReceipt: true,
       items: [
@@ -164,8 +172,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           quantity: 1
         },
         {
-          product: products.find(p => p.id === 'olympikus_corre_turbo') || products[0],
-          size: 44,
+          product: products.find(p => p.id === 'fila_float_maxxi_2') || products[0],
+          size: 39,
           quantity: 1
         }
       ],
@@ -528,10 +536,163 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  // Cadastrar Novo Cliente (RF0021, RN0021, RN0022, RN0026, RN0027, RNF0035)
+  const addCustomer = (data: NewCustomerInput): { success: boolean; error?: string; customer?: Customer } => {
+    // 1. Validações de campos obrigatórios
+    if (
+      !data.name?.trim() ||
+      !data.cpf?.trim() ||
+      !data.email?.trim() ||
+      !data.birthDate?.trim() ||
+      !data.phoneDdd?.trim() ||
+      !data.phoneNumber?.trim() ||
+      !data.phoneType?.trim()
+    ) {
+      return { success: false, error: 'Por favor, preencha todos os campos obrigatórios do cliente.' };
+    }
+
+    // 2. Validação de Data de Nascimento (existência real de dia/mês/ano bissexto e não futura)
+    const birthValidation = validateBirthDate(data.birthDate);
+    if (!birthValidation.isValid) {
+      return { success: false, error: birthValidation.error };
+    }
+
+    // 3. Validação de Telefone (DDD 2 dígitos + Número 8 ou 9 dígitos)
+    const phoneValidation = validatePhoneFields(data.phoneDdd, data.phoneNumber);
+    if (!phoneValidation.isValid) {
+      return { success: false, error: phoneValidation.error };
+    }
+
+    // 4. Validação de CPF único (desconsiderando pontos e traços)
+    const cleanNewCpf = data.cpf.replace(/\D/g, '');
+    if (cleanNewCpf.length !== 11) {
+      return { success: false, error: 'O CPF informado deve conter 11 dígitos numéricos.' };
+    }
+    const cpfExists = customers.some(c => c.cpf.replace(/\D/g, '') === cleanNewCpf);
+    if (cpfExists) {
+      return { success: false, error: 'Já existe um cliente cadastrado com este CPF.' };
+    }
+
+    // 5. Validação de E-mail único (case-insensitive)
+    const cleanEmail = data.email.trim().toLowerCase();
+    const emailExists = customers.some(c => c.email.trim().toLowerCase() === cleanEmail);
+    if (emailExists) {
+      return { success: false, error: 'Já existe um cliente cadastrado com este e-mail.' };
+    }
+
+    // 4. Validação do endereço inicial
+    const addr = data.initialAddress;
+    if (
+      !addr ||
+      !addr.label?.trim() ||
+      !addr.street?.trim() ||
+      !addr.number?.trim() ||
+      !addr.neighborhood?.trim() ||
+      !addr.zipCode?.trim() ||
+      !addr.city?.trim() ||
+      !addr.state?.trim() ||
+      !addr.country?.trim() ||
+      !addr.residenceType ||
+      !addr.streetType
+    ) {
+      return { success: false, error: 'Por favor, preencha todos os campos obrigatórios do endereço inicial.' };
+    }
+
+    // Validação de CEP com 8 dígitos
+    const zipValidation = validateZipCode(addr.zipCode);
+    if (!zipValidation.isValid) {
+      return { success: false, error: zipValidation.error };
+    }
+
+    if (!addr.isDelivery || !addr.isBilling) {
+      return { success: false, error: 'O endereço inicial deve ser selecionado tanto para Entrega quanto para Cobrança.' };
+    }
+
+    // 5. Geração de ID/Código único sequencial (CLI-XXXX)
+    const existingNumbers = customers.map(c => {
+      const match = c.id.match(/^CLI-(\d+)$/);
+      return match ? parseInt(match[1], 10) : 0;
+    });
+    const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
+    const nextNumber = maxNumber + 1;
+    const newCustomerId = `CLI-${String(nextNumber).padStart(4, '0')}`;
+    const newAddressId = `addr_${Math.random().toString(36).substr(2, 9)}`;
+
+    // 6. Formatação do telefone legado
+    const cleanDdd = data.phoneDdd.replace(/\D/g, '');
+    const cleanPhoneNum = data.phoneNumber.trim();
+    const derivedPhone = `(${cleanDdd}) ${cleanPhoneNum}`;
+
+    const newAddress: Address = {
+      id: newAddressId,
+      label: addr.label?.trim() || 'Endereço Principal',
+      residenceType: addr.residenceType,
+      streetType: addr.streetType,
+      street: addr.street.trim(),
+      number: addr.number.trim(),
+      complement: addr.complement?.trim() || undefined,
+      neighborhood: addr.neighborhood.trim(),
+      zipCode: maskZipCode(addr.zipCode),
+      city: addr.city.trim(),
+      state: addr.state.trim().toUpperCase(),
+      country: addr.country?.trim() || 'Brasil',
+      observations: addr.observations?.trim() || undefined,
+      isDelivery: !!addr.isDelivery,
+      isBilling: !!addr.isBilling
+    };
+
+    const newCustomer: Customer = {
+      id: newCustomerId,
+      name: data.name.trim(),
+      email: cleanEmail,
+      cpf: data.cpf.trim(),
+      phone: derivedPhone,
+      phoneType: data.phoneType,
+      phoneDdd: cleanDdd,
+      phoneNumber: cleanPhoneNum,
+      gender: data.gender,
+      birthDate: data.birthDate.trim(),
+      status: 'ATIVO',
+      /**
+       * RN0027: Pontuação inicial/base do protótipo (valor 1).
+       * NOTA: Este valor inicial não constitui atendimento integral da RN0027.
+       * O cálculo dinâmico baseado no perfil de compras será implementado em etapas futuras.
+       */
+      ranking: 1,
+      addresses: [newAddress],
+      cards: []
+    };
+
+    // 7. Atualizar estado global
+    setCustomers(prev => [...prev, newCustomer]);
+
+    // 8. Inicializar carrinho vazio para o novo cliente
+    setCartsByCustomer(prev => ({
+      ...prev,
+      [newCustomerId]: []
+    }));
+
+    return { success: true, customer: newCustomer };
+  };
+
   // Editar Perfil do Cliente
   const updateCustomerProfile = (updatedCustomer: Customer) => {
     setCustomers(prev =>
-      prev.map(c => (c.id === updatedCustomer.id ? { ...updatedCustomer, cpf: c.cpf } : c))
+      prev.map(c => {
+        if (c.id === updatedCustomer.id) {
+          const derivedPhone = updatedCustomer.phoneDdd && updatedCustomer.phoneNumber
+            ? `(${updatedCustomer.phoneDdd.replace(/\D/g, '')}) ${updatedCustomer.phoneNumber.trim()}`
+            : (updatedCustomer.phone || c.phone);
+
+          return {
+            ...c,
+            ...updatedCustomer,
+            cpf: c.cpf, // CPF imutável
+            phone: derivedPhone
+          };
+        }
+        return c;
+      })
     );
   };
 
@@ -539,6 +700,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addCustomerAddress = (customerId: string, address: Omit<Address, 'id'>) => {
     const newAddress: Address = {
       ...address,
+      zipCode: maskZipCode(address.zipCode),
       id: `addr_${Math.random().toString(36).substr(2, 9)}`
     };
 
@@ -552,12 +714,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateCustomerAddress = (customerId: string, address: Address) => {
+    const formattedAddress: Address = {
+      ...address,
+      zipCode: maskZipCode(address.zipCode)
+    };
+
     setCustomers(prev =>
       prev.map(c =>
         c.id === customerId
           ? {
               ...c,
-              addresses: c.addresses.map(a => (a.id === address.id ? address : a))
+              addresses: c.addresses.map(a => (a.id === address.id ? formattedAddress : a))
             }
           : c
       )
@@ -686,6 +853,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         coupons,
         exchanges,
         setActiveCustomer,
+        addCustomer,
         updateCustomerStatus,
         addToCart,
         updateCartQuantity,
@@ -704,7 +872,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addCustomerCard,
         updateCustomerCard,
         removeCustomerCard,
-        setCardAsPreferred
+        setCardAsPreferred,
+        isChatbotOpen,
+        setIsChatbotOpen,
+        toggleChatbot
       }}
     >
       {children}

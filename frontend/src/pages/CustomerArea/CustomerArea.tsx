@@ -4,6 +4,20 @@ import { useApp } from '../../store/AppContext';
 import Modal from '../../components/Modal/Modal';
 import OrderDetailsModal from '../../components/OrderDetailsModal/OrderDetailsModal';
 import type { Address, CreditCard, Order } from '../../types';
+import {
+  maskBirthDate,
+  maskPhoneNumber,
+  validateBirthDate,
+  validatePhoneFields,
+  maskCardNumber,
+  maskCardExpiration,
+  maskCardCvv,
+  validateCardNumber,
+  validateCardExpiration,
+  validateCardCvv,
+  maskZipCode,
+  validateZipCode
+} from '../../utils/maskAndValidate';
 import './CustomerArea.css';
 
 export default function CustomerArea() {
@@ -51,18 +65,25 @@ export default function CustomerArea() {
   const [profileForm, setProfileForm] = useState({
     name: activeCustomer.name,
     email: activeCustomer.email,
-    phone: activeCustomer.phone,
+    phoneType: activeCustomer.phoneType || 'Celular',
+    phoneDdd: activeCustomer.phoneDdd || (activeCustomer.phone.match(/\((\d{2})\)/)?.[1] || '11'),
+    phoneNumber: activeCustomer.phoneNumber || activeCustomer.phone.replace(/^\(\d{2}\)\s*/, ''),
     gender: activeCustomer.gender,
     birthDate: activeCustomer.birthDate
   });
 
+  const [profileError, setProfileError] = useState<string | null>(null);
+
   const [prevCustomerForProfile, setPrevCustomerForProfile] = useState(activeCustomer.id);
   if (activeCustomer.id !== prevCustomerForProfile) {
     setPrevCustomerForProfile(activeCustomer.id);
+    setProfileError(null);
     setProfileForm({
       name: activeCustomer.name,
       email: activeCustomer.email,
-      phone: activeCustomer.phone,
+      phoneType: activeCustomer.phoneType || 'Celular',
+      phoneDdd: activeCustomer.phoneDdd || (activeCustomer.phone.match(/\((\d{2})\)/)?.[1] || '11'),
+      phoneNumber: activeCustomer.phoneNumber || activeCustomer.phone.replace(/^\(\d{2}\)\s*/, ''),
       gender: activeCustomer.gender,
       birthDate: activeCustomer.birthDate
     });
@@ -70,11 +91,34 @@ export default function CustomerArea() {
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
+    setProfileError(null);
+
+    const birthVal = validateBirthDate(profileForm.birthDate);
+    if (!birthVal.isValid) {
+      setProfileError(birthVal.error || 'Informe uma data de nascimento válida.');
+      return;
+    }
+
+    const phoneVal = validatePhoneFields(profileForm.phoneDdd, profileForm.phoneNumber);
+    if (!phoneVal.isValid) {
+      setProfileError(phoneVal.error || 'Telefone inválido.');
+      return;
+    }
+
     updateCustomerProfile({
       ...activeCustomer,
-      ...profileForm
+      ...profileForm,
+      phone: `(${profileForm.phoneDdd.replace(/\D/g, '')}) ${profileForm.phoneNumber.trim()}`
     });
     setIsEditingProfile(false);
+  };
+
+  const handleEditBirthDateChange = (val: string) => {
+    setProfileForm(p => ({ ...p, birthDate: maskBirthDate(val) }));
+  };
+
+  const handleEditPhoneNumChange = (val: string) => {
+    setProfileForm(p => ({ ...p, phoneNumber: maskPhoneNumber(val) }));
   };
 
   // Módulos de Inativação/Reativação
@@ -83,23 +127,29 @@ export default function CustomerArea() {
 
   // Módulos de Cartões
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+  const [cardModalError, setCardModalError] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
   const [cardForm, setCardForm] = useState({
     brand: 'Visa' as CreditCard['brand'],
+    cardNumber: '',
     lastFour: '',
     holderName: '',
     expirationDate: '',
+    cvv: '',
     isPreferred: false
   });
   const [cardToRemoveId, setCardToRemoveId] = useState<string | null>(null);
 
   const handleOpenAddCard = () => {
     setEditingCard(null);
+    setCardModalError(null);
     setCardForm({
       brand: 'Visa',
+      cardNumber: '',
       lastFour: '',
       holderName: '',
       expirationDate: '',
+      cvv: '',
       isPreferred: false
     });
     setIsCardModalOpen(true);
@@ -107,11 +157,14 @@ export default function CustomerArea() {
 
   const handleOpenEditCard = (card: CreditCard) => {
     setEditingCard(card);
+    setCardModalError(null);
     setCardForm({
       brand: card.brand,
+      cardNumber: card.cardNumber ? maskCardNumber(card.cardNumber) : `•••• •••• •••• ${card.lastFour}`,
       lastFour: card.lastFour,
       holderName: card.holderName,
       expirationDate: card.expirationDate,
+      cvv: card.cvv || '',
       isPreferred: card.isPreferred
     });
     setIsCardModalOpen(true);
@@ -119,34 +172,74 @@ export default function CustomerArea() {
 
   const handleSaveCard = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!cardForm.lastFour || !cardForm.holderName || !cardForm.expirationDate) return;
+    setCardModalError(null);
+
+    // Validação do número do cartão (se fornecido ou se novo cadastro)
+    const cleanNum = cardForm.cardNumber.replace(/\D/g, '');
+    if (!editingCard || cleanNum.length > 4) {
+      const numVal = validateCardNumber(cleanNum);
+      if (!numVal.isValid) {
+        setCardModalError(numVal.error || 'Informe um número de cartão válido.');
+        return;
+      }
+    }
+
+    if (!cardForm.holderName.trim()) {
+      setCardModalError('O nome impresso no cartão é obrigatório.');
+      return;
+    }
+
+    const expVal = validateCardExpiration(cardForm.expirationDate);
+    if (!expVal.isValid) {
+      setCardModalError(expVal.error || 'Data de validade inválida.');
+      return;
+    }
+
+    if (cardForm.cvv) {
+      const cvvVal = validateCardCvv(cardForm.cvv);
+      if (!cvvVal.isValid) {
+        setCardModalError(cvvVal.error || 'Código CVV inválido.');
+        return;
+      }
+    }
+
+    const derivedLastFour = cleanNum.length >= 4 ? cleanNum.slice(-4) : (cardForm.lastFour || '1234');
 
     if (editingCard) {
       updateCustomerCard(activeCustomer.id, {
         ...editingCard,
-        ...cardForm,
-        lastFour: cardForm.lastFour.replace(/\D/g, '').slice(-4),
-        holderName: cardForm.holderName.toUpperCase()
+        brand: cardForm.brand,
+        cardNumber: cleanNum.length >= 13 ? maskCardNumber(cleanNum) : editingCard.cardNumber,
+        lastFour: derivedLastFour,
+        holderName: cardForm.holderName.toUpperCase().trim(),
+        expirationDate: cardForm.expirationDate.trim(),
+        cvv: cardForm.cvv ? cardForm.cvv.replace(/\D/g, '') : editingCard.cvv,
+        isPreferred: cardForm.isPreferred
       });
     } else {
       addCustomerCard(activeCustomer.id, {
         brand: cardForm.brand,
-        lastFour: cardForm.lastFour.replace(/\D/g, '').slice(-4),
-        holderName: cardForm.holderName.toUpperCase(),
-        expirationDate: cardForm.expirationDate,
+        cardNumber: maskCardNumber(cleanNum),
+        lastFour: derivedLastFour,
+        holderName: cardForm.holderName.toUpperCase().trim(),
+        expirationDate: cardForm.expirationDate.trim(),
+        cvv: cardForm.cvv.replace(/\D/g, ''),
         isPreferred: cardForm.isPreferred
       });
     }
     setIsCardModalOpen(false);
     setEditingCard(null);
-    setCardForm({ brand: 'Visa', lastFour: '', holderName: '', expirationDate: '', isPreferred: false });
+    setCardForm({ brand: 'Visa', cardNumber: '', lastFour: '', holderName: '', expirationDate: '', cvv: '', isPreferred: false });
   };
 
   // Módulos de Endereços
   const [isAddrModalOpen, setIsAddrModalOpen] = useState(false);
+  const [addrModalError, setAddrModalError] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
   const [addrForm, setAddrForm] = useState({
     label: '',
+    residenceType: 'Casa',
+    streetType: 'Rua',
     street: '',
     number: '',
     complement: '',
@@ -155,37 +248,69 @@ export default function CustomerArea() {
     city: '',
     state: '',
     country: 'Brasil',
-    observations: ''
+    observations: '',
+    isDelivery: true,
+    isBilling: true
   });
 
   const handleOpenAddAddr = () => {
     setEditingAddress(null);
+    setAddrModalError(null);
     setAddrForm({
-      label: '', street: '', number: '', complement: '', neighborhood: '',
-      zipCode: '', city: '', state: '', country: 'Brasil', observations: ''
+      label: '', residenceType: 'Casa', streetType: 'Rua', street: '', number: '', complement: '', neighborhood: '',
+      zipCode: '', city: '', state: '', country: 'Brasil', observations: '', isDelivery: true, isBilling: true
     });
     setIsAddrModalOpen(true);
   };
 
   const handleOpenEditAddr = (addr: Address) => {
     setEditingAddress(addr);
+    setAddrModalError(null);
     setAddrForm({
-      label: addr.label, street: addr.street, number: addr.number, complement: addr.complement || '',
-      neighborhood: addr.neighborhood, zipCode: addr.zipCode, city: addr.city, state: addr.state,
-      country: addr.country, observations: addr.observations || ''
+      label: addr.label,
+      residenceType: addr.residenceType || 'Casa',
+      streetType: addr.streetType || 'Rua',
+      street: addr.street,
+      number: addr.number,
+      complement: addr.complement || '',
+      neighborhood: addr.neighborhood,
+      zipCode: maskZipCode(addr.zipCode),
+      city: addr.city,
+      state: addr.state,
+      country: addr.country || 'Brasil',
+      observations: addr.observations || '',
+      isDelivery: addr.isDelivery ?? true,
+      isBilling: addr.isBilling ?? true
     });
     setIsAddrModalOpen(true);
   };
 
   const handleSaveAddress = (e: React.FormEvent) => {
     e.preventDefault();
+    setAddrModalError(null);
+
+    if (!addrForm.label.trim() || !addrForm.street.trim() || !addrForm.number.trim() || !addrForm.city.trim() || !addrForm.state.trim()) {
+      setAddrModalError('Por favor, preencha todos os campos obrigatórios do endereço.');
+      return;
+    }
+
+    const zipVal = validateZipCode(addrForm.zipCode);
+    if (!zipVal.isValid) {
+      setAddrModalError(zipVal.error || 'Informe um CEP válido com 8 dígitos.');
+      return;
+    }
+
     if (editingAddress) {
       updateCustomerAddress(activeCustomer.id, {
         ...editingAddress,
-        ...addrForm
+        ...addrForm,
+        zipCode: maskZipCode(addrForm.zipCode)
       });
     } else {
-      addCustomerAddress(activeCustomer.id, addrForm);
+      addCustomerAddress(activeCustomer.id, {
+        ...addrForm,
+        zipCode: maskZipCode(addrForm.zipCode)
+      });
     }
     setIsAddrModalOpen(false);
   };
@@ -264,9 +389,11 @@ export default function CustomerArea() {
           <div className="profile-header-info">
             <h2 className="profile-client-name">{activeCustomer.name}</h2>
             <p className="profile-client-email">{activeCustomer.email}</p>
-            <span className={`status-badge ${activeCustomer.status.toLowerCase()}`}>
-              Conta {activeCustomer.status}
-            </span>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span className={`status-badge ${activeCustomer.status.toLowerCase()}`}>
+                Conta {activeCustomer.status}
+              </span>
+            </div>
           </div>
 
           <div className="profile-header-action">
@@ -350,7 +477,11 @@ export default function CustomerArea() {
                   </div>
                   <div className="data-field">
                     <span className="field-label">Telefone</span>
-                    <span className="field-val">{activeCustomer.phone}</span>
+                    <span className="field-val">
+                      {activeCustomer.phoneDdd && activeCustomer.phoneNumber 
+                        ? `(${activeCustomer.phoneDdd}) ${activeCustomer.phoneNumber} (${activeCustomer.phoneType || 'Celular'})`
+                        : `${activeCustomer.phone} (${activeCustomer.phoneType || 'Celular'})`}
+                    </span>
                   </div>
                   <div className="data-field">
                     <span className="field-label">Gênero</span>
@@ -363,6 +494,21 @@ export default function CustomerArea() {
                 </div>
               ) : (
                 <form onSubmit={handleSaveProfile} className="personal-data-form">
+                  {profileError && (
+                    <div style={{
+                      backgroundColor: 'rgba(255, 69, 69, 0.1)',
+                      border: '1px solid var(--color-danger)',
+                      color: 'var(--color-danger)',
+                      padding: '0.65rem 0.9rem',
+                      borderRadius: '6px',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      marginBottom: '1rem',
+                      gridColumn: '1 / -1'
+                    }}>
+                      ⚠️ {profileError}
+                    </div>
+                  )}
                   <div className="personal-data-grid">
                     <div className="form-group">
                       <label htmlFor="edit-name">Nome Completo</label>
@@ -389,14 +535,40 @@ export default function CustomerArea() {
                       <input type="text" value={activeCustomer.cpf} disabled className="disabled-field" />
                     </div>
                     <div className="form-group">
-                      <label htmlFor="edit-phone">Telefone</label>
-                      <input
-                        type="text"
-                        id="edit-phone"
-                        value={profileForm.phone}
-                        onChange={e => setProfileForm(p => ({ ...p, phone: e.target.value }))}
-                        required
-                      />
+                      <label htmlFor="edit-phone-type">Tipo de Telefone</label>
+                      <select
+                        id="edit-phone-type"
+                        value={profileForm.phoneType}
+                        onChange={e => setProfileForm(p => ({ ...p, phoneType: e.target.value }))}
+                      >
+                        <option value="Celular">Celular</option>
+                        <option value="Fixo">Fixo</option>
+                        <option value="Comercial">Comercial</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div style={{ width: '70px' }}>
+                        <label htmlFor="edit-phone-ddd">DDD</label>
+                        <input
+                          type="text"
+                          id="edit-phone-ddd"
+                          value={profileForm.phoneDdd}
+                          onChange={e => setProfileForm(p => ({ ...p, phoneDdd: e.target.value.replace(/\D/g, '').slice(0, 2) }))}
+                          maxLength={2}
+                          required
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label htmlFor="edit-phone-num">Número</label>
+                        <input
+                          type="text"
+                          id="edit-phone-num"
+                          value={profileForm.phoneNumber}
+                          onChange={e => handleEditPhoneNumChange(e.target.value)}
+                          maxLength={10}
+                          required
+                        />
+                      </div>
                     </div>
                     <div className="form-group">
                       <label htmlFor="edit-gender">Gênero</label>
@@ -416,8 +588,9 @@ export default function CustomerArea() {
                         type="text"
                         id="edit-birth"
                         value={profileForm.birthDate}
-                        onChange={e => setProfileForm(p => ({ ...p, birthDate: e.target.value }))}
+                        onChange={e => handleEditBirthDateChange(e.target.value)}
                         placeholder="dd/mm/aaaa"
+                        maxLength={10}
                         required
                       />
                     </div>
@@ -430,7 +603,9 @@ export default function CustomerArea() {
                         setProfileForm({
                           name: activeCustomer.name,
                           email: activeCustomer.email,
-                          phone: activeCustomer.phone,
+                          phoneType: activeCustomer.phoneType || 'Celular',
+                          phoneDdd: activeCustomer.phoneDdd || '11',
+                          phoneNumber: activeCustomer.phoneNumber || activeCustomer.phone,
                           gender: activeCustomer.gender,
                           birthDate: activeCustomer.birthDate
                         });
@@ -465,7 +640,19 @@ export default function CustomerArea() {
                 {activeCustomer.addresses.map(addr => (
                   <div key={addr.id} className="profile-address-card">
                     <div className="addr-card-header">
-                      <span className="profile-addr-label">{addr.label}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span className="profile-addr-label">{addr.label}</span>
+                        {addr.isDelivery && (
+                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--color-success)' }}>
+                            Entrega
+                          </span>
+                        )}
+                        {addr.isBilling && (
+                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(0, 191, 255, 0.15)', color: '#00bfff', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid #00bfff' }}>
+                            Cobrança
+                          </span>
+                        )}
+                      </div>
                       <div className="addr-card-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                         <button
                           type="button"
@@ -489,8 +676,10 @@ export default function CustomerArea() {
                         )}
                       </div>
                     </div>
-                    <p className="addr-txt">{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`}</p>
-                    <p className="addr-txt">{addr.neighborhood} - {addr.city} / {addr.state}</p>
+                    <p className="addr-txt">
+                      {addr.streetType ? `${addr.streetType} ` : ''}{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`} ({addr.residenceType || 'Residencial'})
+                    </p>
+                    <p className="addr-txt">{addr.neighborhood} - {addr.city} / {addr.state} - {addr.country || 'Brasil'}</p>
                     <p className="addr-txt text-light">CEP {addr.zipCode}</p>
                   </div>
                 ))}
@@ -816,6 +1005,46 @@ export default function CustomerArea() {
         title={editingCard ? 'Editar Cartão' : 'Adicionar Novo Cartão'}
       >
         <form onSubmit={handleSaveCard} className="address-modal-form">
+          {cardModalError && (
+            <div style={{
+              backgroundColor: 'rgba(255, 69, 69, 0.1)',
+              border: '1px solid var(--color-danger)',
+              color: 'var(--color-danger)',
+              padding: '0.65rem 0.9rem',
+              borderRadius: '6px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              marginBottom: '1rem'
+            }}>
+              ⚠️ {cardModalError}
+            </div>
+          )}
+
+          <div className="form-group">
+            <label htmlFor="card-number">Número do Cartão</label>
+            <input
+              type="text"
+              id="card-number"
+              maxLength={19}
+              value={cardForm.cardNumber}
+              onChange={e => setCardForm(prev => ({ ...prev, cardNumber: maskCardNumber(e.target.value) }))}
+              placeholder="0000 0000 0000 0000"
+              required={!editingCard}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="card-holder">Nome Impresso no Cartão</label>
+            <input
+              type="text"
+              id="card-holder"
+              value={cardForm.holderName}
+              onChange={e => setCardForm(prev => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
+              placeholder="NOME COMO NO CARTÃO"
+              required
+            />
+          </div>
+
           <div className="form-row">
             <div className="form-group flex-2">
               <label htmlFor="card-brand">Bandeira</label>
@@ -830,32 +1059,6 @@ export default function CustomerArea() {
               </select>
             </div>
             <div className="form-group flex-1">
-              <label htmlFor="card-digits">Últimos 4 Dígitos</label>
-              <input
-                type="text"
-                id="card-digits"
-                maxLength={4}
-                value={cardForm.lastFour}
-                onChange={e => setCardForm(prev => ({ ...prev, lastFour: e.target.value.replace(/\D/g, '') }))}
-                placeholder="4821"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group flex-2">
-              <label htmlFor="card-holder">Nome Impresso no Cartão</label>
-              <input
-                type="text"
-                id="card-holder"
-                value={cardForm.holderName}
-                onChange={e => setCardForm(prev => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
-                placeholder="ANA C SILVA"
-                required
-              />
-            </div>
-            <div className="form-group flex-1">
               <label htmlFor="card-exp">Validade</label>
               <input
                 type="text"
@@ -863,8 +1066,19 @@ export default function CustomerArea() {
                 placeholder="MM/AA"
                 maxLength={5}
                 value={cardForm.expirationDate}
-                onChange={e => setCardForm(prev => ({ ...prev, expirationDate: e.target.value }))}
+                onChange={e => setCardForm(prev => ({ ...prev, expirationDate: maskCardExpiration(e.target.value) }))}
                 required
+              />
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="card-cvv">CVV</label>
+              <input
+                type="text"
+                id="card-cvv"
+                placeholder="123"
+                maxLength={4}
+                value={cardForm.cvv}
+                onChange={e => setCardForm(prev => ({ ...prev, cvv: maskCardCvv(e.target.value) }))}
               />
             </div>
           </div>
@@ -899,25 +1113,77 @@ export default function CustomerArea() {
       {/* MODAL: Adicionar/Editar Endereço */}
       <Modal
         isOpen={isAddrModalOpen}
-        onClose={() => setIsAddrModalOpen(false)}
+        onClose={() => {
+          setIsAddrModalOpen(false);
+          setAddrModalError(null);
+        }}
         title={editingAddress ? 'Editar Endereço' : 'Adicionar Novo Endereço'}
       >
         <form onSubmit={handleSaveAddress} className="address-modal-form">
-          <div className="form-group">
-            <label htmlFor="m-addr-label">Identificação (ex: Casa, Trabalho)</label>
-            <input
-              type="text"
-              id="m-addr-label"
-              value={addrForm.label}
-              onChange={e => setAddrForm(prev => ({ ...prev, label: e.target.value }))}
-              placeholder="Ex: Casa, Escritório"
-              required
-            />
+          {addrModalError && (
+            <div style={{
+              backgroundColor: 'rgba(255, 69, 69, 0.1)',
+              border: '1px solid var(--color-danger)',
+              color: 'var(--color-danger)',
+              padding: '0.65rem 0.9rem',
+              borderRadius: '6px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              marginBottom: '1rem'
+            }}>
+              ⚠️ {addrModalError}
+            </div>
+          )}
+
+          <div className="form-row">
+            <div className="form-group flex-1">
+              <label htmlFor="m-addr-label">Identificação</label>
+              <input
+                type="text"
+                id="m-addr-label"
+                value={addrForm.label}
+                onChange={e => setAddrForm(prev => ({ ...prev, label: e.target.value }))}
+                placeholder="Ex: Casa, Escritório"
+                required
+              />
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="m-res-type">Tipo de Residência *</label>
+              <select
+                id="m-res-type"
+                value={addrForm.residenceType}
+                onChange={e => setAddrForm(prev => ({ ...prev, residenceType: e.target.value }))}
+                required
+              >
+                <option value="Casa">Casa</option>
+                <option value="Apartamento">Apartamento</option>
+                <option value="Sobrado">Sobrado</option>
+                <option value="Comercial">Comercial</option>
+                <option value="Outro">Outro</option>
+              </select>
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="m-street-type">Tipo de Logradouro *</label>
+              <select
+                id="m-street-type"
+                value={addrForm.streetType}
+                onChange={e => setAddrForm(prev => ({ ...prev, streetType: e.target.value }))}
+                required
+              >
+                <option value="Rua">Rua</option>
+                <option value="Avenida">Avenida</option>
+                <option value="Alameda">Alameda</option>
+                <option value="Praça">Praça</option>
+                <option value="Travessa">Travessa</option>
+                <option value="Rodovia">Rodovia</option>
+                <option value="Outro">Outro</option>
+              </select>
+            </div>
           </div>
 
           <div className="form-row">
             <div className="form-group flex-2">
-              <label htmlFor="m-addr-street">Logradouro</label>
+              <label htmlFor="m-addr-street">Logradouro *</label>
               <input
                 type="text"
                 id="m-addr-street"
@@ -928,7 +1194,7 @@ export default function CustomerArea() {
               />
             </div>
             <div className="form-group flex-1">
-              <label htmlFor="m-addr-num">Número</label>
+              <label htmlFor="m-addr-num">Número *</label>
               <input
                 type="text"
                 id="m-addr-num"
@@ -941,7 +1207,7 @@ export default function CustomerArea() {
           </div>
 
           <div className="form-row">
-            <div className="form-group">
+            <div className="form-group flex-1">
               <label htmlFor="m-addr-comp">Complemento</label>
               <input
                 type="text"
@@ -951,8 +1217,8 @@ export default function CustomerArea() {
                 placeholder="Apto 42, Bloco B (opcional)"
               />
             </div>
-            <div className="form-group">
-              <label htmlFor="m-addr-neigh">Bairro</label>
+            <div className="form-group flex-1">
+              <label htmlFor="m-addr-neigh">Bairro *</label>
               <input
                 type="text"
                 id="m-addr-neigh"
@@ -966,18 +1232,19 @@ export default function CustomerArea() {
 
           <div className="form-row">
             <div className="form-group flex-1">
-              <label htmlFor="m-addr-zip">CEP</label>
+              <label htmlFor="m-addr-zip">CEP *</label>
               <input
                 type="text"
                 id="m-addr-zip"
                 value={addrForm.zipCode}
-                onChange={e => setAddrForm(prev => ({ ...prev, zipCode: e.target.value }))}
+                onChange={e => setAddrForm(prev => ({ ...prev, zipCode: maskZipCode(e.target.value) }))}
                 placeholder="00000-000"
+                maxLength={9}
                 required
               />
             </div>
             <div className="form-group flex-2">
-              <label htmlFor="m-addr-city">Cidade</label>
+              <label htmlFor="m-addr-city">Cidade *</label>
               <input
                 type="text"
                 id="m-addr-city"
@@ -988,7 +1255,7 @@ export default function CustomerArea() {
               />
             </div>
             <div className="form-group flex-1">
-              <label htmlFor="m-addr-state">Estado</label>
+              <label htmlFor="m-addr-state">Estado *</label>
               <input
                 type="text"
                 id="m-addr-state"
@@ -999,6 +1266,26 @@ export default function CustomerArea() {
                 required
               />
             </div>
+          </div>
+
+          {/* Finalidades do Endereço */}
+          <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.5rem', padding: '0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={addrForm.isDelivery}
+                onChange={e => setAddrForm(prev => ({ ...prev, isDelivery: e.target.checked }))}
+              />
+              Endereço de entrega
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={addrForm.isBilling}
+                onChange={e => setAddrForm(prev => ({ ...prev, isBilling: e.target.checked }))}
+              />
+              Endereço de cobrança
+            </label>
           </div>
 
           <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>

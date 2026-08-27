@@ -7,14 +7,15 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  className?: string;
 }
 
-export default function Modal({ isOpen, onClose, title, children }: ModalProps) {
+export default function Modal({ isOpen, onClose, title, children, className = '' }: ModalProps) {
   if (!isOpen) return null;
 
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-container" onClick={e => e.stopPropagation()}>
+      <div className={`modal-container ${className}`.trim()} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h3 className="modal-title">{title}</h3>
           <button className="modal-close-btn" onClick={onClose} type="button" aria-label="Fechar">

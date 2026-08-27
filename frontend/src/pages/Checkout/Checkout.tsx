@@ -4,6 +4,16 @@ import { useApp } from '../../store/AppContext';
 import Modal from '../../components/Modal/Modal';
 import type { Address, Coupon, Order } from '../../types';
 import { getInstallmentOptions, getMaxInstallments } from '../../utils/payment';
+import {
+  maskCardNumber,
+  maskCardExpiration,
+  maskCardCvv,
+  validateCardNumber,
+  validateCardExpiration,
+  validateCardCvv,
+  maskZipCode,
+  validateZipCode
+} from '../../utils/maskAndValidate';
 import './Checkout.css';
 
 export default function Checkout() {
@@ -44,9 +54,12 @@ export default function Checkout() {
     }
   }, [activeCustomer.addresses, selectedAddressId]);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [addressModalError, setAddressModalError] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
   const [addressForm, setAddressForm] = useState({
     label: '',
+    residenceType: 'Casa',
+    streetType: 'Rua',
     street: '',
     number: '',
     complement: '',
@@ -55,13 +68,18 @@ export default function Checkout() {
     city: '',
     state: '',
     country: 'Brasil',
-    observations: ''
+    observations: '',
+    isDelivery: true,
+    isBilling: true
   });
 
   const handleOpenAddAddress = () => {
     setEditingAddress(null);
+    setAddressModalError(null);
     setAddressForm({
       label: '',
+      residenceType: 'Casa',
+      streetType: 'Rua',
       street: '',
       number: '',
       complement: '',
@@ -70,7 +88,9 @@ export default function Checkout() {
       city: '',
       state: '',
       country: 'Brasil',
-      observations: ''
+      observations: '',
+      isDelivery: true,
+      isBilling: true
     });
     setIsAddressModalOpen(true);
   };
@@ -79,33 +99,53 @@ export default function Checkout() {
     e.preventDefault();
     e.stopPropagation();
     setEditingAddress(addr);
+    setAddressModalError(null);
     setAddressForm({
       label: addr.label,
+      residenceType: addr.residenceType || 'Casa',
+      streetType: addr.streetType || 'Rua',
       street: addr.street,
       number: addr.number,
       complement: addr.complement || '',
       neighborhood: addr.neighborhood,
-      zipCode: addr.zipCode,
+      zipCode: maskZipCode(addr.zipCode),
       city: addr.city,
       state: addr.state,
       country: addr.country || 'Brasil',
-      observations: addr.observations || ''
+      observations: addr.observations || '',
+      isDelivery: addr.isDelivery ?? true,
+      isBilling: addr.isBilling ?? true
     });
     setIsAddressModalOpen(true);
   };
 
   const handleSaveAddress = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addressForm.label || !addressForm.street || !addressForm.number || !addressForm.zipCode) return;
+    setAddressModalError(null);
+
+    if (!addressForm.label.trim() || !addressForm.street.trim() || !addressForm.number.trim() || !addressForm.city.trim() || !addressForm.state.trim()) {
+      setAddressModalError('Por favor, preencha todos os campos obrigatórios do endereço.');
+      return;
+    }
+
+    const zipVal = validateZipCode(addressForm.zipCode);
+    if (!zipVal.isValid) {
+      setAddressModalError(zipVal.error || 'Informe um CEP válido com 8 dígitos.');
+      return;
+    }
     
     if (editingAddress) {
       updateCustomerAddress(activeCustomer.id, {
         ...editingAddress,
-        ...addressForm
+        ...addressForm,
+        zipCode: maskZipCode(addressForm.zipCode)
       });
       setSelectedAddressId(editingAddress.id);
     } else {
-      addCustomerAddress(activeCustomer.id, addressForm);
+      addCustomerAddress(activeCustomer.id, {
+        ...addressForm,
+        zipCode: maskZipCode(addressForm.zipCode)
+      });
     }
     setIsAddressModalOpen(false);
     setEditingAddress(null);
@@ -113,6 +153,8 @@ export default function Checkout() {
     // Reset form
     setAddressForm({
       label: '',
+      residenceType: 'Casa',
+      streetType: 'Rua',
       street: '',
       number: '',
       complement: '',
@@ -121,7 +163,9 @@ export default function Checkout() {
       city: '',
       state: '',
       country: 'Brasil',
-      observations: ''
+      observations: '',
+      isDelivery: true,
+      isBilling: true
     });
   };
 
@@ -140,6 +184,7 @@ export default function Checkout() {
 
   // Modal de novo cartão no checkout
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+  const [cardModalError, setCardModalError] = useState<string | null>(null);
   const [newCard, setNewCard] = useState({
     brand: 'Visa' as 'Visa' | 'Mastercard' | 'Elo',
     cardNumber: '',
@@ -151,18 +196,41 @@ export default function Checkout() {
 
   const handleAddNewCard = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCard.cardNumber || !newCard.holderName || !newCard.expirationDate) return;
+    setCardModalError(null);
+
+    const numVal = validateCardNumber(newCard.cardNumber);
+    if (!numVal.isValid) {
+      setCardModalError(numVal.error || 'Número de cartão inválido.');
+      return;
+    }
+
+    if (!newCard.holderName.trim()) {
+      setCardModalError('O nome impresso no cartão é obrigatório.');
+      return;
+    }
+
+    const expVal = validateCardExpiration(newCard.expirationDate);
+    if (!expVal.isValid) {
+      setCardModalError(expVal.error || 'Data de validade inválida.');
+      return;
+    }
+
+    const cvvVal = validateCardCvv(newCard.cvv);
+    if (!cvvVal.isValid) {
+      setCardModalError(cvvVal.error || 'Código CVV inválido.');
+      return;
+    }
 
     const cleanNum = newCard.cardNumber.replace(/\D/g, '');
     const derivedLastFour = cleanNum.length >= 4 ? cleanNum.slice(-4) : '1234';
 
     const created = addCustomerCard(activeCustomer.id, {
       brand: newCard.brand,
-      cardNumber: newCard.cardNumber,
+      cardNumber: maskCardNumber(cleanNum),
       lastFour: derivedLastFour,
-      holderName: newCard.holderName.toUpperCase(),
-      expirationDate: newCard.expirationDate,
-      cvv: newCard.cvv,
+      holderName: newCard.holderName.toUpperCase().trim(),
+      expirationDate: newCard.expirationDate.trim(),
+      cvv: newCard.cvv.replace(/\D/g, ''),
       isPreferred: newCard.isPreferred
     });
 
@@ -404,7 +472,14 @@ export default function Checkout() {
                   />
                   <div className="address-card-info" style={{ width: '100%' }}>
                     <div className="addr-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                      <div className="addr-tag">{addr.label}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <div className="addr-tag">{addr.label}</div>
+                        {addr.isDelivery && (
+                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success)', padding: '0.05rem 0.3rem', borderRadius: '3px', border: '1px solid var(--color-success)' }}>
+                            Entrega
+                          </span>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={(e) => handleOpenEditAddress(addr, e)}
@@ -414,7 +489,9 @@ export default function Checkout() {
                         Editar
                       </button>
                     </div>
-                    <p className="addr-street">{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`}</p>
+                    <p className="addr-street">
+                      {addr.streetType ? `${addr.streetType} ` : ''}{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`} ({addr.residenceType || 'Residencial'})
+                    </p>
                     <p className="addr-loc">{addr.neighborhood} - {addr.city} / {addr.state}</p>
                     <p className="addr-cep">CEP {addr.zipCode}</p>
                   </div>
@@ -914,26 +991,76 @@ export default function Checkout() {
         isOpen={isAddressModalOpen}
         onClose={() => {
           setIsAddressModalOpen(false);
+          setAddressModalError(null);
           setEditingAddress(null);
         }}
         title={editingAddress ? 'Editar Endereço' : 'Adicionar Novo Endereço'}
       >
         <form onSubmit={handleSaveAddress} className="address-modal-form">
-          <div className="form-group">
-            <label htmlFor="addr-label">Identificação (ex: Casa, Trabalho)</label>
-            <input
-              type="text"
-              id="addr-label"
-              value={addressForm.label}
-              onChange={(e) => setAddressForm(prev => ({ ...prev, label: e.target.value }))}
-              placeholder="ex: Minha Casa"
-              required
-            />
+          {addressModalError && (
+            <div style={{
+              backgroundColor: 'rgba(255, 69, 69, 0.1)',
+              border: '1px solid var(--color-danger)',
+              color: 'var(--color-danger)',
+              padding: '0.65rem 0.9rem',
+              borderRadius: '6px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              marginBottom: '1rem'
+            }}>
+              ⚠️ {addressModalError}
+            </div>
+          )}
+
+          <div className="form-row">
+            <div className="form-group flex-1">
+              <label htmlFor="addr-label">Identificação (ex: Casa, Trabalho)</label>
+              <input
+                type="text"
+                id="addr-label"
+                value={addressForm.label}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, label: e.target.value }))}
+                placeholder="ex: Minha Casa"
+                required
+              />
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="addr-res-type">Tipo de Residência *</label>
+              <select
+                id="addr-res-type"
+                value={addressForm.residenceType}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, residenceType: e.target.value }))}
+                required
+              >
+                <option value="Casa">Casa</option>
+                <option value="Apartamento">Apartamento</option>
+                <option value="Sobrado">Sobrado</option>
+                <option value="Comercial">Comercial</option>
+                <option value="Outro">Outro</option>
+              </select>
+            </div>
+            <div className="form-group flex-1">
+              <label htmlFor="addr-street-type">Tipo de Logradouro *</label>
+              <select
+                id="addr-street-type"
+                value={addressForm.streetType}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, streetType: e.target.value }))}
+                required
+              >
+                <option value="Rua">Rua</option>
+                <option value="Avenida">Avenida</option>
+                <option value="Alameda">Alameda</option>
+                <option value="Praça">Praça</option>
+                <option value="Travessa">Travessa</option>
+                <option value="Rodovia">Rodovia</option>
+                <option value="Outro">Outro</option>
+              </select>
+            </div>
           </div>
 
           <div className="form-row">
             <div className="form-group flex-2">
-              <label htmlFor="addr-street">Logradouro</label>
+              <label htmlFor="addr-street">Logradouro *</label>
               <input
                 type="text"
                 id="addr-street"
@@ -944,7 +1071,7 @@ export default function Checkout() {
               />
             </div>
             <div className="form-group flex-1">
-              <label htmlFor="addr-number">Número</label>
+              <label htmlFor="addr-number">Número *</label>
               <input
                 type="text"
                 id="addr-number"
@@ -957,7 +1084,7 @@ export default function Checkout() {
           </div>
 
           <div className="form-row">
-            <div className="form-group">
+            <div className="form-group flex-1">
               <label htmlFor="addr-comp">Complemento</label>
               <input
                 type="text"
@@ -967,8 +1094,8 @@ export default function Checkout() {
                 placeholder="Apto, Bloco..."
               />
             </div>
-            <div className="form-group">
-              <label htmlFor="addr-neighborhood">Bairro</label>
+            <div className="form-group flex-1">
+              <label htmlFor="addr-neighborhood">Bairro *</label>
               <input
                 type="text"
                 id="addr-neighborhood"
@@ -982,18 +1109,19 @@ export default function Checkout() {
 
           <div className="form-row">
             <div className="form-group flex-1">
-              <label htmlFor="addr-zip">CEP</label>
+              <label htmlFor="addr-zip">CEP *</label>
               <input
                 type="text"
                 id="addr-zip"
                 value={addressForm.zipCode}
-                onChange={(e) => setAddressForm(prev => ({ ...prev, zipCode: e.target.value }))}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, zipCode: maskZipCode(e.target.value) }))}
                 placeholder="00000-000"
+                maxLength={9}
                 required
               />
             </div>
             <div className="form-group flex-2">
-              <label htmlFor="addr-city">Cidade</label>
+              <label htmlFor="addr-city">Cidade *</label>
               <input
                 type="text"
                 id="addr-city"
@@ -1003,16 +1131,37 @@ export default function Checkout() {
               />
             </div>
             <div className="form-group flex-1">
-              <label htmlFor="addr-state">Estado</label>
+              <label htmlFor="addr-state">Estado *</label>
               <input
                 type="text"
                 id="addr-state"
                 value={addressForm.state}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, state: e.target.value }))}
                 placeholder="SP"
+                maxLength={2}
                 required
               />
             </div>
+          </div>
+
+          {/* Finalidades do Endereço */}
+          <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.5rem', padding: '0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={addressForm.isDelivery}
+                onChange={e => setAddressForm(prev => ({ ...prev, isDelivery: e.target.checked }))}
+              />
+              Endereço de entrega
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={addressForm.isBilling}
+                onChange={e => setAddressForm(prev => ({ ...prev, isBilling: e.target.checked }))}
+              />
+              Endereço de cobrança
+            </label>
           </div>
 
           <div className="modal-actions" style={{ marginTop: '1rem', border: 'none', padding: '0' }}>
@@ -1033,13 +1182,31 @@ export default function Checkout() {
         </form>
       </Modal>
 
-      {/* Modal Adicionar Cartão no Checkout */}
+      {/* MODAL: Adicionar Novo Cartão */}
       <Modal
         isOpen={isCardModalOpen}
-        onClose={() => setIsCardModalOpen(false)}
+        onClose={() => {
+          setIsCardModalOpen(false);
+          setCardModalError(null);
+        }}
         title="Adicionar Novo Cartão"
       >
         <form onSubmit={handleAddNewCard} className="address-modal-form">
+          {cardModalError && (
+            <div style={{
+              backgroundColor: 'rgba(255, 69, 69, 0.1)',
+              border: '1px solid var(--color-danger)',
+              color: 'var(--color-danger)',
+              padding: '0.65rem 0.9rem',
+              borderRadius: '6px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              marginBottom: '1rem'
+            }}>
+              ⚠️ {cardModalError}
+            </div>
+          )}
+
           <div className="form-group">
             <label htmlFor="chk-card-number">Número do Cartão</label>
             <input
@@ -1048,7 +1215,7 @@ export default function Checkout() {
               placeholder="0000 0000 0000 0000"
               maxLength={19}
               value={newCard.cardNumber}
-              onChange={e => setNewCard(prev => ({ ...prev, cardNumber: e.target.value }))}
+              onChange={e => setNewCard(prev => ({ ...prev, cardNumber: maskCardNumber(e.target.value) }))}
               required
             />
           </div>
@@ -1086,7 +1253,7 @@ export default function Checkout() {
                 placeholder="MM/AA"
                 maxLength={5}
                 value={newCard.expirationDate}
-                onChange={e => setNewCard(prev => ({ ...prev, expirationDate: e.target.value }))}
+                onChange={e => setNewCard(prev => ({ ...prev, expirationDate: maskCardExpiration(e.target.value) }))}
                 required
               />
             </div>
@@ -1098,7 +1265,7 @@ export default function Checkout() {
                 placeholder="123"
                 maxLength={4}
                 value={newCard.cvv}
-                onChange={e => setNewCard(prev => ({ ...prev, cvv: e.target.value.replace(/\D/g, '') }))}
+                onChange={e => setNewCard(prev => ({ ...prev, cvv: maskCardCvv(e.target.value) }))}
                 required
               />
             </div>

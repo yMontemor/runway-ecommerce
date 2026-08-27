@@ -962,3 +962,301 @@
   color: #050505;
   border-color: #2ecc71;
 }
+
+/* ============================================================
+   MODAL DE CADASTRO DE CLIENTE (DESIGN SYSTEM RUNWAY)
+   ============================================================ */
+.modal-container.rw-client-modal,
+.modal-container:has(.rw-client-modal-body) {
+  max-width: 860px !important;
+  width: 92% !important;
+  max-height: 90vh !important;
+  background-color: #0d0d0d !important;
+  border: 1px solid #222222 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.95), 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.rw-client-modal .modal-header {
+  padding: 1.25rem 1.75rem;
+  border-bottom: 1px solid #1a1a1a;
+  background-color: #0f0f0f;
+  flex-shrink: 0;
+}
+
+.rw-client-modal .modal-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+}
+
+.rw-client-modal .modal-body {
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  flex: 1 !important;
+}
+
+/* Área de Rolagem do Formulário */
+.rw-client-form-scroll {
+  padding: 1.75rem 2rem;
+  overflow-y: auto;
+  max-height: calc(88vh - 145px);
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.rw-client-form-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.rw-client-form-scroll::-webkit-scrollbar-track {
+  background: #080808;
+}
+
+.rw-client-form-scroll::-webkit-scrollbar-thumb {
+  background-color: #2b2b2b;
+  border-radius: 4px;
+}
+
+.rw-client-form-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary);
+}
+
+/* Mensagem de Erro */
+.rw-form-error-banner {
+  background-color: rgba(255, 69, 69, 0.08);
+  border: 1px solid rgba(255, 69, 69, 0.4);
+  color: #ff5252;
+  padding: 0.85rem 1.15rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Seções do Formulário */
+.rw-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.rw-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rw-section-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: rgba(198, 255, 0, 0.12);
+  color: var(--color-primary);
+  border: 1px solid rgba(198, 255, 0, 0.3);
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.rw-section-title {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin: 0;
+}
+
+/* Linhas e Campos */
+.rw-form-row {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.rw-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.rw-form-group.flex-1 { flex: 1; }
+.rw-form-group.flex-1-5 { flex: 1.5; }
+.rw-form-group.flex-2 { flex: 2; }
+.rw-form-group.flex-2-5 { flex: 2.5; }
+.rw-form-group.flex-3 { flex: 3; }
+
+.rw-form-group label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #a0a0a0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rw-req {
+  color: var(--color-primary);
+  font-weight: 700;
+  margin-left: 3px;
+}
+
+.rw-input,
+.rw-select,
+.rw-textarea {
+  width: 100%;
+  background-color: #121212;
+  border: 1px solid #282828;
+  border-radius: 7px;
+  padding: 0.75rem 1rem;
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.rw-input::placeholder,
+.rw-textarea::placeholder {
+  color: #555555;
+}
+
+.rw-input:focus,
+.rw-select:focus,
+.rw-textarea:focus {
+  border-color: var(--color-primary);
+  background-color: #161616;
+  box-shadow: 0 0 0 3px rgba(198, 255, 0, 0.12);
+  outline: none;
+}
+
+.rw-select {
+  cursor: pointer;
+}
+
+.rw-textarea {
+  resize: vertical;
+  min-height: 68px;
+  line-height: 1.5;
+}
+
+/* Card de Finalidade do Endereço */
+.rw-purpose-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.1rem 1.35rem;
+  background-color: #121212;
+  border: 1px solid #262626;
+  border-radius: 8px;
+}
+
+.rw-purpose-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #a0a0a0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rw-purpose-options {
+  display: flex;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+}
+
+.rw-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: #ffffff;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rw-checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+/* Rodapé Fixo */
+.rw-modal-footer {
+  padding: 1.15rem 2rem;
+  background-color: #0f0f0f;
+  border-top: 1px solid #1a1a1a;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+
+.rw-btn-cancel {
+  padding: 0.75rem 1.4rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.rw-btn-submit {
+  padding: 0.75rem 2rem;
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+}
+
+/* Responsividade Mobile */
+@media (max-width: 768px) {
+  .modal-container.rw-client-modal,
+  .modal-container:has(.rw-client-modal-body) {
+    width: 96% !important;
+    max-height: 94vh !important;
+  }
+
+  .rw-client-form-scroll {
+    padding: 1.25rem;
+    gap: 1.5rem;
+  }
+
+  .rw-form-row {
+    flex-direction: column;
+    gap: 1.15rem;
+  }
+
+  .rw-form-group {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+  }
+
+  .rw-purpose-options {
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .rw-modal-footer {
+    padding: 1rem 1.25rem;
+  }
+}
+
+
+

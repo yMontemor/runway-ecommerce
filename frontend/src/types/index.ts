@@ -16,7 +16,9 @@ export interface Product {
 
 export interface Address {
   id: string;
-  label: string; // e.g. "Casa", "Trabalho"
+  label: string; // e.g. "Casa", "Trabalho", "Cobrança Principal"
+  residenceType?: 'Casa' | 'Apartamento' | 'Sobrado' | 'Comercial' | 'Outro' | string; // RN0023
+  streetType?: 'Rua' | 'Avenida' | 'Alameda' | 'Praça' | 'Travessa' | 'Rodovia' | 'Outro' | string; // RN0023
   street: string;
   number: string;
   complement?: string;
@@ -26,6 +28,8 @@ export interface Address {
   state: string;
   country: string;
   observations?: string;
+  isDelivery?: boolean; // RN0022 - Endereço de entrega
+  isBilling?: boolean;  // RN0021 - Endereço de cobrança
 }
 
 export interface CreditCard {
@@ -85,16 +89,38 @@ export interface Order {
 }
 
 export interface Customer {
-  id: string;
+  id: string; // RNF0035 - Código único do cliente
   name: string;
   email: string;
   cpf: string;
-  phone: string;
+  phone: string; // Mantido para retrocompatibilidade (derivado de phoneDdd + phoneNumber)
+  phoneType?: 'Celular' | 'Fixo' | 'Comercial' | string; // RN0026
+  phoneDdd?: string; // RN0026
+  phoneNumber?: string; // RN0026
   gender: string;
   birthDate: string;
   status: 'ATIVO' | 'INATIVO';
+  /**
+   * RN0027: Ranking numérico do cliente.
+   * NOTA: O valor 1 é apenas a pontuação inicial/base do protótipo e não constitui
+   * atendimento integral da RN0027. O cálculo dinâmico baseado no perfil de compras
+   * será implementado em etapas futuras.
+   */
+  ranking: number;
   addresses: Address[];
   cards: CreditCard[];
+}
+
+export interface NewCustomerInput {
+  name: string;
+  email: string;
+  cpf: string;
+  phoneType: 'Celular' | 'Fixo' | 'Comercial' | string;
+  phoneDdd: string;
+  phoneNumber: string;
+  gender: string;
+  birthDate: string;
+  initialAddress: Omit<Address, 'id'>;
 }
 
 export interface ExchangeItem {
