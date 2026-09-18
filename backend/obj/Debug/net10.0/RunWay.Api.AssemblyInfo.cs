@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("RunWay.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+90e094e1778de6723d51412f4f8288749b5e6a8c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+659521359f50dca78bf248f7ce935fb1a8e33970")]
 [assembly: System.Reflection.AssemblyProductAttribute("RunWay.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("RunWay.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
