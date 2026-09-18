@@ -167,60 +167,13 @@ public class ClienteService : IClienteService
             var endDto = request.Enderecos[i];
             int pos = i + 1;
 
-            if (string.IsNullOrWhiteSpace(endDto.Nome))
-            {
-                throw new ValidationException($"A identificação/nome do endereço {pos} é obrigatória.");
-            }
-
-            if (string.IsNullOrWhiteSpace(endDto.TipoResidencia))
-            {
-                throw new ValidationException($"O tipo de residência do endereço {pos} é obrigatório. (RN0023)");
-            }
-
-            if (string.IsNullOrWhiteSpace(endDto.TipoLogradouro))
-            {
-                throw new ValidationException($"O tipo de logradouro do endereço {pos} é obrigatório. (RN0023)");
-            }
-
-            if (string.IsNullOrWhiteSpace(endDto.Logradouro))
-            {
-                throw new ValidationException($"O logradouro do endereço {pos} é obrigatório. (RN0023)");
-            }
-
-            if (string.IsNullOrWhiteSpace(endDto.Numero))
-            {
-                throw new ValidationException($"O número do endereço {pos} é obrigatório. (RN0023)");
-            }
-
-            if (string.IsNullOrWhiteSpace(endDto.Bairro))
-            {
-                throw new ValidationException($"O bairro do endereço {pos} é obrigatório. (RN0023)");
-            }
-
-            var cepNormalizado = Regex.Replace(endDto.Cep ?? string.Empty, @"\D", "");
-            if (cepNormalizado.Length != 8)
-            {
-                throw new ValidationException($"O CEP do endereço {pos} deve conter exatamente 8 dígitos numéricos. (RN0023)");
-            }
-
-            if (string.IsNullOrWhiteSpace(endDto.Cidade))
-            {
-                throw new ValidationException($"A cidade do endereço {pos} é obrigatória. (RN0023)");
-            }
-
-            if (string.IsNullOrWhiteSpace(endDto.Estado))
-            {
-                throw new ValidationException($"O estado do endereço {pos} é obrigatório. (RN0023)");
-            }
-
-            if (string.IsNullOrWhiteSpace(endDto.Pais))
-            {
-                throw new ValidationException($"O país do endereço {pos} é obrigatório. (RN0023)");
-            }
+            ValidarDadosEndereco(endDto, pos);
 
             if (endDto.Residencial) possuiResidencial = true;
             if (endDto.Entrega) possuiEntrega = true;
             if (endDto.Cobranca) possuiCobranca = true;
+
+            var cepNormalizadoEndereco = Regex.Replace(endDto.Cep ?? string.Empty, @"\D", "");
 
             enderecosEntidades.Add(new Endereco
             {
@@ -231,7 +184,7 @@ public class ClienteService : IClienteService
                 Numero = endDto.Numero.Trim(),
                 Complemento = string.IsNullOrWhiteSpace(endDto.Complemento) ? null : endDto.Complemento.Trim(),
                 Bairro = endDto.Bairro.Trim(),
-                Cep = cepNormalizado,
+                Cep = cepNormalizadoEndereco,
                 Cidade = endDto.Cidade.Trim(),
                 Estado = endDto.Estado.Trim().ToUpperInvariant(),
                 Pais = endDto.Pais.Trim(),
@@ -315,25 +268,237 @@ public class ClienteService : IClienteService
                 Ddd = novoCliente.Telefone.Ddd,
                 Numero = novoCliente.Telefone.Numero
             },
-            Enderecos = novoCliente.Enderecos.Select(e => new EnderecoResponseDto
-            {
-                Id = e.Id,
-                Nome = e.Nome,
-                TipoResidencia = e.TipoResidencia,
-                TipoLogradouro = e.TipoLogradouro,
-                Logradouro = e.Logradouro,
-                Numero = e.Numero,
-                Complemento = e.Complemento,
-                Bairro = e.Bairro,
-                Cep = e.Cep,
-                Cidade = e.Cidade,
-                Estado = e.Estado,
-                Pais = e.Pais,
-                Observacoes = e.Observacoes,
-                Residencial = e.Residencial,
-                Entrega = e.Entrega,
-                Cobranca = e.Cobranca
-            }).ToList()
+            Enderecos = novoCliente.Enderecos.Select(MapearEnderecoParaResponseDto).ToList()
+        };
+    }
+
+    /// <summary>
+    /// Lista os endereços cadastrados de um cliente pelo seu código único.
+    /// </summary>
+    public async Task<List<EnderecoResponseDto>> ListarEnderecosAsync(
+        string codigoCliente,
+        CancellationToken cancellationToken = default)
+    {
+        var cliente = await _context.Clientes
+            .AsNoTracking()
+            .Include(c => c.Enderecos)
+            .FirstOrDefaultAsync(c => c.Codigo == codigoCliente, cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoCliente}' não foi encontrado.");
+        }
+
+        return cliente.Enderecos
+            .OrderBy(e => e.Id)
+            .Select(MapearEnderecoParaResponseDto)
+            .ToList();
+    }
+
+    /// <summary>
+    /// RF0026 / RNF0034: Adiciona um novo endereço associado ao cliente de forma independente.
+    /// </summary>
+    public async Task<EnderecoResponseDto> AdicionarEnderecoAsync(
+        string codigoCliente,
+        EnderecoRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var cliente = await _context.Clientes
+            .Include(c => c.Enderecos)
+            .FirstOrDefaultAsync(c => c.Codigo == codigoCliente, cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoCliente}' não foi encontrado.");
+        }
+
+        ValidarDadosEndereco(request);
+
+        var cepNormalizado = Regex.Replace(request.Cep ?? string.Empty, @"\D", "");
+
+        var novoEndereco = new Endereco
+        {
+            ClienteId = cliente.Id,
+            Nome = request.Nome.Trim(),
+            TipoResidencia = request.TipoResidencia.Trim(),
+            TipoLogradouro = request.TipoLogradouro.Trim(),
+            Logradouro = request.Logradouro.Trim(),
+            Numero = request.Numero.Trim(),
+            Complemento = string.IsNullOrWhiteSpace(request.Complemento) ? null : request.Complemento.Trim(),
+            Bairro = request.Bairro.Trim(),
+            Cep = cepNormalizado,
+            Cidade = request.Cidade.Trim(),
+            Estado = request.Estado.Trim().ToUpperInvariant(),
+            Pais = request.Pais.Trim(),
+            Observacoes = string.IsNullOrWhiteSpace(request.Observacoes) ? null : request.Observacoes.Trim(),
+            Residencial = request.Residencial,
+            Entrega = request.Entrega,
+            Cobranca = request.Cobranca
+        };
+
+        cliente.Enderecos.Add(novoEndereco);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return MapearEnderecoParaResponseDto(novoEndereco);
+    }
+
+    /// <summary>
+    /// RF0026 / RNF0034 / RN0021 / RN0022 / RN0026:
+    /// Altera um endereço existente do cliente, garantindo que o cliente mantenha
+    /// pelo menos um endereço residencial, um de entrega e um de cobrança.
+    /// </summary>
+    public async Task<EnderecoResponseDto> AlterarEnderecoAsync(
+        string codigoCliente,
+        int enderecoId,
+        EnderecoRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var cliente = await _context.Clientes
+            .Include(c => c.Enderecos)
+            .FirstOrDefaultAsync(c => c.Codigo == codigoCliente, cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoCliente}' não foi encontrado.");
+        }
+
+        var endereco = cliente.Enderecos.FirstOrDefault(e => e.Id == enderecoId);
+        if (endereco is null)
+        {
+            throw new NotFoundException($"Endereço com identificador '{enderecoId}' não foi encontrado para o cliente informado.");
+        }
+
+        ValidarDadosEndereco(request);
+
+        // Integridade RN0022: Cliente deve manter pelo menos um endereço de entrega
+        if (!request.Entrega && !cliente.Enderecos.Any(e => e.Id != enderecoId && e.Entrega))
+        {
+            throw new ValidationException("O cliente deve possuir pelo menos um endereço de entrega cadastrado. (RN0022)");
+        }
+
+        // Integridade RN0021: Cliente deve manter pelo menos um endereço de cobrança
+        if (!request.Cobranca && !cliente.Enderecos.Any(e => e.Id != enderecoId && e.Cobranca))
+        {
+            throw new ValidationException("O cliente deve possuir pelo menos um endereço de cobrança cadastrado. (RN0021)");
+        }
+
+        // Integridade RN0026: Cliente deve manter pelo menos um endereço residencial
+        if (!request.Residencial && !cliente.Enderecos.Any(e => e.Id != enderecoId && e.Residencial))
+        {
+            throw new ValidationException("O cliente deve possuir pelo menos um endereço residencial cadastrado. (RN0026)");
+        }
+
+        var cepNormalizado = Regex.Replace(request.Cep ?? string.Empty, @"\D", "");
+
+        endereco.Nome = request.Nome.Trim();
+        endereco.TipoResidencia = request.TipoResidencia.Trim();
+        endereco.TipoLogradouro = request.TipoLogradouro.Trim();
+        endereco.Logradouro = request.Logradouro.Trim();
+        endereco.Numero = request.Numero.Trim();
+        endereco.Complemento = string.IsNullOrWhiteSpace(request.Complemento) ? null : request.Complemento.Trim();
+        endereco.Bairro = request.Bairro.Trim();
+        endereco.Cep = cepNormalizado;
+        endereco.Cidade = request.Cidade.Trim();
+        endereco.Estado = request.Estado.Trim().ToUpperInvariant();
+        endereco.Pais = request.Pais.Trim();
+        endereco.Observacoes = string.IsNullOrWhiteSpace(request.Observacoes) ? null : request.Observacoes.Trim();
+        endereco.Residencial = request.Residencial;
+        endereco.Entrega = request.Entrega;
+        endereco.Cobranca = request.Cobranca;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return MapearEnderecoParaResponseDto(endereco);
+    }
+
+    /// <summary>
+    /// RN0023: Validação de campos obrigatórios de endereço.
+    /// </summary>
+    private static void ValidarDadosEndereco(EnderecoRequestDto endDto, int? pos = null)
+    {
+        var sufixo = pos.HasValue ? $" {pos.Value}" : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(endDto.Nome))
+        {
+            throw new ValidationException($"A identificação/nome do endereço{sufixo} é obrigatória.");
+        }
+
+        if (string.IsNullOrWhiteSpace(endDto.TipoResidencia))
+        {
+            throw new ValidationException($"O tipo de residência do endereço{sufixo} é obrigatório. (RN0023)");
+        }
+
+        if (string.IsNullOrWhiteSpace(endDto.TipoLogradouro))
+        {
+            throw new ValidationException($"O tipo de logradouro do endereço{sufixo} é obrigatório. (RN0023)");
+        }
+
+        if (string.IsNullOrWhiteSpace(endDto.Logradouro))
+        {
+            throw new ValidationException($"O logradouro do endereço{sufixo} é obrigatório. (RN0023)");
+        }
+
+        if (string.IsNullOrWhiteSpace(endDto.Numero))
+        {
+            throw new ValidationException($"O número do endereço{sufixo} é obrigatório. (RN0023)");
+        }
+
+        if (string.IsNullOrWhiteSpace(endDto.Bairro))
+        {
+            throw new ValidationException($"O bairro do endereço{sufixo} é obrigatório. (RN0023)");
+        }
+
+        var cepNormalizado = Regex.Replace(endDto.Cep ?? string.Empty, @"\D", "");
+        if (cepNormalizado.Length != 8)
+        {
+            throw new ValidationException($"O CEP do endereço{sufixo} deve conter exatamente 8 dígitos numéricos. (RN0023)");
+        }
+
+        if (string.IsNullOrWhiteSpace(endDto.Cidade))
+        {
+            throw new ValidationException($"A cidade do endereço{sufixo} é obrigatória. (RN0023)");
+        }
+
+        if (string.IsNullOrWhiteSpace(endDto.Estado))
+        {
+            throw new ValidationException($"O estado do endereço{sufixo} é obrigatório. (RN0023)");
+        }
+
+        if (string.IsNullOrWhiteSpace(endDto.Pais))
+        {
+            throw new ValidationException($"O país do endereço{sufixo} é obrigatório. (RN0023)");
+        }
+
+        // Regra de Integridade de ENDERECO: Todo endereço deve possuir pelo menos uma finalidade
+        if (!endDto.Residencial && !endDto.Entrega && !endDto.Cobranca)
+        {
+            throw new ValidationException($"O endereço{sufixo} deve possuir pelo menos uma finalidade: Residencial, Entrega ou Cobrança.");
+        }
+    }
+
+    /// <summary>
+    /// Mapeia a entidade Endereco para EnderecoResponseDto.
+    /// </summary>
+    private static EnderecoResponseDto MapearEnderecoParaResponseDto(Endereco e)
+    {
+        return new EnderecoResponseDto
+        {
+            Id = e.Id,
+            Nome = e.Nome,
+            TipoResidencia = e.TipoResidencia,
+            TipoLogradouro = e.TipoLogradouro,
+            Logradouro = e.Logradouro,
+            Numero = e.Numero,
+            Complemento = e.Complemento,
+            Bairro = e.Bairro,
+            Cep = e.Cep,
+            Cidade = e.Cidade,
+            Estado = e.Estado,
+            Pais = e.Pais,
+            Observacoes = e.Observacoes,
+            Residencial = e.Residencial,
+            Entrega = e.Entrega,
+            Cobranca = e.Cobranca
         };
     }
 

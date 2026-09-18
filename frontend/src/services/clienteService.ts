@@ -111,9 +111,56 @@ function convertDateIsoToBr(isoStr: string): string {
 }
 
 /**
+ * Mapeia o DTO de endereço do backend para o modelo de Address do frontend.
+ */
+export function mapDtoToAddress(dto: EnderecoResponseDto): Address {
+  return {
+    id: `addr_${dto.id}`,
+    label: dto.nome,
+    residenceType: dto.tipoResidencia,
+    streetType: dto.tipoLogradouro,
+    street: dto.logradouro,
+    number: dto.numero,
+    complement: dto.complemento || undefined,
+    neighborhood: dto.bairro,
+    zipCode: dto.cep.length === 8 ? `${dto.cep.slice(0, 5)}-${dto.cep.slice(5)}` : dto.cep,
+    city: dto.cidade,
+    state: dto.estado,
+    country: dto.pais,
+    observations: dto.observacoes || undefined,
+    isResidential: dto.residencial,
+    isDelivery: dto.entrega,
+    isBilling: dto.cobranca
+  };
+}
+
+/**
+ * Converte um Address do frontend para o DTO EnderecoRequestDto enviado ao backend.
+ */
+export function mapAddressToRequestDto(address: Partial<Address>): EnderecoRequestDto {
+  return {
+    nome: address.label?.trim() || '',
+    tipoResidencia: address.residenceType || '',
+    tipoLogradouro: address.streetType || '',
+    logradouro: address.street?.trim() || '',
+    numero: address.number?.trim() || '',
+    complemento: address.complement?.trim() || null,
+    bairro: address.neighborhood?.trim() || '',
+    cep: address.zipCode?.replace(/\D/g, '') || '',
+    cidade: address.city?.trim() || '',
+    estado: address.state?.trim().toUpperCase() || '',
+    pais: address.country?.trim() || 'Brasil',
+    observacoes: address.observations?.trim() || null,
+    residencial: address.isResidential ?? false,
+    entrega: address.isDelivery ?? false,
+    cobranca: address.isBilling ?? false
+  };
+}
+
+/**
  * Mapeia o DTO de resposta do backend para o modelo de Customer utilizado no frontend.
  * Conforme requisito:
- * - response.codigo é atribuído a Customer.id para compatibilidade temporária com o protótipo.
+ * - response.codigo é atribuído a Customer.id para compatibilidade com o protótipo.
  * - Nenhuma senha ou hash é adicionada ao Customer.
  */
 function mapDtoToCustomer(dto: ClienteResponseDto): Customer {
@@ -127,23 +174,7 @@ function mapDtoToCustomer(dto: ClienteResponseDto): Customer {
         : phoneNum;
   const derivedPhone = `(${phoneDdd}) ${formattedPhoneNum}`;
 
-  const addresses: Address[] = (dto.enderecos || []).map(addr => ({
-    id: `addr_${addr.id}`,
-    label: addr.nome,
-    residenceType: addr.tipoResidencia,
-    streetType: addr.tipoLogradouro,
-    street: addr.logradouro,
-    number: addr.numero,
-    complement: addr.complemento || undefined,
-    neighborhood: addr.bairro,
-    zipCode: addr.cep.length === 8 ? `${addr.cep.slice(0, 5)}-${addr.cep.slice(5)}` : addr.cep,
-    city: addr.cidade,
-    state: addr.estado,
-    country: addr.pais,
-    observations: addr.observacoes || undefined,
-    isDelivery: addr.entrega,
-    isBilling: addr.cobranca
-  }));
+  const addresses: Address[] = (dto.enderecos || []).map(mapDtoToAddress);
 
   const cpfFormatted =
     dto.cpf.length === 11
@@ -196,6 +227,25 @@ export function sanitizarMensagemErro(mensagem: string): string {
   limpa = limpa.replace(/\.{2,}/g, '.');
 
   return limpa.trim();
+}
+
+/**
+ * Extrai e sanitiza a mensagem de erro retornada pela API.
+ */
+async function extractErrorMessage(response: Response, defaultMessage: string): Promise<string> {
+  try {
+    const errorData = await response.json();
+    let errorMessage = errorData.erro || errorData.title || defaultMessage;
+    if (errorData.errors && typeof errorData.errors === 'object') {
+      const firstKey = Object.keys(errorData.errors)[0];
+      if (Array.isArray(errorData.errors[firstKey]) && errorData.errors[firstKey].length > 0) {
+        errorMessage = errorData.errors[firstKey][0];
+      }
+    }
+    return sanitizarMensagemErro(errorMessage);
+  } catch {
+    return defaultMessage;
+  }
 }
 
 /**
@@ -255,19 +305,8 @@ export async function cadastrarCliente(input: NewCustomerInput): Promise<Cadastr
 
     // Erros de validação (400) ou conflito de CPF/e-mail (409)
     if (response.status === 400 || response.status === 409) {
-      try {
-        const errorData = await response.json();
-        let errorMessage = errorData.erro || errorData.title || 'Dados inválidos para cadastro.';
-        if (errorData.errors && typeof errorData.errors === 'object') {
-          const firstKey = Object.keys(errorData.errors)[0];
-          if (Array.isArray(errorData.errors[firstKey]) && errorData.errors[firstKey].length > 0) {
-            errorMessage = errorData.errors[firstKey][0];
-          }
-        }
-        return { success: false, error: sanitizarMensagemErro(errorMessage) };
-      } catch {
-        return { success: false, error: 'Ocorreu um erro de validação ao processar o cadastro.' };
-      }
+      const errorMessage = await extractErrorMessage(response, 'Dados inválidos para cadastro.');
+      return { success: false, error: errorMessage };
     }
 
     // Outros erros de servidor (500 etc)
@@ -280,6 +319,148 @@ export async function cadastrarCliente(input: NewCustomerInput): Promise<Cadastr
     return {
       success: false,
       error: 'Não foi possível conectar ao servidor do RunWay. Verifique se a API está em execução.'
+    };
+  }
+}
+
+export interface EnderecosResult {
+  success: boolean;
+  error?: string;
+  addresses?: Address[];
+}
+
+export interface EnderecoResult {
+  success: boolean;
+  error?: string;
+  address?: Address;
+}
+
+/**
+ * RF0026: Lista os endereços cadastrados de um cliente pelo seu código.
+ */
+export async function listarEnderecosCliente(codigoCliente: string): Promise<EnderecosResult> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/enderecos`);
+
+    if (response.ok) {
+      const data: EnderecoResponseDto[] = await response.json();
+      return {
+        success: true,
+        addresses: data.map(mapDtoToAddress)
+      };
+    }
+
+    if (response.status === 404) {
+      const errorMsg = await extractErrorMessage(response, 'Cliente não encontrado.');
+      return { success: false, error: errorMsg };
+    }
+
+    const genericError = await extractErrorMessage(response, 'Não foi possível carregar os endereços.');
+    return { success: false, error: genericError };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para carregar os endereços.'
+    };
+  }
+}
+
+/**
+ * RF0026 / RNF0034: Cadastra um novo endereço para o cliente.
+ */
+export async function cadastrarEnderecoCliente(
+  codigoCliente: string,
+  endereco: Partial<Address>
+): Promise<EnderecoResult> {
+  try {
+    const payload = mapAddressToRequestDto(endereco);
+
+    const response = await fetch(`${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/enderecos`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.status === 201) {
+      const data: EnderecoResponseDto = await response.json();
+      return {
+        success: true,
+        address: mapDtoToAddress(data)
+      };
+    }
+
+    if (response.status === 400 || response.status === 404) {
+      const errorMsg = await extractErrorMessage(response, 'Dados inválidos para o endereço.');
+      return { success: false, error: errorMsg };
+    }
+
+    return {
+      success: false,
+      error: 'Não foi possível cadastrar o endereço no momento.'
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para cadastrar o endereço.'
+    };
+  }
+}
+
+/**
+ * RF0026 / RNF0034 / RN0021 / RN0022 / RN0026: Altera um endereço existente do cliente.
+ */
+export async function alterarEnderecoCliente(
+  codigoCliente: string,
+  enderecoId: string | number,
+  endereco: Partial<Address>
+): Promise<EnderecoResult> {
+  try {
+    const rawId = typeof enderecoId === 'string' ? enderecoId.replace('addr_', '') : enderecoId.toString();
+    const numericId = parseInt(rawId, 10);
+
+    if (isNaN(numericId)) {
+      return {
+        success: false,
+        error: 'Identificador de endereço inválido.'
+      };
+    }
+
+    const payload = mapAddressToRequestDto(endereco);
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/enderecos/${numericId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    if (response.ok) {
+      const data: EnderecoResponseDto = await response.json();
+      return {
+        success: true,
+        address: mapDtoToAddress(data)
+      };
+    }
+
+    if (response.status === 400 || response.status === 404) {
+      const errorMsg = await extractErrorMessage(response, 'Dados inválidos para alteração do endereço.');
+      return { success: false, error: errorMsg };
+    }
+
+    return {
+      success: false,
+      error: 'Não foi possível atualizar o endereço no momento.'
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para atualizar o endereço.'
     };
   }
 }

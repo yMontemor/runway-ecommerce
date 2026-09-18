@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../../store/AppContext';
 import Modal from '../../components/Modal/Modal';
+import Toast from '../../components/Toast/Toast';
 import OrderDetailsModal from '../../components/OrderDetailsModal/OrderDetailsModal';
+import { BRAZILIAN_STATES } from '../../data/brazilianStates';
 import type { Address, CreditCard, Order } from '../../types';
 import {
   maskBirthDate,
@@ -37,6 +39,7 @@ export default function CustomerArea() {
     updateCustomerProfile,
     addCustomerAddress,
     updateCustomerAddress,
+    refreshCustomerAddresses,
     removeCustomerAddress,
     addCustomerCard,
     updateCustomerCard,
@@ -235,6 +238,9 @@ export default function CustomerArea() {
   // Módulos de Endereços
   const [isAddrModalOpen, setIsAddrModalOpen] = useState(false);
   const [addrModalError, setAddrModalError] = useState<string | null>(null);
+  const [isSavingAddr, setIsSavingAddr] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'error' | 'success'>('error');
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
   const [addrForm, setAddrForm] = useState({
     label: '',
@@ -249,16 +255,23 @@ export default function CustomerArea() {
     state: '',
     country: 'Brasil',
     observations: '',
-    isDelivery: true,
-    isBilling: true
+    isResidential: false,
+    isDelivery: false,
+    isBilling: false
   });
+
+  useEffect(() => {
+    if (activeCustomer?.id) {
+      refreshCustomerAddresses(activeCustomer.id);
+    }
+  }, [activeCustomer?.id]);
 
   const handleOpenAddAddr = () => {
     setEditingAddress(null);
     setAddrModalError(null);
     setAddrForm({
       label: '', residenceType: 'Casa', streetType: 'Rua', street: '', number: '', complement: '', neighborhood: '',
-      zipCode: '', city: '', state: '', country: 'Brasil', observations: '', isDelivery: true, isBilling: true
+      zipCode: '', city: '', state: '', country: 'Brasil', observations: '', isResidential: false, isDelivery: false, isBilling: false
     });
     setIsAddrModalOpen(true);
   };
@@ -279,13 +292,14 @@ export default function CustomerArea() {
       state: addr.state,
       country: addr.country || 'Brasil',
       observations: addr.observations || '',
-      isDelivery: addr.isDelivery ?? true,
-      isBilling: addr.isBilling ?? true
+      isResidential: !!addr.isResidential,
+      isDelivery: !!addr.isDelivery,
+      isBilling: !!addr.isBilling
     });
     setIsAddrModalOpen(true);
   };
 
-  const handleSaveAddress = (e: React.FormEvent) => {
+  const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddrModalError(null);
 
@@ -300,19 +314,47 @@ export default function CustomerArea() {
       return;
     }
 
-    if (editingAddress) {
-      updateCustomerAddress(activeCustomer.id, {
-        ...editingAddress,
-        ...addrForm,
-        zipCode: maskZipCode(addrForm.zipCode)
-      });
-    } else {
-      addCustomerAddress(activeCustomer.id, {
-        ...addrForm,
-        zipCode: maskZipCode(addrForm.zipCode)
-      });
+    if (!addrForm.isResidential && !addrForm.isDelivery && !addrForm.isBilling) {
+      setAddrModalError('O endereço deve possuir pelo menos uma finalidade: Residencial, Entrega ou Cobrança.');
+      return;
     }
-    setIsAddrModalOpen(false);
+
+    setIsSavingAddr(true);
+
+    try {
+      if (editingAddress) {
+        const res = await updateCustomerAddress(activeCustomer.id, {
+          ...editingAddress,
+          ...addrForm,
+          zipCode: maskZipCode(addrForm.zipCode)
+        });
+        if (!res.success) {
+          setAddrModalError(res.error || 'Erro ao atualizar o endereço.');
+          setIsSavingAddr(false);
+          return;
+        }
+        setToastMessage('Endereço atualizado com sucesso!');
+        setToastType('success');
+      } else {
+        const res = await addCustomerAddress(activeCustomer.id, {
+          ...addrForm,
+          zipCode: maskZipCode(addrForm.zipCode)
+        });
+        if (!res.success) {
+          setAddrModalError(res.error || 'Erro ao cadastrar o endereço.');
+          setIsSavingAddr(false);
+          return;
+        }
+        setToastMessage('Novo endereço cadastrado com sucesso!');
+        setToastType('success');
+      }
+
+      setIsAddrModalOpen(false);
+    } catch {
+      setAddrModalError('Erro inesperado ao salvar endereço.');
+    } finally {
+      setIsSavingAddr(false);
+    }
   };
 
   // --- CONTROLE DE TROCA ---
@@ -640,8 +682,13 @@ export default function CustomerArea() {
                 {activeCustomer.addresses.map(addr => (
                   <div key={addr.id} className="profile-address-card">
                     <div className="addr-card-header">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem', rowGap: '0.25rem' }}>
                         <span className="profile-addr-label">{addr.label}</span>
+                        {addr.isResidential && (
+                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(255, 165, 0, 0.15)', color: '#ffaa00', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid #ffaa00' }}>
+                            Residencial
+                          </span>
+                        )}
                         {addr.isDelivery && (
                           <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--color-success)' }}>
                             Entrega
@@ -661,19 +708,6 @@ export default function CustomerArea() {
                         >
                           Editar
                         </button>
-                        {activeCustomer.addresses.length > 1 && (
-                          <>
-                            <span style={{ color: 'var(--color-border)', fontSize: '0.75rem' }}>|</span>
-                            <button
-                              type="button"
-                              onClick={() => setAddressToRemove(addr)}
-                              className="btn-edit-link"
-                              style={{ color: 'var(--color-danger)' }}
-                            >
-                              Remover
-                            </button>
-                          </>
-                        )}
                       </div>
                     </div>
                     <p className="addr-txt">
@@ -684,11 +718,6 @@ export default function CustomerArea() {
                   </div>
                 ))}
               </div>
-              {activeCustomer.addresses.length <= 1 && (
-                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.5rem', marginBottom: 0 }}>
-                  * Pelo menos um endereço deve ser mantido cadastrado no seu perfil.
-                </p>
-              )}
             </div>
 
             {/* Cartões de Crédito */}
@@ -1254,17 +1283,21 @@ export default function CustomerArea() {
                 required
               />
             </div>
-            <div className="form-group flex-1">
+            <div className="form-group flex-2">
               <label htmlFor="m-addr-state">Estado *</label>
-              <input
-                type="text"
+              <select
                 id="m-addr-state"
                 value={addrForm.state}
-                onChange={e => setAddrForm(prev => ({ ...prev, state: e.target.value.toUpperCase() }))}
-                placeholder="UF"
-                maxLength={2}
+                onChange={e => setAddrForm(prev => ({ ...prev, state: e.target.value }))}
                 required
-              />
+              >
+                <option value="">Selecione...</option>
+                {BRAZILIAN_STATES.map(uf => (
+                  <option key={uf.sigla} value={uf.sigla}>
+                    {uf.sigla} - {uf.nome}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -1273,10 +1306,18 @@ export default function CustomerArea() {
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
               <input
                 type="checkbox"
+                checked={addrForm.isResidential}
+                onChange={e => setAddrForm(prev => ({ ...prev, isResidential: e.target.checked }))}
+              />
+              Residencial
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
                 checked={addrForm.isDelivery}
                 onChange={e => setAddrForm(prev => ({ ...prev, isDelivery: e.target.checked }))}
               />
-              Endereço de entrega
+              Entrega
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
               <input
@@ -1284,13 +1325,15 @@ export default function CustomerArea() {
                 checked={addrForm.isBilling}
                 onChange={e => setAddrForm(prev => ({ ...prev, isBilling: e.target.checked }))}
               />
-              Endereço de cobrança
+              Cobrança
             </label>
           </div>
 
           <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setIsAddrModalOpen(false)}>CANCELAR</button>
-            <button type="submit" className="btn btn-primary">SALVAR ENDEREÇO</button>
+            <button type="submit" className="btn btn-primary" disabled={isSavingAddr}>
+              {isSavingAddr ? 'SALVANDO...' : 'SALVAR ENDEREÇO'}
+            </button>
           </div>
         </form>
       </Modal>
@@ -1544,6 +1587,14 @@ export default function CustomerArea() {
         }}
         order={selectedOrderForDetails}
       />
+
+      {toastMessage && (
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setToastMessage(null)}
+        />
+      )}
     </div>
   );
 }

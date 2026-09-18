@@ -30,6 +30,7 @@ export interface Address {
   observations?: string;
   isDelivery?: boolean; // RN0022 - Endereço de entrega
   isBilling?: boolean;  // RN0021 - Endereço de cobrança
+  isResidential?: boolean; // RN0026 - Endereço residencial
 }
 
 export interface CreditCard {

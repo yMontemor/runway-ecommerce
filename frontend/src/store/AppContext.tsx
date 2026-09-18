@@ -6,7 +6,7 @@ import { mockCustomers } from '../data/customers';
 import { mockCoupons } from '../data/coupons';
 import { products } from '../data/products';
 import { maskZipCode } from '../utils/maskAndValidate';
-import { cadastrarCliente } from '../services/clienteService';
+import { cadastrarCliente, cadastrarEnderecoCliente, alterarEnderecoCliente, listarEnderecosCliente } from '../services/clienteService';
 
 interface AppContextType {
   customers: Customer[];
@@ -46,8 +46,9 @@ interface AppContextType {
   updateExchangeStatus: (exchangeId: string, status: Exchange['status'], returnToStockSimulated?: boolean) => void;
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
   updateCustomerProfile: (updatedCustomer: Customer) => void;
-  addCustomerAddress: (customerId: string, address: Omit<Address, 'id'>) => void;
-  updateCustomerAddress: (customerId: string, address: Address) => void;
+  addCustomerAddress: (customerId: string, address: Omit<Address, 'id'>) => Promise<{ success: boolean; error?: string; address?: Address }>;
+  updateCustomerAddress: (customerId: string, address: Address) => Promise<{ success: boolean; error?: string; address?: Address }>;
+  refreshCustomerAddresses: (customerId: string) => Promise<void>;
   removeCustomerAddress: (customerId: string, addressId: string) => void;
   addCustomerCard: (customerId: string, card: Omit<CreditCard, 'id'>) => CreditCard;
   updateCustomerCard: (customerId: string, card: CreditCard) => void;
@@ -577,39 +578,97 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  // Endereços
-  const addCustomerAddress = (customerId: string, address: Omit<Address, 'id'>) => {
-    const newAddress: Address = {
-      ...address,
-      zipCode: maskZipCode(address.zipCode),
-      id: `addr_${Math.random().toString(36).substr(2, 9)}`
-    };
-
-    setCustomers(prev =>
-      prev.map(c =>
-        c.id === customerId
-          ? { ...c, addresses: [...c.addresses, newAddress] }
-          : c
-      )
-    );
+  // Endereços (Card #51 - Gestão de Endereços)
+  const refreshCustomerAddresses = async (customerId: string) => {
+    const result = await listarEnderecosCliente(customerId);
+    if (result.success && result.addresses) {
+      setCustomers(prev =>
+        prev.map(c =>
+          c.id === customerId
+            ? { ...c, addresses: result.addresses! }
+            : c
+        )
+      );
+    }
   };
 
-  const updateCustomerAddress = (customerId: string, address: Address) => {
-    const formattedAddress: Address = {
-      ...address,
-      zipCode: maskZipCode(address.zipCode)
-    };
+  const addCustomerAddress = async (
+    customerId: string,
+    address: Omit<Address, 'id'>
+  ): Promise<{ success: boolean; error?: string; address?: Address }> => {
+    const result = await cadastrarEnderecoCliente(customerId, address);
+    if (result.success && result.address) {
+      const savedAddress = result.address;
+      setCustomers(prev =>
+        prev.map(c =>
+          c.id === customerId
+            ? { ...c, addresses: [...c.addresses, savedAddress] }
+            : c
+        )
+      );
+      return { success: true, address: savedAddress };
+    }
 
-    setCustomers(prev =>
-      prev.map(c =>
-        c.id === customerId
-          ? {
-              ...c,
-              addresses: c.addresses.map(a => (a.id === address.id ? formattedAddress : a))
-            }
-          : c
-      )
-    );
+    // Se o cliente não existir no banco (mock customer em memória), atualiza em memória
+    if (result.error && result.error.toLowerCase().includes('não foi encontrado')) {
+      const newAddress: Address = {
+        ...address,
+        zipCode: maskZipCode(address.zipCode),
+        id: `addr_${Math.random().toString(36).substr(2, 9)}`
+      };
+      setCustomers(prev =>
+        prev.map(c =>
+          c.id === customerId
+            ? { ...c, addresses: [...c.addresses, newAddress] }
+            : c
+        )
+      );
+      return { success: true, address: newAddress };
+    }
+
+    return { success: false, error: result.error };
+  };
+
+  const updateCustomerAddress = async (
+    customerId: string,
+    address: Address
+  ): Promise<{ success: boolean; error?: string; address?: Address }> => {
+    const result = await alterarEnderecoCliente(customerId, address.id, address);
+    if (result.success && result.address) {
+      const savedAddress = result.address;
+      setCustomers(prev =>
+        prev.map(c =>
+          c.id === customerId
+            ? {
+                ...c,
+                addresses: c.addresses.map(a => (a.id === address.id ? savedAddress : a))
+              }
+            : c
+        )
+      );
+      return { success: true, address: savedAddress };
+    }
+
+    // Se o cliente não existir no banco (mock customer em memória), atualiza em memória
+    if (result.error && result.error.toLowerCase().includes('não foi encontrado')) {
+      const formattedAddress: Address = {
+        ...address,
+        zipCode: maskZipCode(address.zipCode)
+      };
+      setCustomers(prev =>
+        prev.map(c =>
+          c.id === customerId
+            ? {
+                ...c,
+                addresses: c.addresses.map(a => (a.id === address.id ? formattedAddress : a))
+              }
+            : c
+        )
+      );
+      return { success: true, address: formattedAddress };
+    }
+
+    return { success: false, error: result.error };
   };
 
   const removeCustomerAddress = (customerId: string, addressId: string) => {
@@ -749,6 +808,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateCustomerProfile,
         addCustomerAddress,
         updateCustomerAddress,
+        refreshCustomerAddresses,
         removeCustomerAddress,
         addCustomerCard,
         updateCustomerCard,

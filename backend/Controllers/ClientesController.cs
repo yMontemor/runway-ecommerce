@@ -44,4 +44,80 @@ public class ClientesController : ControllerBase
             return Conflict(new { erro = ex.Message });
         }
     }
+
+    /// <summary>
+    /// RF0026: Lista os endereços cadastrados de um cliente pelo seu código único.
+    /// </summary>
+    [HttpGet("{codigo}/enderecos")]
+    [ProducesResponseType(typeof(List<EnderecoResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListarEnderecos(
+        [FromRoute] string codigo,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _clienteService.ListarEnderecosAsync(codigo, cancellationToken);
+            return Ok(response);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// RF0026 / RNF0034: Cadastra um novo endereço para o cliente de forma independente.
+    /// </summary>
+    [HttpPost("{codigo}/enderecos")]
+    [ProducesResponseType(typeof(EnderecoResponseDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AdicionarEndereco(
+        [FromRoute] string codigo,
+        [FromBody] EnderecoRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _clienteService.AdicionarEnderecoAsync(codigo, request, cancellationToken);
+            return Created($"/api/clientes/{codigo}/enderecos/{response.Id}", response);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { erro = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// RF0026 / RNF0034 / RN0021 / RN0022 / RN0026: Altera um endereço existente do cliente.
+    /// </summary>
+    [HttpPut("{codigo}/enderecos/{enderecoId:int}")]
+    [ProducesResponseType(typeof(EnderecoResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AlterarEndereco(
+        [FromRoute] string codigo,
+        [FromRoute] int enderecoId,
+        [FromBody] EnderecoRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _clienteService.AlterarEnderecoAsync(codigo, enderecoId, request, cancellationToken);
+            return Ok(response);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { erro = ex.Message });
+        }
+    }
 }
