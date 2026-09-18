@@ -12,6 +12,8 @@ builder.Services.AddDbContext<RunWayDbContext>(options =>
 
 builder.Services.AddControllers();
 
+builder.Services.AddScoped<RunWay.Api.Services.IClienteService, RunWay.Api.Services.ClienteService>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("RunWayFrontendPolicy", policy =>

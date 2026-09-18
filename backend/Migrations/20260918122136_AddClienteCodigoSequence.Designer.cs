@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using RunWay.Api.Data;
@@ -11,9 +12,11 @@ using RunWay.Api.Data;
 namespace RunWay.Api.Migrations
 {
     [DbContext(typeof(RunWayDbContext))]
-    partial class RunWayDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918122136_AddClienteCodigoSequence")]
+    partial class AddClienteCodigoSequence
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

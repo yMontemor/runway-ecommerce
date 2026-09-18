@@ -22,6 +22,13 @@ public class RunWayDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         // ==========================================
+        // SEQUÊNCIA PARA CÓDIGO ÚNICO DO CLIENTE (RNF0035)
+        // ==========================================
+        modelBuilder.HasSequence<long>("cliente_codigo_seq")
+            .StartsAt(1)
+            .IncrementsBy(1);
+
+        // ==========================================
         // CLIENTE
         // ==========================================
         modelBuilder.Entity<Cliente>(entity =>

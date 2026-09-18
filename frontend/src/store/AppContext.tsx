@@ -5,7 +5,8 @@ import type { Customer, CartItem, Order, Coupon, Exchange, ExchangeItem, Address
 import { mockCustomers } from '../data/customers';
 import { mockCoupons } from '../data/coupons';
 import { products } from '../data/products';
-import { validateBirthDate, validatePhoneFields, validateZipCode, maskZipCode } from '../utils/maskAndValidate';
+import { maskZipCode } from '../utils/maskAndValidate';
+import { cadastrarCliente } from '../services/clienteService';
 
 interface AppContextType {
   customers: Customer[];
@@ -15,7 +16,7 @@ interface AppContextType {
   coupons: Coupon[];
   exchanges: Exchange[];
   setActiveCustomer: (id: string) => void;
-  addCustomer: (data: NewCustomerInput) => { success: boolean; error?: string; customer?: Customer };
+  addCustomer: (data: NewCustomerInput) => Promise<{ success: boolean; error?: string; customer?: Customer }>;
   updateCustomerStatus: (id: string, status: 'ATIVO' | 'INATIVO') => void;
   addToCart: (productId: string, size: number, quantity: number) => { success: boolean; isInactive?: boolean };
   updateCartQuantity: (productId: string, size: number, delta: number) => void;
@@ -536,143 +537,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  // Cadastrar Novo Cliente (RF0021, RN0021, RN0022, RN0026, RN0027, RNF0035)
-  const addCustomer = (data: NewCustomerInput): { success: boolean; error?: string; customer?: Customer } => {
-    // 1. Validações de campos obrigatórios
-    if (
-      !data.name?.trim() ||
-      !data.cpf?.trim() ||
-      !data.email?.trim() ||
-      !data.birthDate?.trim() ||
-      !data.phoneDdd?.trim() ||
-      !data.phoneNumber?.trim() ||
-      !data.phoneType?.trim()
-    ) {
-      return { success: false, error: 'Por favor, preencha todos os campos obrigatórios do cliente.' };
+  // Cadastrar Novo Cliente (RF0021, RN0021, RN0022, RN0023, RN0026, RNF0031, RNF0032, RNF0033, RNF0035)
+  const addCustomer = async (data: NewCustomerInput): Promise<{ success: boolean; error?: string; customer?: Customer }> => {
+    // Comunicação real com a API POST /api/clientes via clienteService
+    const result = await cadastrarCliente(data);
+
+    if (result.success && result.customer) {
+      // Atualiza o estado da lista de clientes com o registro persistido
+      setCustomers(prev => [...prev, result.customer!]);
+
+      // Inicializa carrinho em memória para o novo código de cliente
+      setCartsByCustomer(prev => ({
+        ...prev,
+        [result.customer!.id]: []
+      }));
     }
 
-    // 2. Validação de Data de Nascimento (existência real de dia/mês/ano bissexto e não futura)
-    const birthValidation = validateBirthDate(data.birthDate);
-    if (!birthValidation.isValid) {
-      return { success: false, error: birthValidation.error };
-    }
-
-    // 3. Validação de Telefone (DDD 2 dígitos + Número 8 ou 9 dígitos)
-    const phoneValidation = validatePhoneFields(data.phoneDdd, data.phoneNumber);
-    if (!phoneValidation.isValid) {
-      return { success: false, error: phoneValidation.error };
-    }
-
-    // 4. Validação de CPF único (desconsiderando pontos e traços)
-    const cleanNewCpf = data.cpf.replace(/\D/g, '');
-    if (cleanNewCpf.length !== 11) {
-      return { success: false, error: 'O CPF informado deve conter 11 dígitos numéricos.' };
-    }
-    const cpfExists = customers.some(c => c.cpf.replace(/\D/g, '') === cleanNewCpf);
-    if (cpfExists) {
-      return { success: false, error: 'Já existe um cliente cadastrado com este CPF.' };
-    }
-
-    // 5. Validação de E-mail único (case-insensitive)
-    const cleanEmail = data.email.trim().toLowerCase();
-    const emailExists = customers.some(c => c.email.trim().toLowerCase() === cleanEmail);
-    if (emailExists) {
-      return { success: false, error: 'Já existe um cliente cadastrado com este e-mail.' };
-    }
-
-    // 4. Validação do endereço inicial
-    const addr = data.initialAddress;
-    if (
-      !addr ||
-      !addr.label?.trim() ||
-      !addr.street?.trim() ||
-      !addr.number?.trim() ||
-      !addr.neighborhood?.trim() ||
-      !addr.zipCode?.trim() ||
-      !addr.city?.trim() ||
-      !addr.state?.trim() ||
-      !addr.country?.trim() ||
-      !addr.residenceType ||
-      !addr.streetType
-    ) {
-      return { success: false, error: 'Por favor, preencha todos os campos obrigatórios do endereço inicial.' };
-    }
-
-    // Validação de CEP com 8 dígitos
-    const zipValidation = validateZipCode(addr.zipCode);
-    if (!zipValidation.isValid) {
-      return { success: false, error: zipValidation.error };
-    }
-
-    if (!addr.isDelivery || !addr.isBilling) {
-      return { success: false, error: 'O endereço inicial deve ser selecionado tanto para Entrega quanto para Cobrança.' };
-    }
-
-    // 5. Geração de ID/Código único sequencial (CLI-XXXX)
-    const existingNumbers = customers.map(c => {
-      const match = c.id.match(/^CLI-(\d+)$/);
-      return match ? parseInt(match[1], 10) : 0;
-    });
-    const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
-    const nextNumber = maxNumber + 1;
-    const newCustomerId = `CLI-${String(nextNumber).padStart(4, '0')}`;
-    const newAddressId = `addr_${Math.random().toString(36).substr(2, 9)}`;
-
-    // 6. Formatação do telefone legado
-    const cleanDdd = data.phoneDdd.replace(/\D/g, '');
-    const cleanPhoneNum = data.phoneNumber.trim();
-    const derivedPhone = `(${cleanDdd}) ${cleanPhoneNum}`;
-
-    const newAddress: Address = {
-      id: newAddressId,
-      label: addr.label?.trim() || 'Endereço Principal',
-      residenceType: addr.residenceType,
-      streetType: addr.streetType,
-      street: addr.street.trim(),
-      number: addr.number.trim(),
-      complement: addr.complement?.trim() || undefined,
-      neighborhood: addr.neighborhood.trim(),
-      zipCode: maskZipCode(addr.zipCode),
-      city: addr.city.trim(),
-      state: addr.state.trim().toUpperCase(),
-      country: addr.country?.trim() || 'Brasil',
-      observations: addr.observations?.trim() || undefined,
-      isDelivery: !!addr.isDelivery,
-      isBilling: !!addr.isBilling
-    };
-
-    const newCustomer: Customer = {
-      id: newCustomerId,
-      name: data.name.trim(),
-      email: cleanEmail,
-      cpf: data.cpf.trim(),
-      phone: derivedPhone,
-      phoneType: data.phoneType,
-      phoneDdd: cleanDdd,
-      phoneNumber: cleanPhoneNum,
-      gender: data.gender,
-      birthDate: data.birthDate.trim(),
-      status: 'ATIVO',
-      /**
-       * RN0027: Pontuação inicial/base do protótipo (valor 1).
-       * NOTA: Este valor inicial não constitui atendimento integral da RN0027.
-       * O cálculo dinâmico baseado no perfil de compras será implementado em etapas futuras.
-       */
-      ranking: 1,
-      addresses: [newAddress],
-      cards: []
-    };
-
-    // 7. Atualizar estado global
-    setCustomers(prev => [...prev, newCustomer]);
-
-    // 8. Inicializar carrinho vazio para o novo cliente
-    setCartsByCustomer(prev => ({
-      ...prev,
-      [newCustomerId]: []
-    }));
-
-    return { success: true, customer: newCustomer };
+    return result;
   };
 
   // Editar Perfil do Cliente

@@ -5,6 +5,36 @@ import Toast from '../../../components/Toast/Toast';
 import type { Customer, NewCustomerInput } from '../../../types';
 import { maskBirthDate, maskPhoneNumber, maskZipCode } from '../../../utils/maskAndValidate';
 
+const BRAZILIAN_STATES = [
+  { sigla: 'AC', nome: 'Acre' },
+  { sigla: 'AL', nome: 'Alagoas' },
+  { sigla: 'AP', nome: 'Amapá' },
+  { sigla: 'AM', nome: 'Amazonas' },
+  { sigla: 'BA', nome: 'Bahia' },
+  { sigla: 'CE', nome: 'Ceará' },
+  { sigla: 'DF', nome: 'Distrito Federal' },
+  { sigla: 'ES', nome: 'Espírito Santo' },
+  { sigla: 'GO', nome: 'Goiás' },
+  { sigla: 'MA', nome: 'Maranhão' },
+  { sigla: 'MT', nome: 'Mato Grosso' },
+  { sigla: 'MS', nome: 'Mato Grosso do Sul' },
+  { sigla: 'MG', nome: 'Minas Gerais' },
+  { sigla: 'PA', nome: 'Pará' },
+  { sigla: 'PB', nome: 'Paraíba' },
+  { sigla: 'PR', nome: 'Paraná' },
+  { sigla: 'PE', nome: 'Pernambuco' },
+  { sigla: 'PI', nome: 'Piauí' },
+  { sigla: 'RJ', nome: 'Rio de Janeiro' },
+  { sigla: 'RN', nome: 'Rio Grande do Norte' },
+  { sigla: 'RS', nome: 'Rio Grande do Sul' },
+  { sigla: 'RO', nome: 'Rondônia' },
+  { sigla: 'RR', nome: 'Roraima' },
+  { sigla: 'SC', nome: 'Santa Catarina' },
+  { sigla: 'SP', nome: 'São Paulo' },
+  { sigla: 'SE', nome: 'Sergipe' },
+  { sigla: 'TO', nome: 'Tocantins' },
+];
+
 export default function AdminClients() {
   const { customers, orders, updateCustomerStatus, addCustomer } = useApp();
   const [search, setSearch] = useState('');
@@ -13,29 +43,33 @@ export default function AdminClients() {
 
   // Controle do Modal de Cadastro de Novo Cliente (RF0021)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [toastError, setToastError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'error' | 'success'>('error');
 
   const initialFormState: NewCustomerInput = {
     name: '',
     email: '',
     cpf: '',
-    gender: 'Feminino',
+    gender: '',
     birthDate: '',
-    phoneType: 'Celular',
+    phoneType: '',
     phoneDdd: '11',
     phoneNumber: '',
+    senha: '',
+    confirmacaoSenha: '',
     initialAddress: {
       label: 'Minha Casa',
-      residenceType: 'Casa',
-      streetType: 'Rua',
+      residenceType: '',
+      streetType: '',
       street: '',
       number: '',
       complement: '',
       neighborhood: '',
       zipCode: '',
       city: '',
-      state: 'SP',
+      state: '',
       country: 'Brasil',
       observations: '',
       isDelivery: true,
@@ -72,26 +106,43 @@ export default function AdminClients() {
   const handleOpenAddModal = () => {
     setClientForm(initialFormState);
     setFormError(null);
-    setToastError(null);
+    setToastMessage(null);
     setIsAddModalOpen(true);
   };
 
-  const handleSaveNewClient = (e: React.FormEvent) => {
+  const handleSaveNewClient = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    setToastError(null);
+    setToastMessage(null);
 
-    const res = addCustomer(clientForm);
-    if (!res.success) {
-      const errorMsg = res.error || 'Não foi possível cadastrar o cliente. Verifique os campos destacados.';
-      setFormError(errorMsg);
-      setToastError(errorMsg);
+    // Validação amigável prévia de UX: confirmação de senha coincide
+    if (clientForm.senha !== clientForm.confirmacaoSenha) {
+      const msg = 'A confirmação de senha não coincide com a senha digitada.';
+      setFormError(msg);
+      setToastType('error');
+      setToastMessage(msg);
       return;
     }
 
-    setIsAddModalOpen(false);
-    setClientForm(initialFormState);
-    setToastError(null);
+    setIsSubmitting(true);
+    try {
+      const res = await addCustomer(clientForm);
+      if (!res.success) {
+        const errorMsg = res.error || 'Não foi possível cadastrar o cliente. Verifique os campos destacados.';
+        setFormError(errorMsg);
+        setToastType('error');
+        setToastMessage(errorMsg);
+        return;
+      }
+
+      setIsAddModalOpen(false);
+      setClientForm(initialFormState);
+      setFormError(null);
+      setToastType('success');
+      setToastMessage('Cliente cadastrado com sucesso.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Máscaras de digitação amigáveis
@@ -378,7 +429,7 @@ export default function AdminClients() {
         isOpen={isAddModalOpen}
         onClose={() => {
           setIsAddModalOpen(false);
-          setToastError(null);
+          setToastMessage(null);
         }}
         title="Cadastrar Novo Cliente"
         className="rw-client-modal"
@@ -453,6 +504,7 @@ export default function AdminClients() {
                     onChange={e => setClientForm(prev => ({ ...prev, gender: e.target.value }))}
                     required
                   >
+                    <option value="">Selecione...</option>
                     <option value="Feminino">Feminino</option>
                     <option value="Masculino">Masculino</option>
                     <option value="Outro">Outro</option>
@@ -491,6 +543,7 @@ export default function AdminClients() {
                     onChange={e => setClientForm(prev => ({ ...prev, phoneType: e.target.value }))}
                     required
                   >
+                    <option value="">Selecione...</option>
                     <option value="Celular">Celular</option>
                     <option value="Fixo">Fixo</option>
                     <option value="Comercial">Comercial</option>
@@ -525,10 +578,48 @@ export default function AdminClients() {
               </div>
             </div>
 
-            {/* SEÇÃO 3: ENDEREÇO */}
+            {/* SEÇÃO 3: SEGURANÇA E SENHA DE ACESSO (RN0026, RNF0031, RNF0032) */}
             <div className="rw-form-section">
               <div className="rw-section-header">
                 <span className="rw-section-badge">3</span>
+                <h4 className="rw-section-title">Segurança de Acesso</h4>
+              </div>
+
+              <div className="rw-form-row">
+                <div className="rw-form-group flex-1">
+                  <label htmlFor="new-password">Senha de Acesso <span className="rw-req">*</span></label>
+                  <input
+                    type="password"
+                    id="new-password"
+                    className="rw-input"
+                    value={clientForm.senha}
+                    onChange={e => setClientForm(prev => ({ ...prev, senha: e.target.value }))}
+                    placeholder="Mínimo 8 caracteres"
+                    required
+                  />
+                  <small style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem', color: '#888' }}>
+                    Mínimo 8 caracteres com letras maiúsculas, minúsculas e caractere especial (!, @, #, $, etc.).
+                  </small>
+                </div>
+                <div className="rw-form-group flex-1">
+                  <label htmlFor="new-confirm-password">Confirmar Senha <span className="rw-req">*</span></label>
+                  <input
+                    type="password"
+                    id="new-confirm-password"
+                    className="rw-input"
+                    value={clientForm.confirmacaoSenha}
+                    onChange={e => setClientForm(prev => ({ ...prev, confirmacaoSenha: e.target.value }))}
+                    placeholder="Repita a senha digitada"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* SEÇÃO 4: ENDEREÇO PRINCIPAL (RN0021, RN0022, RN0023, RN0026) */}
+            <div className="rw-form-section">
+              <div className="rw-section-header">
+                <span className="rw-section-badge">4</span>
                 <h4 className="rw-section-title">Endereço Principal</h4>
               </div>
 
@@ -560,6 +651,7 @@ export default function AdminClients() {
                     }))}
                     required
                   >
+                    <option value="">Selecione...</option>
                     <option value="Casa">Casa</option>
                     <option value="Apartamento">Apartamento</option>
                     <option value="Sobrado">Sobrado</option>
@@ -582,6 +674,7 @@ export default function AdminClients() {
                     }))}
                     required
                   >
+                    <option value="">Selecione...</option>
                     <option value="Rua">Rua</option>
                     <option value="Avenida">Avenida</option>
                     <option value="Alameda">Alameda</option>
@@ -685,38 +778,43 @@ export default function AdminClients() {
                     required
                   />
                 </div>
-                <div className="rw-form-group" style={{ width: '90px', flex: '0 0 90px' }}>
+                <div className="rw-form-group flex-2">
                   <label htmlFor="new-state">Estado <span className="rw-req">*</span></label>
-                  <input
-                    type="text"
+                  <select
                     id="new-state"
-                    className="rw-input"
+                    className="rw-select"
                     value={clientForm.initialAddress.state}
                     onChange={e => setClientForm(prev => ({
                       ...prev,
-                      initialAddress: { ...prev.initialAddress, state: e.target.value.toUpperCase() }
+                      initialAddress: { ...prev.initialAddress, state: e.target.value }
                     }))}
-                    placeholder="UF"
-                    maxLength={2}
                     required
-                  />
+                  >
+                    <option value="">Selecione...</option>
+                    {BRAZILIAN_STATES.map(uf => (
+                      <option key={uf.sigla} value={uf.sigla}>
+                        {uf.sigla} - {uf.nome}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
               <div className="rw-form-group">
-                <label htmlFor="new-country">País <span className="rw-req">*</span></label>
+                <label htmlFor="new-country">País</label>
                 <input
                   type="text"
                   id="new-country"
                   className="rw-input"
-                  value={clientForm.initialAddress.country}
-                  onChange={e => setClientForm(prev => ({
-                    ...prev,
-                    initialAddress: { ...prev.initialAddress, country: e.target.value }
-                  }))}
-                  placeholder="Brasil"
-                  required
+                  value="Brasil"
+                  readOnly
+                  autoComplete="off"
+                  tabIndex={-1}
+                  style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', cursor: 'default', color: '#ccc' }}
                 />
+                <small style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem', color: '#888' }}>
+                  Atendimento fixo em território nacional.
+                </small>
               </div>
 
               <div className="rw-form-group">
@@ -734,33 +832,25 @@ export default function AdminClients() {
                 />
               </div>
 
-              {/* Finalidades do Endereço */}
-              <div className="rw-purpose-box">
-                <span className="rw-purpose-label">Usar este endereço para:</span>
-                <div className="rw-purpose-options">
-                  <label className="rw-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={clientForm.initialAddress.isDelivery}
-                      onChange={e => setClientForm(prev => ({
-                        ...prev,
-                        initialAddress: { ...prev.initialAddress, isDelivery: e.target.checked }
-                      }))}
-                    />
-                    <span>Entrega</span>
-                  </label>
-                  <label className="rw-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={clientForm.initialAddress.isBilling}
-                      onChange={e => setClientForm(prev => ({
-                        ...prev,
-                        initialAddress: { ...prev.initialAddress, isBilling: e.target.checked }
-                      }))}
-                    />
-                    <span>Cobrança</span>
-                  </label>
+              {/* Finalidades do Endereço Principal */}
+              <div className="rw-purpose-box" style={{ padding: '0.85rem 1rem', borderRadius: '8px', backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <span className="rw-purpose-label" style={{ fontWeight: 600, fontSize: '0.82rem', color: '#bbb' }}>
+                  Finalidades deste endereço principal:
+                </span>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 500, backgroundColor: 'rgba(255, 255, 255, 0.08)', color: '#eee', padding: '0.25rem 0.6rem', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.15)' }}>
+                    ✓ Residencial
+                  </span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 500, backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success, #43b956)', padding: '0.25rem 0.6rem', borderRadius: '4px', border: '1px solid rgba(67, 185, 86, 0.3)' }}>
+                    ✓ Entrega
+                  </span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 500, backgroundColor: 'rgba(0, 191, 255, 0.15)', color: '#00bfff', padding: '0.25rem 0.6rem', borderRadius: '4px', border: '1px solid rgba(0, 191, 255, 0.3)' }}>
+                    ✓ Cobrança
+                  </span>
                 </div>
+                <small style={{ display: 'block', marginTop: '0.45rem', fontSize: '0.73rem', color: '#888' }}>
+                  No cadastro inicial, este endereço é configurado automaticamente como residencial, entrega e cobrança.
+                </small>
               </div>
             </div>
           </div>
@@ -770,15 +860,16 @@ export default function AdminClients() {
             <button
               type="button"
               className="btn btn-secondary rw-btn-cancel"
+              disabled={isSubmitting}
               onClick={() => {
                 setIsAddModalOpen(false);
-                setToastError(null);
+                setToastMessage(null);
               }}
             >
               CANCELAR
             </button>
-            <button type="submit" className="btn btn-primary rw-btn-submit">
-              CADASTRAR CLIENTE
+            <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isSubmitting}>
+              {isSubmitting ? 'CADASTRANDO...' : 'CADASTRAR CLIENTE'}
             </button>
           </div>
         </form>
@@ -786,9 +877,9 @@ export default function AdminClients() {
 
       {/* Toast de Notificação Imediata */}
       <Toast
-        message={toastError}
-        type="error"
-        onClose={() => setToastError(null)}
+        message={toastMessage}
+        type={toastType}
+        onClose={() => setToastMessage(null)}
       />
     </div>
   );

@@ -120,6 +120,8 @@ export interface NewCustomerInput {
   phoneNumber: string;
   gender: string;
   birthDate: string;
+  senha: string;
+  confirmacaoSenha: string;
   initialAddress: Omit<Address, 'id'>;
 }
 
