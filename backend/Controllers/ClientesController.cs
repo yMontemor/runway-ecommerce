@@ -47,6 +47,40 @@ public class ClientesController : ControllerBase
     }
 
     /// <summary>
+    /// RF0022: Alterar Cliente
+    /// Atualiza os dados cadastrais editáveis do cliente identificado pelo seu código público CLI-XXXX.
+    /// Retorna 200 OK, 400 Bad Request, 404 Not Found ou 409 Conflict.
+    /// </summary>
+    [HttpPut("{codigo}")]
+    [ProducesResponseType(typeof(ClienteResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Alterar(
+        [FromRoute] string codigo,
+        [FromBody] ClienteUpdateRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _clienteService.AlterarAsync(codigo, request, cancellationToken);
+            return Ok(response);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { erro = ex.Message });
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(new { erro = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// RF0024: Consulta persistente de clientes utilizando query parameters opcionais.
     /// RNF0011: Execução direta no banco sem materialização excessiva.
     /// Retorna 200 OK com array vazio [] quando nenhum cliente é encontrado.

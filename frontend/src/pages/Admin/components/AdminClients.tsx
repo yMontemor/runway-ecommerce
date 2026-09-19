@@ -7,9 +7,11 @@ import { maskBirthDate, maskPhoneNumber, maskZipCode } from '../../../utils/mask
 import { BRAZILIAN_STATES } from '../../../data/brazilianStates';
 import {
   consultarClientes,
+  alterarCliente,
   mapListItemDtoToCustomer,
   convertDateBrToIso,
-  type ClienteFiltro
+  type ClienteFiltro,
+  type ClienteUpdateRequestDto
 } from '../../../services/clienteService';
 
 export default function AdminClients() {
@@ -74,6 +76,90 @@ export default function AdminClients() {
   };
 
   const [clientForm, setClientForm] = useState<NewCustomerInput>(initialFormState);
+
+  // Controle do Modal de Edição de Cliente (RF0022)
+  interface ClientEditFormData {
+    codigo: string;
+    cpf: string;
+    name: string;
+    email: string;
+    gender: string;
+    birthDate: string;
+    phoneType: string;
+    phoneDdd: string;
+    phoneNumber: string;
+  }
+
+  const initialEditState: ClientEditFormData = {
+    codigo: '',
+    cpf: '',
+    name: '',
+    email: '',
+    gender: '',
+    birthDate: '',
+    phoneType: 'Celular',
+    phoneDdd: '11',
+    phoneNumber: ''
+  };
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+  const [editFormError, setEditFormError] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState<ClientEditFormData>(initialEditState);
+
+  const handleOpenEditModal = (client: Customer) => {
+    setEditFormData({
+      codigo: client.id,
+      cpf: client.cpf,
+      name: client.name,
+      email: client.email,
+      gender: client.gender,
+      birthDate: client.birthDate,
+      phoneType: client.phoneType || 'Celular',
+      phoneDdd: client.phoneDdd || '11',
+      phoneNumber: client.phoneNumber || ''
+    });
+    setEditFormError(null);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEditClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditFormError(null);
+    setIsEditSubmitting(true);
+
+    try {
+      const payload: ClienteUpdateRequestDto = {
+        nome: editFormData.name.trim(),
+        email: editFormData.email.trim(),
+        genero: editFormData.gender,
+        dataNascimento: convertDateBrToIso(editFormData.birthDate),
+        telefone: {
+          tipo: editFormData.phoneType,
+          ddd: editFormData.phoneDdd.replace(/\D/g, ''),
+          numero: editFormData.phoneNumber.replace(/\D/g, '')
+        }
+      };
+
+      const res = await alterarCliente(editFormData.codigo, payload);
+      if (!res.success) {
+        const errorMsg = res.error || 'Não foi possível alterar os dados do cliente.';
+        setEditFormError(errorMsg);
+        setToastType('error');
+        setToastMessage(errorMsg);
+        return;
+      }
+
+      setIsEditModalOpen(false);
+      setToastType('success');
+      setToastMessage('Dados do cliente alterados com sucesso.');
+
+      // Recarrega a consulta persistente de clientes para refletir imediatamente a alteração
+      await carregarClientes();
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
 
   // Carregamento de clientes persistidos a partir da API (RF0024 / RNF0011)
   const carregarClientes = useCallback(async (filtro?: ClienteFiltro) => {
@@ -687,13 +773,22 @@ export default function AdminClients() {
                   </td>
                   <td>{getClientOrdersCount(c.id)}</td>
                   <td>
-                    <button
-                      onClick={() => setSelectedClient(c)}
-                      className="btn btn-secondary btn-small"
-                      type="button"
-                    >
-                      Detalhes
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                      <button
+                        onClick={() => setSelectedClient(c)}
+                        className="btn btn-secondary btn-small"
+                        type="button"
+                      >
+                        Detalhes
+                      </button>
+                      <button
+                        onClick={() => handleOpenEditModal(c)}
+                        className="btn btn-primary btn-small"
+                        type="button"
+                      >
+                        Editar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -1148,6 +1243,203 @@ export default function AdminClients() {
             </button>
             <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isSubmitting}>
               {isSubmitting ? 'CADASTRANDO...' : 'CADASTRAR CLIENTE'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Alterar Cliente (RF0022) */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditFormError(null);
+        }}
+        title="Editar Cliente"
+        className="rw-client-modal"
+      >
+        <form onSubmit={handleSaveEditClient} className="rw-client-modal-body" style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', margin: 0 }}>
+          <div className="rw-client-form-scroll">
+            {editFormError && (
+              <div className="rw-form-error-banner">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <span>{editFormError}</span>
+              </div>
+            )}
+
+            {/* SEÇÃO 1: IDENTIFICAÇÃO E DADOS BÁSICOS */}
+            <div className="rw-form-section">
+              <div className="rw-section-header">
+                <span className="rw-section-badge">1</span>
+                <h4 className="rw-section-title">Identificação do Cliente</h4>
+              </div>
+
+              <div className="rw-form-row">
+                <div className="rw-form-group flex-1">
+                  <label htmlFor="edit-code">Código do Cliente</label>
+                  <input
+                    type="text"
+                    id="edit-code"
+                    className="rw-input"
+                    value={editFormData.codigo}
+                    readOnly
+                    autoComplete="off"
+                    tabIndex={-1}
+                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', cursor: 'default', color: '#aaa' }}
+                  />
+                  <small style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem', color: '#888' }}>
+                    Identificador único gerado no cadastro (somente leitura).
+                  </small>
+                </div>
+
+                <div className="rw-form-group flex-1">
+                  <label htmlFor="edit-cpf">CPF</label>
+                  <input
+                    type="text"
+                    id="edit-cpf"
+                    className="rw-input"
+                    value={editFormData.cpf}
+                    readOnly
+                    autoComplete="off"
+                    tabIndex={-1}
+                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', cursor: 'default', color: '#aaa' }}
+                  />
+                  <small style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem', color: '#888' }}>
+                    Documento fixo do cliente (somente leitura).
+                  </small>
+                </div>
+              </div>
+
+              <div className="rw-form-group">
+                <label htmlFor="edit-name">Nome Completo <span className="rw-req">*</span></label>
+                <input
+                  type="text"
+                  id="edit-name"
+                  className="rw-input"
+                  value={editFormData.name}
+                  onChange={e => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Ex: João da Silva"
+                  required
+                />
+              </div>
+
+              <div className="rw-form-row">
+                <div className="rw-form-group flex-1">
+                  <label htmlFor="edit-birth">Data de Nascimento <span className="rw-req">*</span></label>
+                  <input
+                    type="text"
+                    id="edit-birth"
+                    className="rw-input"
+                    value={editFormData.birthDate}
+                    onChange={e => setEditFormData(prev => ({ ...prev, birthDate: maskBirthDate(e.target.value) }))}
+                    placeholder="dd/mm/aaaa"
+                    maxLength={10}
+                    required
+                  />
+                </div>
+                <div className="rw-form-group flex-1">
+                  <label htmlFor="edit-gender">Gênero <span className="rw-req">*</span></label>
+                  <select
+                    id="edit-gender"
+                    className="rw-select"
+                    value={editFormData.gender}
+                    onChange={e => setEditFormData(prev => ({ ...prev, gender: e.target.value }))}
+                    required
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="Feminino">Feminino</option>
+                    <option value="Masculino">Masculino</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* SEÇÃO 2: CONTATO */}
+            <div className="rw-form-section">
+              <div className="rw-section-header">
+                <span className="rw-section-badge">2</span>
+                <h4 className="rw-section-title">Contato</h4>
+              </div>
+
+              <div className="rw-form-group">
+                <label htmlFor="edit-email">E-mail <span className="rw-req">*</span></label>
+                <input
+                  type="email"
+                  id="edit-email"
+                  className="rw-input"
+                  value={editFormData.email}
+                  onChange={e => setEditFormData(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="cliente@email.com"
+                  required
+                />
+              </div>
+
+              <div className="rw-form-row">
+                <div className="rw-form-group flex-1-5">
+                  <label htmlFor="edit-phone-type">Tipo de Telefone <span className="rw-req">*</span></label>
+                  <select
+                    id="edit-phone-type"
+                    className="rw-select"
+                    value={editFormData.phoneType}
+                    onChange={e => setEditFormData(prev => ({ ...prev, phoneType: e.target.value }))}
+                    required
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="Celular">Celular</option>
+                    <option value="Fixo">Fixo</option>
+                    <option value="Comercial">Comercial</option>
+                  </select>
+                </div>
+                <div className="rw-form-group" style={{ width: '90px', flex: '0 0 90px' }}>
+                  <label htmlFor="edit-phone-ddd">DDD <span className="rw-req">*</span></label>
+                  <input
+                    type="text"
+                    id="edit-phone-ddd"
+                    className="rw-input"
+                    value={editFormData.phoneDdd}
+                    onChange={e => setEditFormData(prev => ({ ...prev, phoneDdd: e.target.value.replace(/\D/g, '').slice(0, 2) }))}
+                    placeholder="11"
+                    maxLength={2}
+                    required
+                  />
+                </div>
+                <div className="rw-form-group flex-2-5">
+                  <label htmlFor="edit-phone-num">Número do Telefone <span className="rw-req">*</span></label>
+                  <input
+                    type="text"
+                    id="edit-phone-num"
+                    className="rw-input"
+                    value={editFormData.phoneNumber}
+                    onChange={e => setEditFormData(prev => ({ ...prev, phoneNumber: maskPhoneNumber(e.target.value) }))}
+                    placeholder="98765-4321"
+                    maxLength={10}
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Rodapé Fixo */}
+          <div className="rw-modal-footer">
+            <button
+              type="button"
+              className="btn btn-secondary rw-btn-cancel"
+              disabled={isEditSubmitting}
+              onClick={() => {
+                setIsEditModalOpen(false);
+                setEditFormError(null);
+              }}
+            >
+              CANCELAR
+            </button>
+            <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isEditSubmitting}>
+              {isEditSubmitting ? 'SALVANDO...' : 'SALVAR ALTERAÇÕES'}
             </button>
           </div>
         </form>

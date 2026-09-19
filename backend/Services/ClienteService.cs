@@ -27,41 +27,9 @@ public class ClienteService : IClienteService
         // =========================================================================
         // 1. VALIDAÇÃO DOS DADOS BÁSICOS DO CLIENTE (RN0026 / Decisões do RunWay)
         // =========================================================================
-        if (string.IsNullOrWhiteSpace(request.Nome))
-        {
-            throw new ValidationException("O nome do cliente é obrigatório. (RN0026)");
-        }
-
-        if (request.Nome.Trim().Length > 150)
-        {
-            throw new ValidationException("O nome do cliente não pode exceder 150 caracteres.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Genero))
-        {
-            throw new ValidationException("O gênero do cliente é obrigatório. (RN0026)");
-        }
-
-        if (request.Genero.Trim().Length > 30)
-        {
-            throw new ValidationException("O gênero não pode exceder 30 caracteres.");
-        }
-
-        if (request.DataNascimento == default)
-        {
-            throw new ValidationException("A data de nascimento do cliente é obrigatória. (RN0026)");
-        }
-
-        var dataAtual = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (request.DataNascimento > dataAtual)
-        {
-            throw new ValidationException("A data de nascimento não pode ser futura.");
-        }
-
-        if (request.DataNascimento < new DateOnly(1900, 1, 1))
-        {
-            throw new ValidationException("Informe um ano de nascimento válido.");
-        }
+        ValidarNome(request.Nome);
+        ValidarGenero(request.Genero);
+        ValidarDataNascimento(request.DataNascimento);
 
         // Normalização e validação de CPF (RN0026 / Decisão de Projeto RunWay)
         var cpfNormalizado = Regex.Replace(request.Cpf ?? string.Empty, @"\D", "");
@@ -71,16 +39,7 @@ public class ClienteService : IClienteService
         }
 
         // Normalização e validação de E-mail (RN0026 / Decisão de Projeto RunWay)
-        var emailNormalizado = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(emailNormalizado) || !emailNormalizado.Contains('@') || !emailNormalizado.Contains('.'))
-        {
-            throw new ValidationException("Informe um e-mail válido. (RN0026)");
-        }
-
-        if (emailNormalizado.Length > 255)
-        {
-            throw new ValidationException("O e-mail não pode exceder 255 caracteres.");
-        }
+        var emailNormalizado = NormalizarEValidarEmail(request.Email);
 
         // =========================================================================
         // 2. VERIFICAÇÃO PRÉVIA DE UNICIDADE (Decisão de Projeto RunWay / Índices UNIQUE)
@@ -127,27 +86,7 @@ public class ClienteService : IClienteService
         // =========================================================================
         // 4. VALIDAÇÃO DO TELEFONE (RN0026)
         // =========================================================================
-        if (request.Telefone is null)
-        {
-            throw new ValidationException("Os dados de telefone são obrigatórios. (RN0026)");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Telefone.Tipo))
-        {
-            throw new ValidationException("O tipo de telefone é obrigatório. (RN0026)");
-        }
-
-        var dddNormalizado = Regex.Replace(request.Telefone.Ddd ?? string.Empty, @"\D", "");
-        if (dddNormalizado.Length != 2)
-        {
-            throw new ValidationException("O DDD do telefone deve conter exatamente 2 dígitos numéricos. (RN0026)");
-        }
-
-        var numeroTelefoneNormalizado = Regex.Replace(request.Telefone.Numero ?? string.Empty, @"\D", "");
-        if (numeroTelefoneNormalizado.Length != 8 && numeroTelefoneNormalizado.Length != 9)
-        {
-            throw new ValidationException("O número de telefone deve conter 8 ou 9 dígitos numéricos. (RN0026)");
-        }
+        var (tipoTelefone, dddNormalizado, numeroTelefoneNormalizado) = NormalizarEValidarTelefone(request.Telefone);
 
         // =========================================================================
         // 5. VALIDAÇÃO DA COLEÇÃO DE ENDEREÇOS (RN0021, RN0022, RN0023, RN0026)
@@ -228,7 +167,7 @@ public class ClienteService : IClienteService
             Ativo = true, // Decisão RunWay: Cliente ativo por padrão
             Telefone = new Telefone
             {
-                Tipo = request.Telefone.Tipo.Trim(),
+                Tipo = tipoTelefone,
                 Ddd = dddNormalizado,
                 Numero = numeroTelefoneNormalizado
             },
@@ -251,26 +190,96 @@ public class ClienteService : IClienteService
         // =========================================================================
         // 7. MAPEAMENTO PARA RESPONSE DTO (Sem expor dados sensíveis)
         // =========================================================================
-        return new ClienteResponseDto
+        return MapearClienteParaResponseDto(novoCliente);
+    }
+
+    /// <summary>
+    /// RF0022: Alteração de Cliente.
+    /// Atualiza somente os campos cadastrais permitidos: Nome, Email, Genero, DataNascimento e Telefone associado.
+    /// CPF é mantido estritamente imutável (Decisão de Projeto RunWay).
+    /// Código (CLI-XXXX), SenhaHash (Card #56 / RF0028), Ranking (Card #59 / RN0027),
+    /// Ativo (Card #57 / RF0023), Endereços (Cards #51/#55) e Cartões (Card #52 / RF0027)
+    /// são protegidos estruturalmente e NÃO são alterados por este método.
+    /// </summary>
+    public async Task<ClienteResponseDto> AlterarAsync(
+        string codigoCliente,
+        ClienteUpdateRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(codigoCliente))
         {
-            Id = novoCliente.Id,
-            Codigo = novoCliente.Codigo,
-            Nome = novoCliente.Nome,
-            Email = novoCliente.Email,
-            Cpf = novoCliente.Cpf,
-            Genero = novoCliente.Genero,
-            DataNascimento = novoCliente.DataNascimento,
-            Ranking = novoCliente.Ranking,
-            Ativo = novoCliente.Ativo,
-            Telefone = new TelefoneResponseDto
+            throw new ValidationException("O código do cliente é obrigatório para alteração.");
+        }
+
+        if (request is null)
+        {
+            throw new ValidationException("Os dados para alteração do cliente são obrigatórios.");
+        }
+
+        var codigoNormalizado = codigoCliente.Trim();
+
+        // 1. Localiza o cliente com tracking ativo para atualização via EF Core
+        var cliente = await _context.Clientes
+            .Include(c => c.Telefone)
+            .Include(c => c.Enderecos)
+            .FirstOrDefaultAsync(c => c.Codigo == codigoNormalizado, cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoNormalizado}' não foi encontrado.");
+        }
+
+        // 2. Validações dos campos recebidos reutilizando métodos compartilhados
+        ValidarNome(request.Nome);
+        ValidarGenero(request.Genero);
+        ValidarDataNascimento(request.DataNascimento);
+        var emailNormalizado = NormalizarEValidarEmail(request.Email);
+        var (tipoTelefone, dddNormalizado, numeroNormalizado) = NormalizarEValidarTelefone(request.Telefone);
+
+        // 3. Verificação de unicidade de e-mail contra OUTROS clientes (Decisão de Projeto RunWay)
+        // Permite manter o próprio e-mail atual do cliente
+        var emailEmUsoPorOutro = await _context.Clientes
+            .AsNoTracking()
+            .AnyAsync(c => c.Email == emailNormalizado && c.Codigo != cliente.Codigo, cancellationToken);
+
+        if (emailEmUsoPorOutro)
+        {
+            throw new ConflictException("Já existe outro cliente cadastrado com este e-mail.");
+        }
+
+        // 4. Atualização estrita dos campos editáveis no escopo do RF0022
+        cliente.Nome = request.Nome.Trim();
+        cliente.Email = emailNormalizado;
+        cliente.Genero = request.Genero.Trim();
+        cliente.DataNascimento = request.DataNascimento;
+
+        // 5. Atualização do telefone associado na mesma transação/contexto
+        if (cliente.Telefone is null)
+        {
+            cliente.Telefone = new Telefone
             {
-                Id = novoCliente.Telefone.Id,
-                Tipo = novoCliente.Telefone.Tipo,
-                Ddd = novoCliente.Telefone.Ddd,
-                Numero = novoCliente.Telefone.Numero
-            },
-            Enderecos = novoCliente.Enderecos.Select(MapearEnderecoParaResponseDto).ToList()
-        };
+                ClienteId = cliente.Id,
+                Tipo = tipoTelefone,
+                Ddd = dddNormalizado,
+                Numero = numeroNormalizado
+            };
+        }
+        else
+        {
+            cliente.Telefone.Tipo = tipoTelefone;
+            cliente.Telefone.Ddd = dddNormalizado;
+            cliente.Telefone.Numero = numeroNormalizado;
+        }
+
+        // 6. Campos protegidos contra alterações indevidas (garantia estrutural):
+        // cliente.Codigo, cliente.Cpf, cliente.SenhaHash, cliente.Ranking, cliente.Ativo,
+        // cliente.Enderecos e cliente.Cartoes permanecem estritamente inalterados.
+
+        // 7. Persistência atômica no PostgreSQL
+        await _context.SaveChangesAsync(cancellationToken);
+
+        // 8. Retorno da resposta mapeada
+        return MapearClienteParaResponseDto(cliente);
     }
 
     /// <summary>
@@ -876,6 +885,138 @@ public class ClienteService : IClienteService
         {
             throw new ValidationException("A senha deve conter pelo menos um caractere especial (!, @, #, $, etc.). (RNF0031)");
         }
+    }
+
+    /// <summary>
+    /// RN0026: Validação do nome do cliente.
+    /// </summary>
+    private static void ValidarNome(string? nome)
+    {
+        if (string.IsNullOrWhiteSpace(nome))
+        {
+            throw new ValidationException("O nome do cliente é obrigatório. (RN0026)");
+        }
+
+        if (nome.Trim().Length > 150)
+        {
+            throw new ValidationException("O nome do cliente não pode exceder 150 caracteres.");
+        }
+    }
+
+    /// <summary>
+    /// RN0026: Validação do gênero do cliente.
+    /// </summary>
+    private static void ValidarGenero(string? genero)
+    {
+        if (string.IsNullOrWhiteSpace(genero))
+        {
+            throw new ValidationException("O gênero do cliente é obrigatório. (RN0026)");
+        }
+
+        if (genero.Trim().Length > 30)
+        {
+            throw new ValidationException("O gênero não pode exceder 30 caracteres.");
+        }
+    }
+
+    /// <summary>
+    /// RN0026: Validação de data de nascimento.
+    /// </summary>
+    private static void ValidarDataNascimento(DateOnly dataNascimento)
+    {
+        if (dataNascimento == default)
+        {
+            throw new ValidationException("A data de nascimento do cliente é obrigatória. (RN0026)");
+        }
+
+        var dataAtual = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (dataNascimento > dataAtual)
+        {
+            throw new ValidationException("A data de nascimento não pode ser futura.");
+        }
+
+        if (dataNascimento < new DateOnly(1900, 1, 1))
+        {
+            throw new ValidationException("Informe um ano de nascimento válido.");
+        }
+    }
+
+    /// <summary>
+    /// RN0026 / Decisão de Projeto RunWay: Normalização e validação de e-mail.
+    /// </summary>
+    private static string NormalizarEValidarEmail(string? email)
+    {
+        var emailNormalizado = (email ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(emailNormalizado) || !emailNormalizado.Contains('@') || !emailNormalizado.Contains('.'))
+        {
+            throw new ValidationException("Informe um e-mail válido. (RN0026)");
+        }
+
+        if (emailNormalizado.Length > 255)
+        {
+            throw new ValidationException("O e-mail não pode exceder 255 caracteres.");
+        }
+
+        return emailNormalizado;
+    }
+
+    /// <summary>
+    /// RN0026: Normalização e validação de dados de telefone.
+    /// </summary>
+    private static (string Tipo, string Ddd, string Numero) NormalizarEValidarTelefone(TelefoneRequestDto? telefone)
+    {
+        if (telefone is null)
+        {
+            throw new ValidationException("Os dados de telefone são obrigatórios. (RN0026)");
+        }
+
+        if (string.IsNullOrWhiteSpace(telefone.Tipo))
+        {
+            throw new ValidationException("O tipo de telefone é obrigatório. (RN0026)");
+        }
+
+        var dddNormalizado = Regex.Replace(telefone.Ddd ?? string.Empty, @"\D", "");
+        if (dddNormalizado.Length != 2)
+        {
+            throw new ValidationException("O DDD do telefone deve conter exatamente 2 dígitos numéricos. (RN0026)");
+        }
+
+        var numeroTelefoneNormalizado = Regex.Replace(telefone.Numero ?? string.Empty, @"\D", "");
+        if (numeroTelefoneNormalizado.Length != 8 && numeroTelefoneNormalizado.Length != 9)
+        {
+            throw new ValidationException("O número de telefone deve conter 8 ou 9 dígitos numéricos. (RN0026)");
+        }
+
+        return (telefone.Tipo.Trim(), dddNormalizado, numeroTelefoneNormalizado);
+    }
+
+    /// <summary>
+    /// Mapeia a entidade Cliente para ClienteResponseDto preservando proteção contra exposição indevida de dados sensíveis.
+    /// </summary>
+    private static ClienteResponseDto MapearClienteParaResponseDto(Cliente cliente)
+    {
+        return new ClienteResponseDto
+        {
+            Id = cliente.Id,
+            Codigo = cliente.Codigo,
+            Nome = cliente.Nome,
+            Email = cliente.Email,
+            Cpf = cliente.Cpf,
+            Genero = cliente.Genero,
+            DataNascimento = cliente.DataNascimento,
+            Ranking = cliente.Ranking,
+            Ativo = cliente.Ativo,
+            Telefone = cliente.Telefone is not null
+                ? new TelefoneResponseDto
+                {
+                    Id = cliente.Telefone.Id,
+                    Tipo = cliente.Telefone.Tipo,
+                    Ddd = cliente.Telefone.Ddd,
+                    Numero = cliente.Telefone.Numero
+                }
+                : null!,
+            Enderecos = cliente.Enderecos?.Select(MapearEnderecoParaResponseDto).ToList() ?? new List<EnderecoResponseDto>()
+        };
     }
 }
 

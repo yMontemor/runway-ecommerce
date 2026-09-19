@@ -38,6 +38,14 @@ export interface ClienteCreateRequestDto {
   enderecos: EnderecoRequestDto[];
 }
 
+export interface ClienteUpdateRequestDto {
+  nome: string;
+  email: string;
+  genero: string;
+  dataNascimento: string; // formato YYYY-MM-DD
+  telefone: TelefoneRequestDto;
+}
+
 export interface TelefoneResponseDto {
   id: number;
   tipo: string;
@@ -348,6 +356,55 @@ export async function cadastrarCliente(input: NewCustomerInput): Promise<Cadastr
     return {
       success: false,
       error: 'Não foi possível conectar ao servidor do RunWay. Verifique se a API está em execução.'
+    };
+  }
+}
+
+export interface AlteracaoClienteResult {
+  success: boolean;
+  error?: string;
+  cliente?: ClienteResponseDto;
+}
+
+/**
+ * RF0022: Altera os dados cadastrais permitidos do cliente via PUT /api/clientes/{codigo}.
+ * Envia estritamente os campos permitidos: nome, email, genero, dataNascimento e telefone.
+ * Não envia CPF, código, ranking, status, senha, endereços ou cartões.
+ */
+export async function alterarCliente(
+  codigoCliente: string,
+  dados: ClienteUpdateRequestDto
+): Promise<AlteracaoClienteResult> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(dados)
+    });
+
+    if (response.ok) {
+      const data: ClienteResponseDto = await response.json();
+      return {
+        success: true,
+        cliente: data
+      };
+    }
+
+    if (response.status === 400 || response.status === 404 || response.status === 409) {
+      const errorMsg = await extractErrorMessage(response, 'Não foi possível alterar o cliente.');
+      return { success: false, error: errorMsg };
+    }
+
+    return {
+      success: false,
+      error: 'Não foi possível atualizar o cliente no momento.'
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para alterar o cliente.'
     };
   }
 }
