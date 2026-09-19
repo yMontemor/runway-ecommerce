@@ -84,10 +84,39 @@ export interface CadastroClienteResult {
   customer?: Customer;
 }
 
+export interface ClienteFiltro {
+  codigo?: string;
+  nome?: string;
+  cpf?: string;
+  email?: string;
+  genero?: string;
+  dataNascimento?: string; // Formato YYYY-MM-DD
+  telefone?: string;
+  ativo?: boolean;
+}
+
+export interface ClienteListItemResponseDto {
+  codigo: string;
+  nome: string;
+  email: string;
+  cpf: string;
+  genero: string;
+  dataNascimento: string; // YYYY-MM-DD
+  ranking: number;
+  ativo: boolean;
+  telefone?: TelefoneResponseDto | null;
+}
+
+export interface ConsultaClientesResult {
+  success: boolean;
+  error?: string;
+  clientes: ClienteListItemResponseDto[];
+}
+
 /**
  * Converte data do padrão brasileiro DD/MM/AAAA para formato ISO YYYY-MM-DD aceito pelo backend.
  */
-function convertDateBrToIso(dateStr: string): string {
+export function convertDateBrToIso(dateStr: string): string {
   if (!dateStr) return '';
   const parts = dateStr.trim().split('/');
   if (parts.length === 3) {
@@ -100,7 +129,7 @@ function convertDateBrToIso(dateStr: string): string {
 /**
  * Converte data ISO YYYY-MM-DD retornada pelo backend para padrão brasileiro DD/MM/AAAA para exibição na interface.
  */
-function convertDateIsoToBr(isoStr: string): string {
+export function convertDateIsoToBr(isoStr: string): string {
   if (!isoStr) return '';
   const parts = isoStr.trim().split('-');
   if (parts.length === 3) {
@@ -671,3 +700,87 @@ export async function definirCartaoPreferencial(
   }
 }
 
+/**
+ * Mapeia o item enxuto retornado pela consulta de clientes (ClienteListItemResponseDto)
+ * para o modelo Customer consumido na tela de Administração.
+ */
+export function mapListItemDtoToCustomer(dto: ClienteListItemResponseDto): Customer {
+  const phoneDdd = dto.telefone?.ddd || '';
+  const phoneNum = dto.telefone?.numero || '';
+  const formattedPhoneNum =
+    phoneNum.length === 9
+      ? `${phoneNum.slice(0, 5)}-${phoneNum.slice(5)}`
+      : phoneNum.length === 8
+        ? `${phoneNum.slice(0, 4)}-${phoneNum.slice(4)}`
+        : phoneNum;
+  const derivedPhone = phoneDdd && phoneNum ? `(${phoneDdd}) ${formattedPhoneNum}` : '';
+
+  const cpfFormatted =
+    dto.cpf.length === 11
+      ? `${dto.cpf.slice(0, 3)}.${dto.cpf.slice(3, 6)}.${dto.cpf.slice(6, 9)}-${dto.cpf.slice(9, 11)}`
+      : dto.cpf;
+
+  return {
+    id: dto.codigo,
+    name: dto.nome,
+    email: dto.email,
+    cpf: cpfFormatted,
+    phone: derivedPhone,
+    phoneType: dto.telefone?.tipo || 'Celular',
+    phoneDdd,
+    phoneNumber: formattedPhoneNum,
+    gender: dto.genero,
+    birthDate: convertDateIsoToBr(dto.dataNascimento),
+    status: dto.ativo ? 'ATIVO' : 'INATIVO',
+    ranking: dto.ranking,
+    addresses: [],
+    cards: []
+  };
+}
+
+/**
+ * RF0024 / RNF0011: Consulta clientes persistidos no PostgreSQL aplicando filtros opcionais combinados (AND).
+ * Sem parâmetros, retorna todos os clientes.
+ * Caso nenhum cliente corresponda, retorna lista vazia com sucesso (200 OK).
+ */
+export async function consultarClientes(filtro?: ClienteFiltro): Promise<ConsultaClientesResult> {
+  try {
+    const params = new URLSearchParams();
+    if (filtro) {
+      if (filtro.codigo?.trim()) params.append('codigo', filtro.codigo.trim());
+      if (filtro.nome?.trim()) params.append('nome', filtro.nome.trim());
+      if (filtro.cpf?.trim()) params.append('cpf', filtro.cpf.trim());
+      if (filtro.email?.trim()) params.append('email', filtro.email.trim());
+      if (filtro.genero?.trim()) params.append('genero', filtro.genero.trim());
+      if (filtro.dataNascimento?.trim()) params.append('dataNascimento', filtro.dataNascimento.trim());
+      if (filtro.telefone?.trim()) params.append('telefone', filtro.telefone.trim());
+      if (filtro.ativo !== undefined && filtro.ativo !== null) params.append('ativo', String(filtro.ativo));
+    }
+
+    const queryString = params.toString();
+    const url = queryString ? `${API_BASE_URL}/api/clientes?${queryString}` : `${API_BASE_URL}/api/clientes`;
+
+    const response = await fetch(url);
+
+    if (response.ok) {
+      const data: ClienteListItemResponseDto[] = await response.json();
+      return {
+        success: true,
+        clientes: data
+      };
+    }
+
+    const errorMsg = await extractErrorMessage(response, 'Não foi possível consultar os clientes.');
+    return {
+      success: false,
+      error: errorMsg,
+      clientes: []
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para consultar os clientes.',
+      clientes: []
+    };
+  }
+}

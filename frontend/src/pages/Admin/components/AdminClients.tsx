@@ -1,15 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../../../store/AppContext';
 import Modal from '../../../components/Modal/Modal';
 import Toast from '../../../components/Toast/Toast';
 import type { Customer, NewCustomerInput } from '../../../types';
 import { maskBirthDate, maskPhoneNumber, maskZipCode } from '../../../utils/maskAndValidate';
 import { BRAZILIAN_STATES } from '../../../data/brazilianStates';
+import {
+  consultarClientes,
+  mapListItemDtoToCustomer,
+  convertDateBrToIso,
+  type ClienteFiltro
+} from '../../../services/clienteService';
 
 export default function AdminClients() {
-  const { customers, orders, updateCustomerStatus, addCustomer } = useApp();
+  const { orders, updateCustomerStatus, addCustomer } = useApp();
+
+  // Estado da listagem real de clientes persistidos no PostgreSQL (RF0024 / RNF0011)
+  const [clientsList, setClientsList] = useState<Customer[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  // Filtros simples
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'TODOS' | 'ATIVO' | 'INATIVO'>('TODOS');
+
+  // Painel de Filtros Avançados
+  const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
+  const [filterCodigo, setFilterCodigo] = useState('');
+  const [filterNome, setFilterNome] = useState('');
+  const [filterCpf, setFilterCpf] = useState('');
+  const [filterEmail, setFilterEmail] = useState('');
+  const [filterGenero, setFilterGenero] = useState('');
+  const [filterDataNascimento, setFilterDataNascimento] = useState('');
+  const [filterTelefone, setFilterTelefone] = useState('');
+  const [filterAtivo, setFilterAtivo] = useState<'TODOS' | 'ATIVO' | 'INATIVO'>('TODOS');
+
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
 
   // Controle do Modal de Cadastro de Novo Cliente (RF0021)
@@ -50,21 +75,84 @@ export default function AdminClients() {
 
   const [clientForm, setClientForm] = useState<NewCustomerInput>(initialFormState);
 
-  // Filtragem combinada de clientes (Busca textual AND Filtro de Status) - RF0024
-  const filteredClients = customers.filter(c => {
-    const term = search.toLowerCase().trim();
-    const matchesSearch =
-      !term ||
-      c.id.toLowerCase().includes(term) ||
-      c.name.toLowerCase().includes(term) ||
-      c.email.toLowerCase().includes(term) ||
-      c.cpf.includes(term);
+  // Carregamento de clientes persistidos a partir da API (RF0024 / RNF0011)
+  const carregarClientes = useCallback(async (filtro?: ClienteFiltro) => {
+    setIsLoading(true);
+    setApiError(null);
+    try {
+      const res = await consultarClientes(filtro);
+      if (res.success) {
+        setClientsList(res.clientes.map(mapListItemDtoToCustomer));
+      } else {
+        setApiError(res.error || 'Não foi possível carregar a lista de clientes.');
+      }
+    } catch {
+      setApiError('Falha ao conectar com o servidor para carregar clientes.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-    const matchesStatus =
-      statusFilter === 'TODOS' ? true : c.status === statusFilter;
+  // Carregamento inicial ao montar o componente
+  useEffect(() => {
+    carregarClientes();
+  }, [carregarClientes]);
 
-    return matchesSearch && matchesStatus;
-  });
+  // Executa busca simples baseada no input livre e status
+  const aplicarBuscaSimples = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const filtro: ClienteFiltro = {};
+    const termo = search.trim();
+    if (termo) {
+      if (termo.includes('@')) {
+        filtro.email = termo;
+      } else if (termo.toUpperCase().startsWith('CLI-')) {
+        filtro.codigo = termo;
+      } else if (termo.replace(/\D/g, '').length >= 4 && !/[a-zA-Z]/.test(termo)) {
+        filtro.cpf = termo;
+      } else {
+        filtro.nome = termo;
+      }
+    }
+    if (statusFilter === 'ATIVO') filtro.ativo = true;
+    if (statusFilter === 'INATIVO') filtro.ativo = false;
+
+    carregarClientes(filtro);
+  };
+
+  // Executa busca com os campos dos filtros avançados combinados (AND)
+  const aplicarFiltrosAvancados = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const filtro: ClienteFiltro = {};
+    if (filterCodigo.trim()) filtro.codigo = filterCodigo.trim();
+    if (filterNome.trim()) filtro.nome = filterNome.trim();
+    if (filterCpf.trim()) filtro.cpf = filterCpf.trim();
+    if (filterEmail.trim()) filtro.email = filterEmail.trim();
+    if (filterGenero.trim()) filtro.genero = filterGenero.trim();
+    if (filterDataNascimento.trim()) {
+      filtro.dataNascimento = convertDateBrToIso(filterDataNascimento.trim());
+    }
+    if (filterTelefone.trim()) filtro.telefone = filterTelefone.trim();
+    if (filterAtivo === 'ATIVO') filtro.ativo = true;
+    if (filterAtivo === 'INATIVO') filtro.ativo = false;
+
+    carregarClientes(filtro);
+  };
+
+  // Limpa todos os filtros e restaura a lista completa de clientes persistidos
+  const limparFiltros = () => {
+    setSearch('');
+    setStatusFilter('TODOS');
+    setFilterCodigo('');
+    setFilterNome('');
+    setFilterCpf('');
+    setFilterEmail('');
+    setFilterGenero('');
+    setFilterDataNascimento('');
+    setFilterTelefone('');
+    setFilterAtivo('TODOS');
+    carregarClientes({});
+  };
 
   const getClientOrdersCount = (customerId: string) => {
     return orders.filter(o => o.customerId === customerId).length;
@@ -111,6 +199,9 @@ export default function AdminClients() {
       setFormError(null);
       setToastType('success');
       setToastMessage('Cliente cadastrado com sucesso.');
+
+      // Recarrega a consulta real da API para exibir imediatamente o cliente recém-persistido
+      await carregarClientes();
     } finally {
       setIsSubmitting(false);
     }
@@ -308,32 +399,69 @@ export default function AdminClients() {
 
   return (
     <div className="admin-tab-content">
-      <div className="admin-header-row">
+      <div className="admin-header-row" style={{ flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
         <h3 className="admin-tab-title">Gestão de Clientes</h3>
         
-        <div className="admin-filters-row">
-          {/* Campo de Busca Livre (Nome, CPF ou E-mail) */}
-          <div className="admin-search-box">
-            <input
-              type="text"
-              placeholder="Buscar por nome, e-mail ou CPF..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="admin-search-input"
-            />
-          </div>
+        <div className="admin-filters-row" style={{ flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+          {/* Busca Simples */}
+          <form onSubmit={aplicarBuscaSimples} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+            <div className="admin-search-box">
+              <input
+                type="text"
+                placeholder="Buscar por nome, e-mail, CPF ou código..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="admin-search-input"
+                style={{ minWidth: '240px' }}
+              />
+            </div>
+            <button
+              type="submit"
+              className="btn btn-secondary btn-small"
+              disabled={isLoading}
+              title="Buscar clientes"
+            >
+              Buscar
+            </button>
+          </form>
 
-          {/* Filtro por Status (RF0024) */}
+          {/* Filtro de Situação Cadastral Simples */}
           <select
             value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value as 'TODOS' | 'ATIVO' | 'INATIVO')}
+            onChange={e => {
+              const novo = e.target.value as 'TODOS' | 'ATIVO' | 'INATIVO';
+              setStatusFilter(novo);
+              setFilterAtivo(novo);
+              const filtro: ClienteFiltro = {};
+              const termo = search.trim();
+              if (termo) {
+                if (termo.includes('@')) filtro.email = termo;
+                else if (termo.toUpperCase().startsWith('CLI-')) filtro.codigo = termo;
+                else if (termo.replace(/\D/g, '').length >= 4 && !/[a-zA-Z]/.test(termo)) filtro.cpf = termo;
+                else filtro.nome = termo;
+              }
+              if (novo === 'ATIVO') filtro.ativo = true;
+              if (novo === 'INATIVO') filtro.ativo = false;
+              carregarClientes(filtro);
+            }}
             className="admin-filter-select"
-            aria-label="Filtrar clientes por status"
+            aria-label="Filtrar clientes por situação cadastral"
           >
             <option value="TODOS">Status: Todos</option>
             <option value="ATIVO">Apenas Ativos</option>
             <option value="INATIVO">Apenas Inativos</option>
           </select>
+
+          {/* Botão de Toggle Filtros Avançados */}
+          <button
+            type="button"
+            onClick={() => setIsAdvancedFiltersOpen(prev => !prev)}
+            className={`btn ${isAdvancedFiltersOpen ? 'btn-primary' : 'btn-secondary'} btn-small`}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}
+          >
+            <span>Filtros Avançados</span>
+            <span style={{ fontSize: '0.7rem' }}>{isAdvancedFiltersOpen ? '▲' : '▼'}</span>
+          </button>
 
           {/* Botão de Cadastro de Novo Cliente (RF0021) */}
           <button
@@ -347,6 +475,153 @@ export default function AdminClients() {
         </div>
       </div>
 
+      {/* PAINEL DE FILTROS AVANÇADOS (RF0024 / RNF0011) */}
+      {isAdvancedFiltersOpen && (
+        <div className="admin-advanced-filters-panel">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: '#f0f0f0', letterSpacing: '0.3px' }}>
+              Filtros Avançados de Clientes
+            </h4>
+            <span style={{ fontSize: '0.75rem', color: '#888' }}>
+              Filtros individuais ou combinados
+            </span>
+          </div>
+
+          <form onSubmit={aplicarFiltrosAvancados}>
+            <div className="admin-advanced-filters-grid">
+              {/* Código */}
+              <div className="rw-form-group" style={{ margin: 0 }}>
+                <label className="adv-filter-label" htmlFor="filter-code">Código</label>
+                <input
+                  id="filter-code"
+                  type="text"
+                  className="rw-input adv-filter-input"
+                  placeholder="Ex: CLI-0001"
+                  value={filterCodigo}
+                  onChange={e => setFilterCodigo(e.target.value)}
+                />
+              </div>
+
+              {/* Nome */}
+              <div className="rw-form-group" style={{ margin: 0 }}>
+                <label className="adv-filter-label" htmlFor="filter-name">Nome</label>
+                <input
+                  id="filter-name"
+                  type="text"
+                  className="rw-input adv-filter-input"
+                  placeholder="Nome do cliente"
+                  value={filterNome}
+                  onChange={e => setFilterNome(e.target.value)}
+                />
+              </div>
+
+              {/* CPF */}
+              <div className="rw-form-group" style={{ margin: 0 }}>
+                <label className="adv-filter-label" htmlFor="filter-cpf">CPF</label>
+                <input
+                  id="filter-cpf"
+                  type="text"
+                  className="rw-input adv-filter-input"
+                  placeholder="Com ou sem máscara"
+                  value={filterCpf}
+                  onChange={e => setFilterCpf(e.target.value)}
+                />
+              </div>
+
+              {/* E-mail */}
+              <div className="rw-form-group" style={{ margin: 0 }}>
+                <label className="adv-filter-label" htmlFor="filter-email">E-mail</label>
+                <input
+                  id="filter-email"
+                  type="text"
+                  className="rw-input adv-filter-input"
+                  placeholder="cliente@email.com"
+                  value={filterEmail}
+                  onChange={e => setFilterEmail(e.target.value)}
+                />
+              </div>
+
+              {/* Gênero */}
+              <div className="rw-form-group" style={{ margin: 0 }}>
+                <label className="adv-filter-label" htmlFor="filter-gender">Gênero</label>
+                <select
+                  id="filter-gender"
+                  className="rw-select adv-filter-input"
+                  value={filterGenero}
+                  onChange={e => setFilterGenero(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  <option value="Feminino">Feminino</option>
+                  <option value="Masculino">Masculino</option>
+                  <option value="Outro">Outro</option>
+                </select>
+              </div>
+
+              {/* Data de Nascimento */}
+              <div className="rw-form-group" style={{ margin: 0 }}>
+                <label className="adv-filter-label" htmlFor="filter-birth">Data de Nascimento</label>
+                <input
+                  id="filter-birth"
+                  type="text"
+                  className="rw-input adv-filter-input"
+                  placeholder="dd/mm/aaaa"
+                  value={filterDataNascimento}
+                  onChange={e => setFilterDataNascimento(maskBirthDate(e.target.value))}
+                  maxLength={10}
+                />
+              </div>
+
+              {/* Telefone */}
+              <div className="rw-form-group" style={{ margin: 0 }}>
+                <label className="adv-filter-label" htmlFor="filter-phone">Telefone</label>
+                <input
+                  id="filter-phone"
+                  type="text"
+                  className="rw-input adv-filter-input"
+                  placeholder="DDD + número ou número"
+                  value={filterTelefone}
+                  onChange={e => setFilterTelefone(e.target.value)}
+                />
+              </div>
+
+              {/* Status */}
+              <div className="rw-form-group" style={{ margin: 0 }}>
+                <label className="adv-filter-label" htmlFor="filter-status">Situação Cadastral</label>
+                <select
+                  id="filter-status"
+                  className="rw-select adv-filter-input"
+                  value={filterAtivo}
+                  onChange={e => setFilterAtivo(e.target.value as 'TODOS' | 'ATIVO' | 'INATIVO')}
+                >
+                  <option value="TODOS">Todos</option>
+                  <option value="ATIVO">Ativo</option>
+                  <option value="INATIVO">Inativo</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.1rem' }}>
+              <button
+                type="button"
+                onClick={limparFiltros}
+                className="btn btn-secondary btn-small"
+                disabled={isLoading}
+              >
+                Limpar Filtros
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary btn-small"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Filtrando...' : 'Aplicar Filtros'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* TABELA DE CLIENTES PERSISTIDOS (RF0024 / RNF0011) */}
       <div className="admin-table-container">
         <table className="admin-table">
           <thead>
@@ -361,35 +636,67 @@ export default function AdminClients() {
             </tr>
           </thead>
           <tbody>
-            {filteredClients.map(c => (
-              <tr key={c.id}>
-                <td><span style={{ fontSize: '0.78rem', color: '#888' }}>{c.id}</span></td>
-                <td><strong>{c.name}</strong></td>
-                <td>{c.cpf}</td>
-                <td>{c.email}</td>
-                <td>
-                  <span className={`status-badge ${c.status.toLowerCase()}`}>
-                    {c.status}
-                  </span>
+            {isLoading ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', color: '#aaa', padding: '2.5rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+                    <span className="rw-spinner" />
+                    <span style={{ fontSize: '0.85rem' }}>Carregando clientes...</span>
+                  </div>
                 </td>
-                <td>{getClientOrdersCount(c.id)}</td>
-                <td>
-                  <button 
-                    onClick={() => setSelectedClient(c)}
-                    className="btn btn-secondary btn-small"
+              </tr>
+            ) : apiError ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', color: '#ff6b6b', padding: '2rem' }}>
+                  <div style={{ marginBottom: '0.5rem', fontWeight: 600 }}>{apiError}</div>
+                  <button
                     type="button"
+                    onClick={() => carregarClientes()}
+                    className="btn btn-secondary btn-small"
                   >
-                    Detalhes
+                    Tentar novamente
                   </button>
                 </td>
               </tr>
-            ))}
-            {filteredClients.length === 0 && (
+            ) : clientsList.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>
-                  Nenhum cliente encontrado com os filtros selecionados.
+                <td colSpan={7} style={{ textAlign: 'center', color: '#888', padding: '2.5rem' }}>
+                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>
+                    Nenhum cliente encontrado com os filtros selecionados.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={limparFiltros}
+                    className="btn btn-secondary btn-small"
+                  >
+                    Limpar Filtros
+                  </button>
                 </td>
               </tr>
+            ) : (
+              clientsList.map(c => (
+                <tr key={c.id}>
+                  <td><span style={{ fontSize: '0.78rem', color: '#888' }}>{c.id}</span></td>
+                  <td><strong>{c.name}</strong></td>
+                  <td>{c.cpf}</td>
+                  <td>{c.email}</td>
+                  <td>
+                    <span className={`status-badge ${c.status.toLowerCase()}`}>
+                      {c.status}
+                    </span>
+                  </td>
+                  <td>{getClientOrdersCount(c.id)}</td>
+                  <td>
+                    <button
+                      onClick={() => setSelectedClient(c)}
+                      className="btn btn-secondary btn-small"
+                      type="button"
+                    >
+                      Detalhes
+                    </button>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

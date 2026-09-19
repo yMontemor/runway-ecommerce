@@ -274,6 +274,114 @@ public class ClienteService : IClienteService
     }
 
     /// <summary>
+    /// RF0024: Consulta persistente de clientes com filtros cadastrais opcionais combinados (AND).
+    /// RNF0011: Execução otimizada com AsNoTracking e projeção direta no banco via EF Core.
+    /// </summary>
+    public async Task<List<ClienteListItemResponseDto>> ConsultarAsync(
+        ClienteFiltroRequestDto filtro,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Clientes
+            .AsNoTracking()
+            .AsQueryable();
+
+        // Filtro por Código (CLI-XXXX) - case-insensitive parcial
+        if (!string.IsNullOrWhiteSpace(filtro.Codigo))
+        {
+            var codigo = filtro.Codigo.Trim();
+            query = query.Where(c => EF.Functions.ILike(c.Codigo, $"%{codigo}%"));
+        }
+
+        // Filtro por Nome - case-insensitive parcial
+        if (!string.IsNullOrWhiteSpace(filtro.Nome))
+        {
+            var nome = filtro.Nome.Trim();
+            query = query.Where(c => EF.Functions.ILike(c.Nome, $"%{nome}%"));
+        }
+
+        // Filtro por E-mail - case-insensitive parcial
+        if (!string.IsNullOrWhiteSpace(filtro.Email))
+        {
+            var email = filtro.Email.Trim();
+            query = query.Where(c => EF.Functions.ILike(c.Email, $"%{email}%"));
+        }
+
+        // Filtro por CPF - aceita com ou sem máscara (normalização de dígitos)
+        if (!string.IsNullOrWhiteSpace(filtro.Cpf))
+        {
+            var cpfDigitos = Regex.Replace(filtro.Cpf, @"\D", "");
+            if (!string.IsNullOrEmpty(cpfDigitos))
+            {
+                query = query.Where(c => c.Cpf.Contains(cpfDigitos));
+            }
+            else
+            {
+                query = query.Where(c => c.Cpf == filtro.Cpf.Trim());
+            }
+        }
+
+        // Filtro por Gênero - case-insensitive parcial
+        if (!string.IsNullOrWhiteSpace(filtro.Genero))
+        {
+            var genero = filtro.Genero.Trim();
+            query = query.Where(c => EF.Functions.ILike(c.Genero, $"%{genero}%"));
+        }
+
+        // Filtro por Data de Nascimento - comparação exata
+        if (filtro.DataNascimento.HasValue)
+        {
+            query = query.Where(c => c.DataNascimento == filtro.DataNascimento.Value);
+        }
+
+        // Filtro por Telefone - pesquisa coerente com DDD + número e/ou número isolado
+        if (!string.IsNullOrWhiteSpace(filtro.Telefone))
+        {
+            var telDigitos = Regex.Replace(filtro.Telefone, @"\D", "");
+            if (!string.IsNullOrEmpty(telDigitos))
+            {
+                query = query.Where(c => c.Telefone != null && (
+                    c.Telefone.Numero.Contains(telDigitos) ||
+                    c.Telefone.Ddd.Contains(telDigitos) ||
+                    (c.Telefone.Ddd + c.Telefone.Numero).Contains(telDigitos)
+                ));
+            }
+            else
+            {
+                query = query.Where(c => c.Telefone != null && c.Telefone.Numero == filtro.Telefone.Trim());
+            }
+        }
+
+        // Filtro por Situação Cadastral (Ativo/Inativo) - comparação exata
+        if (filtro.Ativo.HasValue)
+        {
+            query = query.Where(c => c.Ativo == filtro.Ativo.Value);
+        }
+
+        // Projeção enxuta para ClienteListItemResponseDto (sem dados sensíveis ou desnecessários)
+        return await query
+            .OrderBy(c => c.Nome)
+            .Select(c => new ClienteListItemResponseDto
+            {
+                Codigo = c.Codigo,
+                Nome = c.Nome,
+                Email = c.Email,
+                Cpf = c.Cpf,
+                Genero = c.Genero,
+                DataNascimento = c.DataNascimento,
+                Ranking = c.Ranking,
+                Ativo = c.Ativo,
+                Telefone = c.Telefone != null ? new TelefoneResponseDto
+                {
+                    Id = c.Telefone.Id,
+                    Tipo = c.Telefone.Tipo,
+                    Ddd = c.Telefone.Ddd,
+                    Numero = c.Telefone.Numero
+                } : null
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Lista os endereços cadastrados de um cliente pelo seu código único.
     /// </summary>
     public async Task<List<EnderecoResponseDto>> ListarEnderecosAsync(

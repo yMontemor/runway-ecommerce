@@ -47,6 +47,21 @@ public class ClientesController : ControllerBase
     }
 
     /// <summary>
+    /// RF0024: Consulta persistente de clientes utilizando query parameters opcionais.
+    /// RNF0011: Execução direta no banco sem materialização excessiva.
+    /// Retorna 200 OK com array vazio [] quando nenhum cliente é encontrado.
+    /// </summary>
+    [HttpGet]
+    [ProducesResponseType(typeof(List<ClienteListItemResponseDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Consultar(
+        [FromQuery] ClienteFiltroRequestDto filtro,
+        CancellationToken cancellationToken)
+    {
+        var response = await _clienteService.ConsultarAsync(filtro, cancellationToken);
+        return Ok(response);
+    }
+
+    /// <summary>
     /// RF0026: Lista os endereços cadastrados de um cliente pelo seu código único.
     /// </summary>
     [HttpGet("{codigo}/enderecos")]

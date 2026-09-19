@@ -7,6 +7,8 @@ public interface IClienteService
 {
     Task<ClienteResponseDto> CadastrarAsync(ClienteCreateRequestDto request, CancellationToken cancellationToken = default);
 
+    Task<List<ClienteListItemResponseDto>> ConsultarAsync(ClienteFiltroRequestDto filtro, CancellationToken cancellationToken = default);
+
     Task<List<EnderecoResponseDto>> ListarEnderecosAsync(string codigoCliente, CancellationToken cancellationToken = default);
 
     Task<EnderecoResponseDto> AdicionarEnderecoAsync(string codigoCliente, EnderecoRequestDto request, CancellationToken cancellationToken = default);
