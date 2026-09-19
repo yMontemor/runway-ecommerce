@@ -298,7 +298,7 @@ export default function CustomerArea() {
       neighborhood: addr.neighborhood,
       zipCode: maskZipCode(addr.zipCode),
       city: addr.city,
-      state: addr.state,
+      state: (addr.state || '').trim().toUpperCase(),
       country: addr.country || 'Brasil',
       observations: addr.observations || '',
       isResidential: !!addr.isResidential,

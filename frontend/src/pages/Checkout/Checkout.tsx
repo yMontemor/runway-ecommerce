@@ -4,6 +4,7 @@ import { useApp } from '../../store/AppContext';
 import Modal from '../../components/Modal/Modal';
 import type { Address, Coupon, Order, BandeiraDto } from '../../types';
 import { listarBandeiras } from '../../services/clienteService';
+import { BRAZILIAN_STATES } from '../../data/brazilianStates';
 import { getInstallmentOptions, getMaxInstallments } from '../../utils/payment';
 import {
   maskCardNumber,
@@ -111,7 +112,7 @@ export default function Checkout() {
       neighborhood: addr.neighborhood,
       zipCode: maskZipCode(addr.zipCode),
       city: addr.city,
-      state: addr.state,
+      state: (addr.state || '').trim().toUpperCase(),
       country: addr.country || 'Brasil',
       observations: addr.observations || '',
       isDelivery: addr.isDelivery ?? true,
@@ -1168,15 +1169,19 @@ export default function Checkout() {
             </div>
             <div className="form-group flex-1">
               <label htmlFor="addr-state">Estado *</label>
-              <input
-                type="text"
+              <select
                 id="addr-state"
                 value={addressForm.state}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, state: e.target.value }))}
-                placeholder="SP"
-                maxLength={2}
                 required
-              />
+              >
+                <option value="">Selecione...</option>
+                {BRAZILIAN_STATES.map(uf => (
+                  <option key={uf.sigla} value={uf.sigla}>
+                    {uf.sigla} - {uf.nome}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
