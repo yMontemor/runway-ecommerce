@@ -33,10 +33,16 @@ export interface Address {
   isResidential?: boolean; // RN0026 - Endereço residencial
 }
 
+export interface BandeiraDto {
+  id: number;
+  nome: string;
+}
+
 export interface CreditCard {
   id: string;
-  brand: 'Visa' | 'Mastercard' | 'Elo';
-  cardNumber?: string; // Número completo cadastrado
+  brand: string; // Ex: 'Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard'
+  bandeiraId?: number;
+  cardNumber?: string;
   lastFour: string;
   holderName: string;
   expirationDate: string;

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using RunWay.Api.DTOs.Cartoes;
 using RunWay.Api.DTOs.Clientes;
 using RunWay.Api.Exceptions;
 using RunWay.Api.Services;
@@ -120,4 +121,80 @@ public class ClientesController : ControllerBase
             return BadRequest(new { erro = ex.Message });
         }
     }
+
+    /// <summary>
+    /// RF0027: Lista os cartões de crédito cadastrados de um cliente pelo seu código único.
+    /// </summary>
+    [HttpGet("{codigo}/cartoes")]
+    [ProducesResponseType(typeof(List<CartaoResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListarCartoes(
+        [FromRoute] string codigo,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _clienteService.ListarCartoesAsync(codigo, cancellationToken);
+            return Ok(response);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// RF0027 / RN0024 / RN0025: Cadastra um novo cartão de crédito para o cliente de forma independente.
+    /// </summary>
+    [HttpPost("{codigo}/cartoes")]
+    [ProducesResponseType(typeof(CartaoResponseDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AdicionarCartao(
+        [FromRoute] string codigo,
+        [FromBody] CartaoCreateRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _clienteService.AdicionarCartaoAsync(codigo, request, cancellationToken);
+            return Created($"/api/clientes/{codigo}/cartoes/{response.Id}", response);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { erro = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// RF0027: Define um cartão existente como o preferencial do cliente informado.
+    /// </summary>
+    [HttpPatch("{codigo}/cartoes/{cartaoId:int}/preferencial")]
+    [ProducesResponseType(typeof(CartaoResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DefinirCartaoPreferencial(
+        [FromRoute] string codigo,
+        [FromRoute] int cartaoId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _clienteService.DefinirCartaoPreferencialAsync(codigo, cartaoId, cancellationToken);
+            return Ok(response);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { erro = ex.Message });
+        }
+    }
 }
+

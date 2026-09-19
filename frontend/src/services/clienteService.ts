@@ -1,4 +1,4 @@
-import type { Customer, NewCustomerInput, Address } from '../types';
+import type { Customer, NewCustomerInput, Address, CreditCard, BandeiraDto } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5035';
 
@@ -464,3 +464,210 @@ export async function alterarEnderecoCliente(
     };
   }
 }
+
+export interface BandeiraResponseDto {
+  id: number;
+  nome: string;
+}
+
+export interface CartaoCreateRequestDto {
+  bandeiraId: number;
+  numeroCartao: string;
+  nomeImpresso: string;
+  dataValidade: string;
+  cvv: string;
+  preferencial: boolean;
+}
+
+export interface CartaoResponseDto {
+  id: number;
+  bandeiraId: number;
+  bandeiraNome: string;
+  nomeImpresso: string;
+  ultimosQuatroDigitos: string;
+  dataValidade: string;
+  preferencial: boolean;
+}
+
+export interface BandeirasResult {
+  success: boolean;
+  error?: string;
+  bandeiras?: BandeiraDto[];
+}
+
+export interface CartoesResult {
+  success: boolean;
+  error?: string;
+  cards?: CreditCard[];
+}
+
+export interface CartaoResult {
+  success: boolean;
+  error?: string;
+  card?: CreditCard;
+}
+
+/**
+ * Mapeia o DTO de cartão de crédito do backend para o modelo CreditCard do frontend.
+ */
+export function mapDtoToCreditCard(dto: CartaoResponseDto): CreditCard {
+  return {
+    id: `card_${dto.id}`,
+    brand: dto.bandeiraNome,
+    bandeiraId: dto.bandeiraId,
+    lastFour: dto.ultimosQuatroDigitos,
+    holderName: dto.nomeImpresso,
+    expirationDate: dto.dataValidade,
+    isPreferred: dto.preferencial
+  };
+}
+
+/**
+ * RN0025: Lista todas as bandeiras de cartão ativas cadastradas no backend.
+ */
+export async function listarBandeiras(): Promise<BandeirasResult> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/bandeiras`);
+
+    if (response.ok) {
+      const data: BandeiraResponseDto[] = await response.json();
+      return {
+        success: true,
+        bandeiras: data.map(b => ({ id: b.id, nome: b.nome }))
+      };
+    }
+
+    const errorMsg = await extractErrorMessage(response, 'Não foi possível carregar as bandeiras disponíveis.');
+    return { success: false, error: errorMsg };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para carregar as bandeiras.'
+    };
+  }
+}
+
+/**
+ * RF0027: Lista os cartões de crédito cadastrados de um cliente pelo seu código.
+ */
+export async function listarCartoesCliente(codigoCliente: string): Promise<CartoesResult> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/cartoes`);
+
+    if (response.ok) {
+      const data: CartaoResponseDto[] = await response.json();
+      return {
+        success: true,
+        cards: data.map(mapDtoToCreditCard)
+      };
+    }
+
+    if (response.status === 404) {
+      const errorMsg = await extractErrorMessage(response, 'Cliente não encontrado.');
+      return { success: false, error: errorMsg };
+    }
+
+    const genericError = await extractErrorMessage(response, 'Não foi possível carregar os cartões de crédito.');
+    return { success: false, error: genericError };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para carregar os cartões.'
+    };
+  }
+}
+
+/**
+ * RF0027 / RN0024 / RN0025: Cadastra um novo cartão de crédito para o cliente.
+ */
+export async function cadastrarCartaoCliente(
+  codigoCliente: string,
+  request: CartaoCreateRequestDto
+): Promise<CartaoResult> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/cartoes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(request)
+    });
+
+    if (response.status === 201) {
+      const data: CartaoResponseDto = await response.json();
+      return {
+        success: true,
+        card: mapDtoToCreditCard(data)
+      };
+    }
+
+    if (response.status === 400 || response.status === 404) {
+      const errorMsg = await extractErrorMessage(response, 'Dados inválidos para o cartão de crédito.');
+      return { success: false, error: errorMsg };
+    }
+
+    return {
+      success: false,
+      error: 'Não foi possível cadastrar o cartão no momento.'
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para cadastrar o cartão.'
+    };
+  }
+}
+
+/**
+ * RF0027: Define um cartão existente como o preferencial do cliente via PATCH.
+ */
+export async function definirCartaoPreferencial(
+  codigoCliente: string,
+  cartaoId: string | number
+): Promise<CartaoResult> {
+  try {
+    const rawId = typeof cartaoId === 'string' ? cartaoId.replace('card_', '') : cartaoId.toString();
+    const numericId = parseInt(rawId, 10);
+
+    if (isNaN(numericId)) {
+      return {
+        success: false,
+        error: 'Identificador de cartão inválido.'
+      };
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/cartoes/${numericId}/preferencial`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (response.ok) {
+      const data: CartaoResponseDto = await response.json();
+      return {
+        success: true,
+        card: mapDtoToCreditCard(data)
+      };
+    }
+
+    if (response.status === 400 || response.status === 404) {
+      const errorMsg = await extractErrorMessage(response, 'Não foi possível definir o cartão como preferencial.');
+      return { success: false, error: errorMsg };
+    }
+
+    return {
+      success: false,
+      error: 'Não foi possível atualizar a preferência do cartão no momento.'
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para atualizar o cartão preferencial.'
+    };
+  }
+}
+

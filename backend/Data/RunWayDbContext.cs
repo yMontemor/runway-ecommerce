@@ -274,6 +274,15 @@ public class RunWayDbContext : DbContext
                 .HasForeignKey(c => c.BandeiraId)
                 .HasConstraintName("fk_cartao_bandeira")
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Seed inicial de bandeiras oficiais do RunWay (Decisão de Projeto / RN0025)
+            entity.HasData(
+                new Bandeira { Id = 1, Nome = "Visa", Ativo = true },
+                new Bandeira { Id = 2, Nome = "Mastercard", Ativo = true },
+                new Bandeira { Id = 3, Nome = "Elo", Ativo = true },
+                new Bandeira { Id = 4, Nome = "American Express", Ativo = true },
+                new Bandeira { Id = 5, Nome = "Hipercard", Ativo = true }
+            );
         });
 
         // ==========================================

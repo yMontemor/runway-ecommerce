@@ -179,7 +179,7 @@ export function maskCardCvv(value: string): string {
 export function validateCardNumber(value: string): { isValid: boolean; error?: string } {
   const cleanDigits = value.replace(/\D/g, '');
   if (cleanDigits.length < 13 || cleanDigits.length > 19) {
-    return { isValid: false, error: 'Informe um número de cartão válido (16 dígitos).' };
+    return { isValid: false, error: 'Informe um número de cartão válido (entre 13 e 19 dígitos).' };
   }
   return { isValid: true };
 }

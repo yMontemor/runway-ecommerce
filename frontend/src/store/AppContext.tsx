@@ -6,7 +6,16 @@ import { mockCustomers } from '../data/customers';
 import { mockCoupons } from '../data/coupons';
 import { products } from '../data/products';
 import { maskZipCode } from '../utils/maskAndValidate';
-import { cadastrarCliente, cadastrarEnderecoCliente, alterarEnderecoCliente, listarEnderecosCliente } from '../services/clienteService';
+import {
+  cadastrarCliente,
+  cadastrarEnderecoCliente,
+  alterarEnderecoCliente,
+  listarEnderecosCliente,
+  listarCartoesCliente,
+  cadastrarCartaoCliente,
+  definirCartaoPreferencial,
+  type CartaoCreateRequestDto
+} from '../services/clienteService';
 
 interface AppContextType {
   customers: Customer[];
@@ -50,10 +59,11 @@ interface AppContextType {
   updateCustomerAddress: (customerId: string, address: Address) => Promise<{ success: boolean; error?: string; address?: Address }>;
   refreshCustomerAddresses: (customerId: string) => Promise<void>;
   removeCustomerAddress: (customerId: string, addressId: string) => void;
-  addCustomerCard: (customerId: string, card: Omit<CreditCard, 'id'>) => CreditCard;
+  refreshCustomerCards: (customerId: string) => Promise<void>;
+  addCustomerCard: (customerId: string, card: CartaoCreateRequestDto) => Promise<{ success: boolean; error?: string; card?: CreditCard }>;
   updateCustomerCard: (customerId: string, card: CreditCard) => void;
   removeCustomerCard: (customerId: string, cardId: string) => void;
-  setCardAsPreferred: (customerId: string, cardId: string) => void;
+  setCardAsPreferred: (customerId: string, cardId: string) => Promise<{ success: boolean; error?: string; card?: CreditCard }>;
   isChatbotOpen: boolean;
   setIsChatbotOpen: React.Dispatch<React.SetStateAction<boolean>>;
   toggleChatbot: () => void;
@@ -687,36 +697,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  // Cartões
-  const addCustomerCard = (customerId: string, card: Omit<CreditCard, 'id'>): CreditCard => {
-    const cleanNumber = card.cardNumber ? card.cardNumber.replace(/\D/g, '') : '';
-    const derivedLastFour = cleanNumber.length >= 4 
-      ? cleanNumber.slice(-4) 
-      : (card.lastFour || '1234');
+  // Cartões (Card #52 - Gestão de Cartões de Crédito)
+  const refreshCustomerCards = async (customerId: string) => {
+    const result = await listarCartoesCliente(customerId);
+    if (result.success && result.cards) {
+      setCustomers(prev =>
+        prev.map(c =>
+          c.id === customerId
+            ? { ...c, cards: result.cards! }
+            : c
+        )
+      );
+    }
+  };
 
-    const newCard: CreditCard = {
-      ...card,
-      cardNumber: card.cardNumber,
-      lastFour: derivedLastFour,
-      id: `card_${Math.random().toString(36).substr(2, 9)}`
-    };
-
-    setCustomers(prev =>
-      prev.map(c => {
-        if (c.id === customerId) {
-          const cards = [...c.cards];
-          // Se for o primeiro ou estiver marcado como preferencial, remove preferência dos outros
-          if (newCard.isPreferred || cards.length === 0) {
-            newCard.isPreferred = true;
-            cards.forEach(x => (x.isPreferred = false));
+  const addCustomerCard = async (
+    customerId: string,
+    card: CartaoCreateRequestDto
+  ): Promise<{ success: boolean; error?: string; card?: CreditCard }> => {
+    const result = await cadastrarCartaoCliente(customerId, card);
+    if (result.success && result.card) {
+      const savedCard = result.card;
+      setCustomers(prev =>
+        prev.map(c => {
+          if (c.id === customerId) {
+            let updatedCards = [...c.cards];
+            if (savedCard.isPreferred) {
+              updatedCards = updatedCards.map(x => ({ ...x, isPreferred: false }));
+            }
+            return { ...c, cards: [...updatedCards, savedCard] };
           }
-          return { ...c, cards: [...cards, newCard] };
-        }
-        return c;
-      })
-    );
+          return c;
+        })
+      );
+      return { success: true, card: savedCard };
+    }
 
-    return newCard;
+    return { success: false, error: result.error };
   };
 
   const updateCustomerCard = (customerId: string, updatedCard: CreditCard) => {
@@ -766,21 +783,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const setCardAsPreferred = (customerId: string, cardId: string) => {
-    setCustomers(prev =>
-      prev.map(c => {
-        if (c.id === customerId) {
-          return {
-            ...c,
-            cards: c.cards.map(card => ({
-              ...card,
-              isPreferred: card.id === cardId
-            }))
-          };
-        }
-        return c;
-      })
-    );
+  const setCardAsPreferred = async (
+    customerId: string,
+    cardId: string
+  ): Promise<{ success: boolean; error?: string; card?: CreditCard }> => {
+    const result = await definirCartaoPreferencial(customerId, cardId);
+    if (result.success && result.card) {
+      const preferredCard = result.card;
+      setCustomers(prev =>
+        prev.map(c => {
+          if (c.id === customerId) {
+            return {
+              ...c,
+              cards: c.cards.map(card => ({
+                ...card,
+                isPreferred: card.id === preferredCard.id
+              }))
+            };
+          }
+          return c;
+        })
+      );
+      return { success: true, card: preferredCard };
+    }
+
+    return { success: false, error: result.error };
   };
 
   return (
@@ -810,6 +837,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateCustomerAddress,
         refreshCustomerAddresses,
         removeCustomerAddress,
+        refreshCustomerCards,
         addCustomerCard,
         updateCustomerCard,
         removeCustomerCard,

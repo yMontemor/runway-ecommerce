@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using RunWay.Api.Data;
+using RunWay.Api.DTOs.Cartoes;
 using RunWay.Api.DTOs.Clientes;
 using RunWay.Api.Exceptions;
 using RunWay.Api.Models;
@@ -503,6 +504,246 @@ public class ClienteService : IClienteService
     }
 
     /// <summary>
+    /// RF0027: Lista todos os cartões cadastrados de um cliente pelo seu código único.
+    /// </summary>
+    public async Task<List<CartaoResponseDto>> ListarCartoesAsync(
+        string codigoCliente,
+        CancellationToken cancellationToken = default)
+    {
+        var cliente = await _context.Clientes
+            .AsNoTracking()
+            .Include(c => c.Cartoes)
+                .ThenInclude(ca => ca.Bandeira)
+            .FirstOrDefaultAsync(c => c.Codigo == codigoCliente, cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoCliente}' não foi encontrado.");
+        }
+
+        return cliente.Cartoes
+            .OrderByDescending(c => c.Preferencial)
+            .ThenBy(c => c.Id)
+            .Select(MapearCartaoParaResponseDto)
+            .ToList();
+    }
+
+    /// <summary>
+    /// RF0027 / RN0024 / RN0025: Cadastra um novo cartão de crédito associado ao cliente.
+    /// O primeiro cartão cadastrado é automaticamente definido como preferencial.
+    /// Se um novo cartão for marcado como preferencial, desmarca os anteriores.
+    /// </summary>
+    public async Task<CartaoResponseDto> AdicionarCartaoAsync(
+        string codigoCliente,
+        CartaoCreateRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var cliente = await _context.Clientes
+            .Include(c => c.Cartoes)
+            .FirstOrDefaultAsync(c => c.Codigo == codigoCliente, cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoCliente}' não foi encontrado.");
+        }
+
+        await ValidarDadosCartaoAsync(request, cancellationToken);
+
+        var numeroCartaoLimpo = Regex.Replace(request.NumeroCartao ?? string.Empty, @"\D", "");
+        var cvvLimpo = Regex.Replace(request.Cvv ?? string.Empty, @"\D", "");
+
+        // RF0027: Regra de definição do cartão preferencial
+        bool definirComoPreferencial;
+        if (cliente.Cartoes.Count == 0)
+        {
+            // Primeiro cartão do cliente é compulsoriamente o preferencial
+            definirComoPreferencial = true;
+        }
+        else if (request.Preferencial)
+        {
+            // Se o novo cartão for preferencial, desmarca todos os anteriores
+            foreach (var c in cliente.Cartoes)
+            {
+                c.Preferencial = false;
+            }
+            definirComoPreferencial = true;
+        }
+        else
+        {
+            definirComoPreferencial = false;
+        }
+
+        var novoCartao = new Cartao
+        {
+            ClienteId = cliente.Id,
+            BandeiraId = request.BandeiraId,
+            NumeroCartao = numeroCartaoLimpo,
+            NomeImpresso = request.NomeImpresso.Trim().ToUpperInvariant(),
+            DataValidade = request.DataValidade.Trim(),
+            Cvv = cvvLimpo,
+            Preferencial = definirComoPreferencial
+        };
+
+        cliente.Cartoes.Add(novoCartao);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        // Carrega a bandeira para o mapeamento do DTO de resposta
+        var bandeira = await _context.Bandeiras
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == novoCartao.BandeiraId, cancellationToken);
+
+        novoCartao.Bandeira = bandeira!;
+
+        return MapearCartaoParaResponseDto(novoCartao);
+    }
+
+    /// <summary>
+    /// RF0027: Define um cartão existente como o preferencial do cliente, desmarcando os demais.
+    /// Valida que o cartão pertence ao cliente identificado pelo código informado na rota.
+    /// </summary>
+    public async Task<CartaoResponseDto> DefinirCartaoPreferencialAsync(
+        string codigoCliente,
+        int cartaoId,
+        CancellationToken cancellationToken = default)
+    {
+        var cliente = await _context.Clientes
+            .Include(c => c.Cartoes)
+                .ThenInclude(ca => ca.Bandeira)
+            .FirstOrDefaultAsync(c => c.Codigo == codigoCliente, cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoCliente}' não foi encontrado.");
+        }
+
+        var cartaoAlvo = cliente.Cartoes.FirstOrDefault(c => c.Id == cartaoId);
+        if (cartaoAlvo is null)
+        {
+            throw new NotFoundException($"Cartão com identificador '{cartaoId}' não foi encontrado para o cliente informado.");
+        }
+
+        // RF0027: Desmarca os demais cartões e define o alvo como preferencial
+        foreach (var c in cliente.Cartoes)
+        {
+            c.Preferencial = (c.Id == cartaoId);
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return MapearCartaoParaResponseDto(cartaoAlvo);
+    }
+
+    /// <summary>
+    /// RN0024 / RN0025 e decisões de projeto: Validação dos dados do cartão de crédito.
+    /// </summary>
+    private async Task ValidarDadosCartaoAsync(CartaoCreateRequestDto request, CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            throw new ValidationException("Os dados do cartão são obrigatórios.");
+        }
+
+        // RN0025: Bandeira previamente cadastrada e ativa
+        if (request.BandeiraId <= 0)
+        {
+            throw new ValidationException("A bandeira do cartão é obrigatória.");
+        }
+
+        var bandeiraValida = await _context.Bandeiras
+            .AsNoTracking()
+            .AnyAsync(b => b.Id == request.BandeiraId && b.Ativo, cancellationToken);
+
+        if (!bandeiraValida)
+        {
+            throw new ValidationException("A bandeira informada não é válida ou não está ativa.");
+        }
+
+        // RN0024: Número do cartão
+        var numeroLimpo = Regex.Replace(request.NumeroCartao ?? string.Empty, @"\D", "");
+        if (string.IsNullOrWhiteSpace(numeroLimpo) || numeroLimpo.Length < 13 || numeroLimpo.Length > 19)
+        {
+            throw new ValidationException("O número do cartão informado é inválido.");
+        }
+
+        // RN0024: Nome impresso no cartão
+        if (string.IsNullOrWhiteSpace(request.NomeImpresso))
+        {
+            throw new ValidationException("O nome impresso no cartão é obrigatório.");
+        }
+
+        if (request.NomeImpresso.Trim().Length > 100)
+        {
+            throw new ValidationException("O nome impresso no cartão não pode exceder 100 caracteres.");
+        }
+
+        // RN0024: Código de segurança (CVV)
+        var cvvLimpo = Regex.Replace(request.Cvv ?? string.Empty, @"\D", "");
+        if (string.IsNullOrWhiteSpace(cvvLimpo) || (cvvLimpo.Length != 3 && cvvLimpo.Length != 4) || cvvLimpo != (request.Cvv ?? string.Empty).Trim())
+        {
+            throw new ValidationException("O código de segurança (CVV) deve conter 3 ou 4 dígitos numéricos.");
+        }
+
+        // Decisão do Projeto: Validação da data de validade (MM/AA ou MM/AAAA)
+        if (string.IsNullOrWhiteSpace(request.DataValidade))
+        {
+            throw new ValidationException("A data de validade do cartão é obrigatória.");
+        }
+
+        var partesValidade = request.DataValidade.Trim().Split('/');
+        if (partesValidade.Length != 2 ||
+            !int.TryParse(partesValidade[0], out int mes) ||
+            !int.TryParse(partesValidade[1], out int ano) ||
+            mes < 1 || mes > 12)
+        {
+            throw new ValidationException("Informe uma data de validade válida no formato MM/AA.");
+        }
+
+        if (partesValidade[1].Length == 2)
+        {
+            ano += 2000;
+        }
+        else if (partesValidade[1].Length != 4)
+        {
+            throw new ValidationException("Informe uma data de validade válida no formato MM/AA.");
+        }
+
+        var agora = DateTime.UtcNow;
+        var anoAtual = agora.Year;
+        var mesAtual = agora.Month;
+
+        if (ano < anoAtual || (ano == anoAtual && mes < mesAtual))
+        {
+            throw new ValidationException("O cartão informado está com a data de validade vencida.");
+        }
+
+        if (ano > anoAtual + 25)
+        {
+            throw new ValidationException("Ano de validade do cartão inválido.");
+        }
+    }
+
+    /// <summary>
+    /// Mapeia a entidade Cartao para CartaoResponseDto garantindo proteção de dados sensíveis (sem CVV e com número mascarado).
+    /// </summary>
+    private static CartaoResponseDto MapearCartaoParaResponseDto(Cartao c)
+    {
+        var ultimosQuatro = c.NumeroCartao.Length >= 4
+            ? c.NumeroCartao.Substring(c.NumeroCartao.Length - 4)
+            : c.NumeroCartao;
+
+        return new CartaoResponseDto
+        {
+            Id = c.Id,
+            BandeiraId = c.BandeiraId,
+            BandeiraNome = c.Bandeira?.Nome ?? string.Empty,
+            NomeImpresso = c.NomeImpresso,
+            UltimosQuatroDigitos = ultimosQuatro,
+            DataValidade = c.DataValidade,
+            Preferencial = c.Preferencial
+        };
+    }
+
+    /// <summary>
     /// RNF0031: Validação de Senha Forte.
     /// Exige no mínimo 8 caracteres, pelo menos uma letra maiúscula, uma minúscula e um caractere especial.
     /// </summary>
@@ -529,3 +770,4 @@ public class ClienteService : IClienteService
         }
     }
 }
+

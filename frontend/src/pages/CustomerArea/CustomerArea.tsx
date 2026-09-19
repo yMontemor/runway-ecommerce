@@ -5,7 +5,8 @@ import Modal from '../../components/Modal/Modal';
 import Toast from '../../components/Toast/Toast';
 import OrderDetailsModal from '../../components/OrderDetailsModal/OrderDetailsModal';
 import { BRAZILIAN_STATES } from '../../data/brazilianStates';
-import type { Address, CreditCard, Order } from '../../types';
+import type { Address, Order, BandeiraDto } from '../../types';
+import { listarBandeiras } from '../../services/clienteService';
 import {
   maskBirthDate,
   maskPhoneNumber,
@@ -41,9 +42,8 @@ export default function CustomerArea() {
     updateCustomerAddress,
     refreshCustomerAddresses,
     removeCustomerAddress,
+    refreshCustomerCards,
     addCustomerCard,
-    updateCustomerCard,
-    removeCustomerCard,
     setCardAsPreferred
   } = useApp();
 
@@ -128,28 +128,35 @@ export default function CustomerArea() {
   const [isInactivateModalOpen, setIsInactivateModalOpen] = useState(false);
   const [isReactivateModalOpen, setIsReactivateModalOpen] = useState(false);
 
-  // Módulos de Cartões
+  // Módulos de Cartões (Card #52)
+  const [bandeiras, setBandeiras] = useState<BandeiraDto[]>([]);
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
   const [cardModalError, setCardModalError] = useState<string | null>(null);
-  const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
+  const [isSavingCard, setIsSavingCard] = useState(false);
   const [cardForm, setCardForm] = useState({
-    brand: 'Visa' as CreditCard['brand'],
+    bandeiraId: 1,
     cardNumber: '',
-    lastFour: '',
     holderName: '',
     expirationDate: '',
     cvv: '',
     isPreferred: false
   });
-  const [cardToRemoveId, setCardToRemoveId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function carregarBandeiras() {
+      const res = await listarBandeiras();
+      if (res.success && res.bandeiras) {
+        setBandeiras(res.bandeiras);
+      }
+    }
+    carregarBandeiras();
+  }, []);
 
   const handleOpenAddCard = () => {
-    setEditingCard(null);
     setCardModalError(null);
     setCardForm({
-      brand: 'Visa',
+      bandeiraId: bandeiras.length > 0 ? bandeiras[0].id : 1,
       cardNumber: '',
-      lastFour: '',
       holderName: '',
       expirationDate: '',
       cvv: '',
@@ -158,33 +165,15 @@ export default function CustomerArea() {
     setIsCardModalOpen(true);
   };
 
-  const handleOpenEditCard = (card: CreditCard) => {
-    setEditingCard(card);
-    setCardModalError(null);
-    setCardForm({
-      brand: card.brand,
-      cardNumber: card.cardNumber ? maskCardNumber(card.cardNumber) : `•••• •••• •••• ${card.lastFour}`,
-      lastFour: card.lastFour,
-      holderName: card.holderName,
-      expirationDate: card.expirationDate,
-      cvv: card.cvv || '',
-      isPreferred: card.isPreferred
-    });
-    setIsCardModalOpen(true);
-  };
-
-  const handleSaveCard = (e: React.FormEvent) => {
+  const handleSaveCard = async (e: React.FormEvent) => {
     e.preventDefault();
     setCardModalError(null);
 
-    // Validação do número do cartão (se fornecido ou se novo cadastro)
     const cleanNum = cardForm.cardNumber.replace(/\D/g, '');
-    if (!editingCard || cleanNum.length > 4) {
-      const numVal = validateCardNumber(cleanNum);
-      if (!numVal.isValid) {
-        setCardModalError(numVal.error || 'Informe um número de cartão válido.');
-        return;
-      }
+    const numVal = validateCardNumber(cleanNum);
+    if (!numVal.isValid) {
+      setCardModalError(numVal.error || 'Informe um número de cartão válido.');
+      return;
     }
 
     if (!cardForm.holderName.trim()) {
@@ -198,41 +187,60 @@ export default function CustomerArea() {
       return;
     }
 
-    if (cardForm.cvv) {
-      const cvvVal = validateCardCvv(cardForm.cvv);
-      if (!cvvVal.isValid) {
-        setCardModalError(cvvVal.error || 'Código CVV inválido.');
+    const cleanCvv = cardForm.cvv.replace(/\D/g, '');
+    const cvvVal = validateCardCvv(cleanCvv);
+    if (!cvvVal.isValid) {
+      setCardModalError(cvvVal.error || 'Código CVV inválido.');
+      return;
+    }
+
+    if (!cardForm.bandeiraId || cardForm.bandeiraId <= 0) {
+      setCardModalError('Selecione uma bandeira válida.');
+      return;
+    }
+
+    setIsSavingCard(true);
+
+    try {
+      const res = await addCustomerCard(activeCustomer.id, {
+        bandeiraId: cardForm.bandeiraId,
+        numeroCartao: cleanNum,
+        nomeImpresso: cardForm.holderName.toUpperCase().trim(),
+        dataValidade: cardForm.expirationDate.trim(),
+        cvv: cleanCvv,
+        preferencial: cardForm.isPreferred
+      });
+
+      if (!res.success) {
+        setCardModalError(res.error || 'Erro ao cadastrar o cartão.');
+        setIsSavingCard(false);
         return;
       }
-    }
 
-    const derivedLastFour = cleanNum.length >= 4 ? cleanNum.slice(-4) : (cardForm.lastFour || '1234');
-
-    if (editingCard) {
-      updateCustomerCard(activeCustomer.id, {
-        ...editingCard,
-        brand: cardForm.brand,
-        cardNumber: cleanNum.length >= 13 ? maskCardNumber(cleanNum) : editingCard.cardNumber,
-        lastFour: derivedLastFour,
-        holderName: cardForm.holderName.toUpperCase().trim(),
-        expirationDate: cardForm.expirationDate.trim(),
-        cvv: cardForm.cvv ? cardForm.cvv.replace(/\D/g, '') : editingCard.cvv,
-        isPreferred: cardForm.isPreferred
-      });
-    } else {
-      addCustomerCard(activeCustomer.id, {
-        brand: cardForm.brand,
-        cardNumber: maskCardNumber(cleanNum),
-        lastFour: derivedLastFour,
-        holderName: cardForm.holderName.toUpperCase().trim(),
-        expirationDate: cardForm.expirationDate.trim(),
-        cvv: cardForm.cvv.replace(/\D/g, ''),
-        isPreferred: cardForm.isPreferred
-      });
+      setToastMessage('Novo cartão cadastrado com sucesso!');
+      setToastType('success');
+      setIsCardModalOpen(false);
+    } catch {
+      setCardModalError('Erro inesperado ao salvar cartão.');
+    } finally {
+      setIsSavingCard(false);
     }
-    setIsCardModalOpen(false);
-    setEditingCard(null);
-    setCardForm({ brand: 'Visa', cardNumber: '', lastFour: '', holderName: '', expirationDate: '', cvv: '', isPreferred: false });
+  };
+
+  const handleSetCardAsPreferred = async (cardId: string) => {
+    try {
+      const res = await setCardAsPreferred(activeCustomer.id, cardId);
+      if (res.success) {
+        setToastMessage('Cartão preferencial atualizado com sucesso!');
+        setToastType('success');
+      } else {
+        setToastMessage(res.error || 'Não foi possível definir o cartão como preferencial.');
+        setToastType('error');
+      }
+    } catch {
+      setToastMessage('Erro inesperado ao atualizar o cartão preferencial.');
+      setToastType('error');
+    }
   };
 
   // Módulos de Endereços
@@ -263,6 +271,7 @@ export default function CustomerArea() {
   useEffect(() => {
     if (activeCustomer?.id) {
       refreshCustomerAddresses(activeCustomer.id);
+      refreshCustomerCards(activeCustomer.id);
     }
   }, [activeCustomer?.id]);
 
@@ -745,29 +754,15 @@ export default function CustomerArea() {
                       </div>
 
                       <div className="card-row-actions">
-                        <button
-                          onClick={() => handleOpenEditCard(card)}
-                          className="btn-text-action"
-                          type="button"
-                        >
-                          Editar
-                        </button>
                         {!card.isPreferred && (
                           <button
-                            onClick={() => setCardAsPreferred(activeCustomer.id, card.id)}
+                            onClick={() => handleSetCardAsPreferred(card.id)}
                             className="btn-text-action"
                             type="button"
                           >
                             Tornar preferencial
                           </button>
                         )}
-                        <button
-                          onClick={() => setCardToRemoveId(card.id)}
-                          className="btn-text-action remove-action"
-                          type="button"
-                        >
-                          Excluir
-                        </button>
                       </div>
                     </div>
                   ))
@@ -996,42 +991,14 @@ export default function CustomerArea() {
           </div>
         </div>
       </Modal>
-
-      {/* MODAL: Confirmar Exclusão de Cartão */}
-      <Modal
-        isOpen={cardToRemoveId !== null}
-        onClose={() => setCardToRemoveId(null)}
-        title="Excluir Cartão?"
-      >
-        <div className="inactive-confirm-modal">
-          <p className="modal-description-txt">
-            Deseja realmente excluir este cartão de crédito de sua carteira?
-          </p>
-          <div className="modal-actions">
-            <button onClick={() => setCardToRemoveId(null)} className="btn btn-secondary">CANCELAR</button>
-            <button
-              onClick={() => {
-                if (cardToRemoveId) {
-                  removeCustomerCard(activeCustomer.id, cardToRemoveId);
-                }
-                setCardToRemoveId(null);
-              }}
-              className="btn btn-primary"
-            >
-              EXCLUIR CARTÃO
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* MODAL: Adicionar / Editar Cartão */}
+      {/* MODAL: Adicionar Cartão */}
       <Modal
         isOpen={isCardModalOpen}
         onClose={() => {
           setIsCardModalOpen(false);
-          setEditingCard(null);
+          setCardModalError(null);
         }}
-        title={editingCard ? 'Editar Cartão' : 'Adicionar Novo Cartão'}
+        title="Adicionar Novo Cartão"
       >
         <form onSubmit={handleSaveCard} className="address-modal-form">
           {cardModalError && (
@@ -1050,7 +1017,7 @@ export default function CustomerArea() {
           )}
 
           <div className="form-group">
-            <label htmlFor="card-number">Número do Cartão</label>
+            <label htmlFor="card-number">Número do Cartão *</label>
             <input
               type="text"
               id="card-number"
@@ -1058,12 +1025,12 @@ export default function CustomerArea() {
               value={cardForm.cardNumber}
               onChange={e => setCardForm(prev => ({ ...prev, cardNumber: maskCardNumber(e.target.value) }))}
               placeholder="0000 0000 0000 0000"
-              required={!editingCard}
+              required
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="card-holder">Nome Impresso no Cartão</label>
+            <label htmlFor="card-holder">Nome Impresso no Cartão *</label>
             <input
               type="text"
               id="card-holder"
@@ -1076,19 +1043,23 @@ export default function CustomerArea() {
 
           <div className="form-row">
             <div className="form-group flex-2">
-              <label htmlFor="card-brand">Bandeira</label>
+              <label htmlFor="card-brand">Bandeira *</label>
               <select
                 id="card-brand"
-                value={cardForm.brand}
-                onChange={e => setCardForm(prev => ({ ...prev, brand: e.target.value as CreditCard['brand'] }))}
+                value={cardForm.bandeiraId}
+                onChange={e => setCardForm(prev => ({ ...prev, bandeiraId: parseInt(e.target.value, 10) }))}
+                required
               >
-                <option value="Visa">Visa</option>
-                <option value="Mastercard">Mastercard</option>
-                <option value="Elo">Elo</option>
+                {bandeiras.length === 0 && <option value="">Carregando bandeiras...</option>}
+                {bandeiras.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.nome}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="form-group flex-1">
-              <label htmlFor="card-exp">Validade</label>
+              <label htmlFor="card-exp">Validade *</label>
               <input
                 type="text"
                 id="card-exp"
@@ -1100,7 +1071,7 @@ export default function CustomerArea() {
               />
             </div>
             <div className="form-group flex-1">
-              <label htmlFor="card-cvv">CVV</label>
+              <label htmlFor="card-cvv">CVV *</label>
               <input
                 type="text"
                 id="card-cvv"
@@ -1108,6 +1079,7 @@ export default function CustomerArea() {
                 maxLength={4}
                 value={cardForm.cvv}
                 onChange={e => setCardForm(prev => ({ ...prev, cvv: maskCardCvv(e.target.value) }))}
+                required
               />
             </div>
           </div>
@@ -1127,13 +1099,13 @@ export default function CustomerArea() {
               className="btn btn-secondary"
               onClick={() => {
                 setIsCardModalOpen(false);
-                setEditingCard(null);
+                setCardModalError(null);
               }}
             >
               CANCELAR
             </button>
-            <button type="submit" className="btn btn-primary">
-              {editingCard ? 'SALVAR ALTERAÇÕES' : 'SALVAR CARTÃO'}
+            <button type="submit" className="btn btn-primary" disabled={isSavingCard}>
+              {isSavingCard ? 'SALVANDO...' : 'SALVAR CARTÃO'}
             </button>
           </div>
         </form>

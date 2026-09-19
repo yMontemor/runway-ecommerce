@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../../store/AppContext';
 import Modal from '../../components/Modal/Modal';
-import type { Address, Coupon, Order } from '../../types';
+import type { Address, Coupon, Order, BandeiraDto } from '../../types';
+import { listarBandeiras } from '../../services/clienteService';
 import { getInstallmentOptions, getMaxInstallments } from '../../utils/payment';
 import {
   maskCardNumber,
@@ -182,11 +183,12 @@ export default function Checkout() {
   const [cardAmounts, setCardAmounts] = useState<Record<string, string>>({});
   const [cardInstallments, setCardInstallments] = useState<Record<string, number>>({});
 
-  // Modal de novo cartão no checkout
+  // Modal de novo cartão no checkout (Card #52: Bandeiras dinâmicas da API)
+  const [bandeiras, setBandeiras] = useState<BandeiraDto[]>([]);
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
   const [cardModalError, setCardModalError] = useState<string | null>(null);
   const [newCard, setNewCard] = useState({
-    brand: 'Visa' as 'Visa' | 'Mastercard' | 'Elo',
+    bandeiraId: 1,
     cardNumber: '',
     holderName: '',
     expirationDate: '',
@@ -194,13 +196,29 @@ export default function Checkout() {
     isPreferred: false
   });
 
-  const handleAddNewCard = (e: React.FormEvent) => {
+  useEffect(() => {
+    async function carregarBandeiras() {
+      const res = await listarBandeiras();
+      if (res.success && res.bandeiras) {
+        setBandeiras(res.bandeiras);
+        if (res.bandeiras.length > 0) {
+          setNewCard(prev => ({
+            ...prev,
+            bandeiraId: prev.bandeiraId || res.bandeiras![0].id
+          }));
+        }
+      }
+    }
+    carregarBandeiras();
+  }, []);
+
+  const handleAddNewCard = async (e: React.FormEvent) => {
     e.preventDefault();
     setCardModalError(null);
 
     const numVal = validateCardNumber(newCard.cardNumber);
     if (!numVal.isValid) {
-      setCardModalError(numVal.error || 'Número de cartão inválido.');
+      setCardModalError(numVal.error || 'Informe um número de cartão válido.');
       return;
     }
 
@@ -222,29 +240,36 @@ export default function Checkout() {
     }
 
     const cleanNum = newCard.cardNumber.replace(/\D/g, '');
-    const derivedLastFour = cleanNum.length >= 4 ? cleanNum.slice(-4) : '1234';
 
-    const created = addCustomerCard(activeCustomer.id, {
-      brand: newCard.brand,
-      cardNumber: maskCardNumber(cleanNum),
-      lastFour: derivedLastFour,
-      holderName: newCard.holderName.toUpperCase().trim(),
-      expirationDate: newCard.expirationDate.trim(),
+    if (!newCard.bandeiraId || newCard.bandeiraId <= 0) {
+      setCardModalError('Selecione uma bandeira válida.');
+      return;
+    }
+
+    const res = await addCustomerCard(activeCustomer.id, {
+      bandeiraId: newCard.bandeiraId,
+      numeroCartao: cleanNum,
+      nomeImpresso: newCard.holderName.toUpperCase().trim(),
+      dataValidade: newCard.expirationDate.trim(),
       cvv: newCard.cvv.replace(/\D/g, ''),
-      isPreferred: newCard.isPreferred
+      preferencial: newCard.isPreferred
     });
 
-    // Selecionar imediatamente o cartão adicionado
-    setSelectedCardIds(prev => [...prev, created.id]);
-    setIsCardModalOpen(false);
-    setNewCard({
-      brand: 'Visa',
-      cardNumber: '',
-      holderName: '',
-      expirationDate: '',
-      cvv: '',
-      isPreferred: false
-    });
+    if (res.success && res.card) {
+      // Selecionar imediatamente o cartão adicionado
+      setSelectedCardIds(prev => [...prev, res.card!.id]);
+      setIsCardModalOpen(false);
+      setNewCard({
+        bandeiraId: bandeiras.length > 0 ? bandeiras[0].id : 1,
+        cardNumber: '',
+        holderName: '',
+        expirationDate: '',
+        cvv: '',
+        isPreferred: false
+      });
+    } else {
+      setCardModalError(res.error || 'Erro ao cadastrar o cartão.');
+    }
   };
 
   // Sincronizar mudança de cliente na renderização
@@ -602,7 +627,18 @@ export default function Checkout() {
                     <h4 className="section-subtitle" style={{ margin: 0 }}>Cartões de Crédito</h4>
                     <button 
                       type="button" 
-                      onClick={() => setIsCardModalOpen(true)}
+                      onClick={() => {
+                        setCardModalError(null);
+                        setNewCard({
+                          bandeiraId: bandeiras.length > 0 ? bandeiras[0].id : 1,
+                          cardNumber: '',
+                          holderName: '',
+                          expirationDate: '',
+                          cvv: '',
+                          isPreferred: false
+                        });
+                        setIsCardModalOpen(true);
+                      }}
                       className="btn btn-secondary btn-small"
                       style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem' }}
                     >
@@ -1234,15 +1270,19 @@ export default function Checkout() {
 
           <div className="form-row">
             <div className="form-group flex-2">
-              <label htmlFor="chk-card-brand">Bandeira</label>
+              <label htmlFor="chk-card-brand">Bandeira *</label>
               <select
                 id="chk-card-brand"
-                value={newCard.brand}
-                onChange={e => setNewCard(prev => ({ ...prev, brand: e.target.value as 'Visa' | 'Mastercard' | 'Elo' }))}
+                value={newCard.bandeiraId}
+                onChange={e => setNewCard(prev => ({ ...prev, bandeiraId: parseInt(e.target.value, 10) }))}
+                required
               >
-                <option value="Visa">Visa</option>
-                <option value="Mastercard">Mastercard</option>
-                <option value="Elo">Elo</option>
+                {bandeiras.length === 0 && <option value="">Carregando bandeiras...</option>}
+                {bandeiras.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.nome}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="form-group flex-1">
