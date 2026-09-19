@@ -46,6 +46,17 @@ export interface ClienteUpdateRequestDto {
   telefone: TelefoneRequestDto;
 }
 
+export interface ClienteSenhaUpdateRequestDto {
+  novaSenha: string;
+  confirmacaoNovaSenha: string;
+}
+
+export interface AlteracaoSenhaResult {
+  success: boolean;
+  error?: string;
+  mensagem?: string;
+}
+
 export interface TelefoneResponseDto {
   id: number;
   tipo: string;
@@ -405,6 +416,51 @@ export async function alterarCliente(
     return {
       success: false,
       error: 'Não foi possível conectar ao servidor para alterar o cliente.'
+    };
+  }
+}
+
+/**
+ * RF0028: Altera exclusivamente a senha do cliente via PATCH /api/clientes/{codigo}/senha.
+ * RNF0031: Validação de senha forte (mínimo 8 caracteres, maiúscula, minúscula, caractere especial).
+ * RNF0032: Confirmação da nova senha.
+ * RNF0033: Armazenamento seguro via hash.
+ * Envia estritamente os campos novaSenha e confirmacaoNovaSenha.
+ */
+export async function alterarSenhaCliente(
+  codigoCliente: string,
+  dados: ClienteSenhaUpdateRequestDto
+): Promise<AlteracaoSenhaResult> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/senha`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(dados)
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        success: true,
+        mensagem: data.mensagem || 'Senha alterada com sucesso.'
+      };
+    }
+
+    if (response.status === 400 || response.status === 404) {
+      const errorMsg = await extractErrorMessage(response, 'Não foi possível alterar a senha.');
+      return { success: false, error: errorMsg };
+    }
+
+    return {
+      success: false,
+      error: 'Não foi possível atualizar a senha no momento.'
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para alterar a senha.'
     };
   }
 }

@@ -81,6 +81,37 @@ public class ClientesController : ControllerBase
     }
 
     /// <summary>
+    /// RF0028: Alteração somente de senha do cliente identificado pelo seu código único CLI-XXXX.
+    /// RNF0031: Validação de senha forte (mínimo 8 caracteres, maiúscula, minúscula e caractere especial).
+    /// RNF0032: Confirmação de senha estrita.
+    /// RNF0033: Armazenamento seguro via hash.
+    /// Retorna 200 OK com mensagem de sucesso, 400 Bad Request para validações ou 404 Not Found.
+    /// </summary>
+    [HttpPatch("{codigo}/senha")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AlterarSenha(
+        [FromRoute] string codigo,
+        [FromBody] ClienteSenhaUpdateRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _clienteService.AlterarSenhaAsync(codigo, request, cancellationToken);
+            return Ok(new { mensagem = "Senha alterada com sucesso." });
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { erro = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// RF0024: Consulta persistente de clientes utilizando query parameters opcionais.
     /// RNF0011: Execução direta no banco sem materialização excessiva.
     /// Retorna 200 OK com array vazio [] quando nenhum cliente é encontrado.

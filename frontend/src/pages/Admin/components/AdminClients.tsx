@@ -8,6 +8,7 @@ import { BRAZILIAN_STATES } from '../../../data/brazilianStates';
 import {
   consultarClientes,
   alterarCliente,
+  alterarSenhaCliente,
   mapListItemDtoToCustomer,
   convertDateBrToIso,
   type ClienteFiltro,
@@ -158,6 +159,78 @@ export default function AdminClients() {
       await carregarClientes();
     } finally {
       setIsEditSubmitting(false);
+    }
+  };
+
+  // =========================================================================
+  // Controle do Modal de Alteração Somente de Senha (RF0028 / RNF0031 / RNF0032 / RNF0033)
+  // =========================================================================
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false);
+  const [passwordClient, setPasswordClient] = useState<{ id: string; name: string } | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  const handleOpenPasswordModal = (client: Customer) => {
+    setPasswordClient({ id: client.id, name: client.name });
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setPasswordError(null);
+    setIsPasswordModalOpen(true);
+  };
+
+  const handleClosePasswordModal = () => {
+    setIsPasswordModalOpen(false);
+    setPasswordClient(null);
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setPasswordError(null);
+  };
+
+  const handleSavePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+
+    if (!passwordClient) return;
+
+    if (!newPassword.trim()) {
+      setPasswordError('A nova senha é obrigatória.');
+      return;
+    }
+
+    if (!confirmNewPassword.trim()) {
+      setPasswordError('A confirmação da nova senha é obrigatória.');
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('A confirmação de senha não coincide com a nova senha digitada.');
+      return;
+    }
+
+    setIsPasswordSubmitting(true);
+    try {
+      const res = await alterarSenhaCliente(passwordClient.id, {
+        novaSenha: newPassword,
+        confirmacaoNovaSenha: confirmNewPassword
+      });
+
+      if (!res.success) {
+        const errorMsg = res.error || 'Não foi possível alterar a senha.';
+        setPasswordError(errorMsg);
+        setToastType('error');
+        setToastMessage(errorMsg);
+        return;
+      }
+
+      handleClosePasswordModal();
+      setToastType('success');
+      setToastMessage(res.mensagem || 'Senha alterada com sucesso.');
+    } catch {
+      setPasswordError('Erro inesperado ao alterar a senha.');
+    } finally {
+      setIsPasswordSubmitting(false);
     }
   };
 
@@ -787,6 +860,14 @@ export default function AdminClients() {
                         type="button"
                       >
                         Editar
+                      </button>
+                      <button
+                        onClick={() => handleOpenPasswordModal(c)}
+                        className="btn btn-secondary btn-small"
+                        type="button"
+                        title="Alterar somente a senha do cliente"
+                      >
+                        Senha
                       </button>
                     </div>
                   </td>
@@ -1440,6 +1521,98 @@ export default function AdminClients() {
             </button>
             <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isEditSubmitting}>
               {isEditSubmitting ? 'SALVANDO...' : 'SALVAR ALTERAÇÕES'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Alteração Somente de Senha (RF0028) */}
+      <Modal
+        isOpen={isPasswordModalOpen}
+        onClose={handleClosePasswordModal}
+        title="ALTERAR SENHA DO CLIENTE"
+        className="rw-password-modal"
+      >
+        <form onSubmit={handleSavePassword} className="rw-password-modal-body">
+          {passwordError && (
+            <div className="rw-modal-error-banner" role="alert">
+              <strong>Erro:</strong> {passwordError}
+            </div>
+          )}
+
+          <div className="rw-password-content">
+            {/* Bloco compacto de identificação contextual do cliente */}
+            {passwordClient && (
+              <div className="rw-password-client-badge">
+                <span className="rw-password-client-code">{passwordClient.id}</span>
+                <span className="rw-password-client-sep">•</span>
+                <span className="rw-password-client-name">{passwordClient.name}</span>
+              </div>
+            )}
+
+            <div className="rw-form-group">
+              <label htmlFor="pw-new-password">Nova Senha <span className="rw-req">*</span></label>
+              <input
+                type="password"
+                id="pw-new-password"
+                className="rw-input"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Informe a nova senha"
+                required
+              />
+            </div>
+
+            <div className="rw-form-group">
+              <label htmlFor="pw-confirm-password">Confirmar Nova Senha <span className="rw-req">*</span></label>
+              <input
+                type="password"
+                id="pw-confirm-password"
+                className="rw-input"
+                value={confirmNewPassword}
+                onChange={e => setConfirmNewPassword(e.target.value)}
+                placeholder="Confirme a nova senha"
+                required
+              />
+            </div>
+
+            {/* Auxílio visual de critérios de senha forte (UX compacto) */}
+            <div className="rw-password-criteria-box">
+              <span className="rw-password-criteria-title">
+                Critérios de Senha Forte
+              </span>
+              <ul className="rw-password-criteria-list">
+                <li className={`rw-password-criteria-item ${newPassword.length >= 8 ? 'valid' : 'invalid'}`}>
+                  <span>{newPassword.length >= 8 ? '✓' : '○'}</span> Mínimo de 8 caracteres
+                </li>
+                <li className={`rw-password-criteria-item ${/[A-Z]/.test(newPassword) ? 'valid' : 'invalid'}`}>
+                  <span>{/[A-Z]/.test(newPassword) ? '✓' : '○'}</span> Letra maiúscula
+                </li>
+                <li className={`rw-password-criteria-item ${/[a-z]/.test(newPassword) ? 'valid' : 'invalid'}`}>
+                  <span>{/[a-z]/.test(newPassword) ? '✓' : '○'}</span> Letra minúscula
+                </li>
+                <li className={`rw-password-criteria-item ${/[^A-Za-z0-9]/.test(newPassword) ? 'valid' : 'invalid'}`}>
+                  <span>{/[^A-Za-z0-9]/.test(newPassword) ? '✓' : '○'}</span> Caractere especial
+                </li>
+                <li className={`rw-password-criteria-item full-width ${Boolean(newPassword && newPassword === confirmNewPassword) ? 'valid' : 'invalid'}`}>
+                  <span>{Boolean(newPassword && newPassword === confirmNewPassword) ? '✓' : '○'}</span> Confirmação coincide com a nova senha
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Rodapé Fixo Proporcional */}
+          <div className="rw-modal-footer">
+            <button
+              type="button"
+              className="btn btn-secondary rw-btn-cancel"
+              disabled={isPasswordSubmitting}
+              onClick={handleClosePasswordModal}
+            >
+              CANCELAR
+            </button>
+            <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isPasswordSubmitting}>
+              {isPasswordSubmitting ? 'SALVANDO...' : 'SALVAR SENHA'}
             </button>
           </div>
         </form>

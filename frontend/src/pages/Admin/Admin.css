@@ -1313,5 +1313,144 @@
   animation: rwSpin 0.8s linear infinite;
 }
 
+/* ============================================================
+   MODAL DE ALTERAÇÃO DE SENHA (RF0028 - REFINO VISUAL COMPACTO)
+   ============================================================ */
+.modal-container.rw-password-modal,
+.modal-container:has(.rw-password-modal-body) {
+  max-width: 620px !important;
+  width: 90% !important;
+  max-height: 85vh !important;
+  background-color: #0d0d0d !important;
+  border: 1px solid #222222 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.95), 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
 
+.rw-password-modal .modal-header {
+  padding: 1.15rem 1.5rem;
+  border-bottom: 1px solid #1a1a1a;
+  background-color: #0f0f0f;
+  flex-shrink: 0;
+}
 
+.rw-password-modal .modal-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.rw-password-modal-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.rw-password-content {
+  padding: 1.35rem 1.5rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.rw-password-client-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.rw-password-client-code {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--color-primary, #c6ff00);
+  background: rgba(198, 255, 0, 0.08);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba(198, 255, 0, 0.2);
+  font-size: 0.82rem;
+}
+
+.rw-password-client-sep {
+  color: #555;
+  font-size: 0.75rem;
+}
+
+.rw-password-client-name {
+  color: #e0e0e0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rw-password-criteria-box {
+  padding: 0.75rem 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.rw-password-criteria-title {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.45rem;
+}
+
+.rw-password-criteria-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 0.85rem;
+}
+
+.rw-password-criteria-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  transition: color 0.15s ease;
+}
+
+.rw-password-criteria-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.rw-password-criteria-item.valid {
+  color: #4caf50;
+  font-weight: 500;
+}
+
+.rw-password-criteria-item.invalid {
+  color: #666666;
+}
+
+@media (max-width: 600px) {
+  .modal-container.rw-password-modal,
+  .modal-container:has(.rw-password-modal-body) {
+    width: 95% !important;
+  }
+
+  .rw-password-criteria-list {
+    grid-template-columns: 1fr;
+  }
+}

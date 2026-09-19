@@ -283,6 +283,66 @@ public class ClienteService : IClienteService
     }
 
     /// <summary>
+    /// RF0028: Alteração somente de senha do cliente.
+    /// RNF0031: Validação de senha forte (mínimo 8 caracteres, maiúscula, minúscula e caractere especial).
+    /// RNF0032: Confirmação obrigatória e estrita da nova senha.
+    /// RNF0033: Armazenamento seguro via hash gerado por PasswordHasher, nunca gravando texto puro.
+    /// Modifica exclusivamente o campo SenhaHash, mantendo todos os demais dados cadastrais intactos.
+    /// </summary>
+    public async Task AlterarSenhaAsync(
+        string codigoCliente,
+        ClienteSenhaUpdateRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(codigoCliente))
+        {
+            throw new ValidationException("O código do cliente é obrigatório para alteração de senha.");
+        }
+
+        if (request is null)
+        {
+            throw new ValidationException("Os dados para alteração de senha são obrigatórios.");
+        }
+
+        var codigoNormalizado = codigoCliente.Trim();
+
+        // 1. Localiza o cliente com tracking ativo para atualização
+        var cliente = await _context.Clientes
+            .FirstOrDefaultAsync(c => c.Codigo == codigoNormalizado, cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoNormalizado}' não foi encontrado.");
+        }
+
+        // 2. Validação dos campos obrigatórios da operação de alteração de senha
+        if (string.IsNullOrWhiteSpace(request.NovaSenha))
+        {
+            throw new ValidationException("A nova senha é obrigatória.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ConfirmacaoNovaSenha))
+        {
+            throw new ValidationException("A confirmação da nova senha é obrigatória. (RNF0032)");
+        }
+
+        // 3. RNF0032: Validação de igualdade entre a nova senha e sua confirmação
+        if (request.NovaSenha != request.ConfirmacaoNovaSenha)
+        {
+            throw new ValidationException("A confirmação de senha não coincide com a nova senha digitada. (RNF0032)");
+        }
+
+        // 4. RNF0031: Reutilização da validação de senha forte do projeto
+        ValidarSenhaForte(request.NovaSenha);
+
+        // 5. RNF0033: Geração de hash seguro com o PasswordHasher configurado
+        cliente.SenhaHash = _passwordHasher.HashPassword(cliente, request.NovaSenha);
+
+        // 6. Persistência atômica exclusivamente de SenhaHash no PostgreSQL
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// RF0024: Consulta persistente de clientes com filtros cadastrais opcionais combinados (AND).
     /// RNF0011: Execução otimizada com AsNoTracking e projeção direta no banco via EF Core.
     /// </summary>

@@ -9,6 +9,8 @@ public interface IClienteService
 
     Task<ClienteResponseDto> AlterarAsync(string codigoCliente, ClienteUpdateRequestDto request, CancellationToken cancellationToken = default);
 
+    Task AlterarSenhaAsync(string codigoCliente, ClienteSenhaUpdateRequestDto request, CancellationToken cancellationToken = default);
+
     Task<List<ClienteListItemResponseDto>> ConsultarAsync(ClienteFiltroRequestDto filtro, CancellationToken cancellationToken = default);
 
     Task<List<EnderecoResponseDto>> ListarEnderecosAsync(string codigoCliente, CancellationToken cancellationToken = default);
