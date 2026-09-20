@@ -13,11 +13,16 @@ public class ClienteService : IClienteService
 {
     private readonly RunWayDbContext _context;
     private readonly IPasswordHasher<Cliente> _passwordHasher;
+    private readonly IAuditoriaService _auditoriaService;
 
-    public ClienteService(RunWayDbContext context, IPasswordHasher<Cliente>? passwordHasher = null)
+    public ClienteService(
+        RunWayDbContext context,
+        IPasswordHasher<Cliente>? passwordHasher = null,
+        IAuditoriaService? auditoriaService = null)
     {
         _context = context;
         _passwordHasher = passwordHasher ?? new PasswordHasher<Cliente>();
+        _auditoriaService = auditoriaService ?? new AuditoriaService(context);
     }
 
     public async Task<ClienteResponseDto> CadastrarAsync(
@@ -184,6 +189,52 @@ public class ClienteService : IClienteService
 
         novoCliente.Codigo = $"CLI-{proximoValor:D4}";
 
+        // RNF0012: Auditoria da inserção do cliente (sem expor senha ou senhaHash)
+        var dadosNovosCliente = new
+        {
+            codigo = novoCliente.Codigo,
+            nome = novoCliente.Nome,
+            email = novoCliente.Email,
+            cpf = novoCliente.Cpf,
+            genero = novoCliente.Genero,
+            dataNascimento = novoCliente.DataNascimento.ToString("yyyy-MM-dd"),
+            ranking = novoCliente.Ranking,
+            ativo = novoCliente.Ativo,
+            telefone = new
+            {
+                tipo = novoCliente.Telefone.Tipo,
+                ddd = novoCliente.Telefone.Ddd,
+                numero = novoCliente.Telefone.Numero
+            },
+            enderecos = novoCliente.Enderecos.Select(e => new
+            {
+                nome = e.Nome,
+                tipoResidencia = e.TipoResidencia,
+                tipoLogradouro = e.TipoLogradouro,
+                logradouro = e.Logradouro,
+                numero = e.Numero,
+                complemento = e.Complemento,
+                bairro = e.Bairro,
+                cep = e.Cep,
+                cidade = e.Cidade,
+                estado = e.Estado,
+                pais = e.Pais,
+                observacoes = e.Observacoes,
+                residencial = e.Residencial,
+                entrega = e.Entrega,
+                cobranca = e.Cobranca
+            }).ToList()
+        };
+
+        await _auditoriaService.RegistrarAsync(
+            entidade: "CLIENTE",
+            registroId: novoCliente.Codigo,
+            operacao: "INSERCAO",
+            dadosAnteriores: null,
+            dadosNovos: dadosNovosCliente,
+            usuarioResponsavel: "ADMIN",
+            cancellationToken: cancellationToken);
+
         _context.Clientes.Add(novoCliente);
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -247,13 +298,93 @@ public class ClienteService : IClienteService
             throw new ConflictException("Já existe outro cliente cadastrado com este e-mail.");
         }
 
-        // 4. Atualização estrita dos campos editáveis no escopo do RF0022
-        cliente.Nome = request.Nome.Trim();
+        // 4. Captura dos valores anteriores e cálculo de delta (RNF0012)
+        var dadosAnteriores = new Dictionary<string, object?>();
+        var dadosNovos = new Dictionary<string, object?>();
+
+        var novoNome = request.Nome.Trim();
+        if (cliente.Nome != novoNome)
+        {
+            dadosAnteriores["nome"] = cliente.Nome;
+            dadosNovos["nome"] = novoNome;
+        }
+
+        if (cliente.Email != emailNormalizado)
+        {
+            dadosAnteriores["email"] = cliente.Email;
+            dadosNovos["email"] = emailNormalizado;
+        }
+
+        var novoGenero = request.Genero.Trim();
+        if (cliente.Genero != novoGenero)
+        {
+            dadosAnteriores["genero"] = cliente.Genero;
+            dadosNovos["genero"] = novoGenero;
+        }
+
+        if (cliente.DataNascimento != request.DataNascimento)
+        {
+            dadosAnteriores["dataNascimento"] = cliente.DataNascimento.ToString("yyyy-MM-dd");
+            dadosNovos["dataNascimento"] = request.DataNascimento.ToString("yyyy-MM-dd");
+        }
+
+        if (cliente.Telefone is null)
+        {
+            dadosAnteriores["telefone"] = null;
+            dadosNovos["telefone"] = new { tipo = tipoTelefone, ddd = dddNormalizado, numero = numeroNormalizado };
+        }
+        else
+        {
+            var telAlterado = false;
+            var telAntigo = new Dictionary<string, object?>();
+            var telNovo = new Dictionary<string, object?>();
+
+            if (cliente.Telefone.Tipo != tipoTelefone)
+            {
+                telAntigo["tipo"] = cliente.Telefone.Tipo;
+                telNovo["tipo"] = tipoTelefone;
+                telAlterado = true;
+            }
+            if (cliente.Telefone.Ddd != dddNormalizado)
+            {
+                telAntigo["ddd"] = cliente.Telefone.Ddd;
+                telNovo["ddd"] = dddNormalizado;
+                telAlterado = true;
+            }
+            if (cliente.Telefone.Numero != numeroNormalizado)
+            {
+                telAntigo["numero"] = cliente.Telefone.Numero;
+                telNovo["numero"] = numeroNormalizado;
+                telAlterado = true;
+            }
+
+            if (telAlterado)
+            {
+                dadosAnteriores["telefone"] = telAntigo;
+                dadosNovos["telefone"] = telNovo;
+            }
+        }
+
+        // Se houver modificações efetivas, audita a operação (RNF0012)
+        if (dadosNovos.Count > 0)
+        {
+            await _auditoriaService.RegistrarAsync(
+                entidade: "CLIENTE",
+                registroId: cliente.Codigo,
+                operacao: "ALTERACAO",
+                dadosAnteriores: dadosAnteriores,
+                dadosNovos: dadosNovos,
+                usuarioResponsavel: "ADMIN",
+                cancellationToken: cancellationToken);
+        }
+
+        // 5. Atualização estrita dos campos editáveis no escopo do RF0022
+        cliente.Nome = novoNome;
         cliente.Email = emailNormalizado;
-        cliente.Genero = request.Genero.Trim();
+        cliente.Genero = novoGenero;
         cliente.DataNascimento = request.DataNascimento;
 
-        // 5. Atualização do telefone associado na mesma transação/contexto
+        // 6. Atualização do telefone associado na mesma transação/contexto
         if (cliente.Telefone is null)
         {
             cliente.Telefone = new Telefone
@@ -271,11 +402,11 @@ public class ClienteService : IClienteService
             cliente.Telefone.Numero = numeroNormalizado;
         }
 
-        // 6. Campos protegidos contra alterações indevidas (garantia estrutural):
+        // 7. Campos protegidos contra alterações indevidas (garantia estrutural):
         // cliente.Codigo, cliente.Cpf, cliente.SenhaHash, cliente.Ranking, cliente.Ativo,
         // cliente.Enderecos e cliente.Cartoes permanecem estritamente inalterados.
 
-        // 7. Persistência atômica no PostgreSQL
+        // 8. Persistência atômica no PostgreSQL (alterações + auditoria no mesmo SaveChangesAsync)
         await _context.SaveChangesAsync(cancellationToken);
 
         // 8. Retorno da resposta mapeada
@@ -338,7 +469,21 @@ public class ClienteService : IClienteService
         // 5. RNF0033: Geração de hash seguro com o PasswordHasher configurado
         cliente.SenhaHash = _passwordHasher.HashPassword(cliente, request.NovaSenha);
 
-        // 6. Persistência atômica exclusivamente de SenhaHash no PostgreSQL
+        // RNF0012: Auditoria de alteração de senha registrando apenas o evento seguro sem senhas ou hashes
+        await _auditoriaService.RegistrarAsync(
+            entidade: "CLIENTE",
+            registroId: cliente.Codigo,
+            operacao: "ALTERACAO_SENHA",
+            dadosAnteriores: null,
+            dadosNovos: new
+            {
+                evento = "Senha alterada com sucesso",
+                alterada = true
+            },
+            usuarioResponsavel: "ADMIN",
+            cancellationToken: cancellationToken);
+
+        // 6. Persistência atômica exclusivamente de SenhaHash e do Log de Auditoria no PostgreSQL
         await _context.SaveChangesAsync(cancellationToken);
     }
 
@@ -368,7 +513,7 @@ public class ClienteService : IClienteService
             throw new NotFoundException($"Cliente com código '{codigoNormalizado}' não foi encontrado.");
         }
 
-        // 2. Idempotência: se já estiver inativo, retorna mensagem informativa sem executar UPDATE no banco
+        // 2. Idempotência: se já estiver inativo, retorna mensagem informativa sem executar UPDATE no banco e sem gerar log
         if (!cliente.Ativo)
         {
             return "O cliente já está inativo.";
@@ -377,7 +522,17 @@ public class ClienteService : IClienteService
         // 3. Atualização exclusiva do campo Ativo (soft delete / inativação lógica)
         cliente.Ativo = false;
 
-        // 4. Persistência atômica exclusivamente da coluna ativo no PostgreSQL
+        // RNF0012: Auditoria da inativação registrando a transição de estado
+        await _auditoriaService.RegistrarAsync(
+            entidade: "CLIENTE",
+            registroId: cliente.Codigo,
+            operacao: "INATIVACAO",
+            dadosAnteriores: new { ativo = true },
+            dadosNovos: new { ativo = false },
+            usuarioResponsavel: "ADMIN",
+            cancellationToken: cancellationToken);
+
+        // 4. Persistência atômica exclusivamente da coluna ativo e do Log de Auditoria no PostgreSQL
         await _context.SaveChangesAsync(cancellationToken);
 
         return "Cliente inativado com sucesso.";
@@ -555,8 +710,43 @@ public class ClienteService : IClienteService
             Cobranca = request.Cobranca
         };
 
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
         cliente.Enderecos.Add(novoEndereco);
         await _context.SaveChangesAsync(cancellationToken);
+
+        // RNF0012: Auditoria da criação do endereço com o ID gerado pelo banco
+        var dadosNovosEndereco = new
+        {
+            clienteCodigo = cliente.Codigo,
+            nome = novoEndereco.Nome,
+            tipoResidencia = novoEndereco.TipoResidencia,
+            tipoLogradouro = novoEndereco.TipoLogradouro,
+            logradouro = novoEndereco.Logradouro,
+            numero = novoEndereco.Numero,
+            complemento = novoEndereco.Complemento,
+            bairro = novoEndereco.Bairro,
+            cep = novoEndereco.Cep,
+            cidade = novoEndereco.Cidade,
+            estado = novoEndereco.Estado,
+            pais = novoEndereco.Pais,
+            observacoes = novoEndereco.Observacoes,
+            residencial = novoEndereco.Residencial,
+            entrega = novoEndereco.Entrega,
+            cobranca = novoEndereco.Cobranca
+        };
+
+        await _auditoriaService.RegistrarAsync(
+            entidade: "ENDERECO",
+            registroId: novoEndereco.Id.ToString(),
+            operacao: "INSERCAO",
+            dadosAnteriores: null,
+            dadosNovos: dadosNovosEndereco,
+            usuarioResponsavel: "ADMIN",
+            cancellationToken: cancellationToken);
+
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return MapearEnderecoParaResponseDto(novoEndereco);
     }
@@ -609,21 +799,74 @@ public class ClienteService : IClienteService
 
         var cepNormalizado = Regex.Replace(request.Cep ?? string.Empty, @"\D", "");
 
-        endereco.Nome = request.Nome.Trim();
-        endereco.TipoResidencia = request.TipoResidencia.Trim();
-        endereco.TipoLogradouro = request.TipoLogradouro.Trim();
-        endereco.Logradouro = request.Logradouro.Trim();
-        endereco.Numero = request.Numero.Trim();
-        endereco.Complemento = string.IsNullOrWhiteSpace(request.Complemento) ? null : request.Complemento.Trim();
-        endereco.Bairro = request.Bairro.Trim();
+        // RNF0012: Captura de valores anteriores e cálculo de delta
+        var dadosAnteriores = new Dictionary<string, object?>();
+        var dadosNovos = new Dictionary<string, object?>();
+
+        void Comparar<T>(string campo, T anterior, T novo)
+        {
+            if (!EqualityComparer<T>.Default.Equals(anterior, novo))
+            {
+                dadosAnteriores[campo] = anterior;
+                dadosNovos[campo] = novo;
+            }
+        }
+
+        var nomeNovo = request.Nome.Trim();
+        var tipoResidenciaNovo = request.TipoResidencia.Trim();
+        var tipoLogradouroNovo = request.TipoLogradouro.Trim();
+        var logradouroNovo = request.Logradouro.Trim();
+        var numeroNovo = request.Numero.Trim();
+        var complementoNovo = string.IsNullOrWhiteSpace(request.Complemento) ? null : request.Complemento.Trim();
+        var bairroNovo = request.Bairro.Trim();
+        var cidadeNova = request.Cidade.Trim();
+        var estadoNovo = request.Estado.Trim().ToUpperInvariant();
+        var paisNovo = request.Pais.Trim();
+        var observacoesNovas = string.IsNullOrWhiteSpace(request.Observacoes) ? null : request.Observacoes.Trim();
+
+        Comparar("nome", endereco.Nome, nomeNovo);
+        Comparar("tipoResidencia", endereco.TipoResidencia, tipoResidenciaNovo);
+        Comparar("tipoLogradouro", endereco.TipoLogradouro, tipoLogradouroNovo);
+        Comparar("logradouro", endereco.Logradouro, logradouroNovo);
+        Comparar("numero", endereco.Numero, numeroNovo);
+        Comparar("complemento", endereco.Complemento, complementoNovo);
+        Comparar("bairro", endereco.Bairro, bairroNovo);
+        Comparar("cep", endereco.Cep, cepNormalizado);
+        Comparar("cidade", endereco.Cidade, cidadeNova);
+        Comparar("estado", endereco.Estado, estadoNovo);
+        Comparar("pais", endereco.Pais, paisNovo);
+        Comparar("observacoes", endereco.Observacoes, observacoesNovas);
+        Comparar("residencial", endereco.Residencial, request.Residencial);
+        Comparar("entrega", endereco.Entrega, request.Entrega);
+        Comparar("cobranca", endereco.Cobranca, request.Cobranca);
+
+        endereco.Nome = nomeNovo;
+        endereco.TipoResidencia = tipoResidenciaNovo;
+        endereco.TipoLogradouro = tipoLogradouroNovo;
+        endereco.Logradouro = logradouroNovo;
+        endereco.Numero = numeroNovo;
+        endereco.Complemento = complementoNovo;
+        endereco.Bairro = bairroNovo;
         endereco.Cep = cepNormalizado;
-        endereco.Cidade = request.Cidade.Trim();
-        endereco.Estado = request.Estado.Trim().ToUpperInvariant();
-        endereco.Pais = request.Pais.Trim();
-        endereco.Observacoes = string.IsNullOrWhiteSpace(request.Observacoes) ? null : request.Observacoes.Trim();
+        endereco.Cidade = cidadeNova;
+        endereco.Estado = estadoNovo;
+        endereco.Pais = paisNovo;
+        endereco.Observacoes = observacoesNovas;
         endereco.Residencial = request.Residencial;
         endereco.Entrega = request.Entrega;
         endereco.Cobranca = request.Cobranca;
+
+        if (dadosNovos.Count > 0)
+        {
+            await _auditoriaService.RegistrarAsync(
+                entidade: "ENDERECO",
+                registroId: endereco.Id.ToString(),
+                operacao: "ALTERACAO",
+                dadosAnteriores: dadosAnteriores,
+                dadosNovos: dadosNovos,
+                usuarioResponsavel: "ADMIN",
+                cancellationToken: cancellationToken);
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -770,6 +1013,8 @@ public class ClienteService : IClienteService
         var numeroCartaoLimpo = Regex.Replace(request.NumeroCartao ?? string.Empty, @"\D", "");
         var cvvLimpo = Regex.Replace(request.Cvv ?? string.Empty, @"\D", "");
 
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
         // RF0027: Regra de definição do cartão preferencial
         bool definirComoPreferencial;
         if (cliente.Cartoes.Count == 0)
@@ -779,9 +1024,20 @@ public class ClienteService : IClienteService
         }
         else if (request.Preferencial)
         {
-            // Se o novo cartão for preferencial, desmarca todos os anteriores
+            // Se o novo cartão for preferencial, desmarca todos os anteriores e audita a alteração
             foreach (var c in cliente.Cartoes)
             {
+                if (c.Preferencial)
+                {
+                    await _auditoriaService.RegistrarAsync(
+                        entidade: "CARTAO",
+                        registroId: c.Id.ToString(),
+                        operacao: "ALTERACAO",
+                        dadosAnteriores: new { preferencial = true },
+                        dadosNovos: new { preferencial = false },
+                        usuarioResponsavel: "ADMIN",
+                        cancellationToken: cancellationToken);
+                }
                 c.Preferencial = false;
             }
             definirComoPreferencial = true;
@@ -805,12 +1061,40 @@ public class ClienteService : IClienteService
         cliente.Cartoes.Add(novoCartao);
         await _context.SaveChangesAsync(cancellationToken);
 
-        // Carrega a bandeira para o mapeamento do DTO de resposta
+        // Carrega a bandeira para o mapeamento do DTO de resposta e log
         var bandeira = await _context.Bandeiras
             .AsNoTracking()
             .FirstOrDefaultAsync(b => b.Id == novoCartao.BandeiraId, cancellationToken);
 
         novoCartao.Bandeira = bandeira!;
+
+        // RNF0012: Auditoria com dados estritamente seguros (sem CVV e apenas últimos 4 dígitos)
+        var ultimosQuatro = numeroCartaoLimpo.Length >= 4
+            ? numeroCartaoLimpo.Substring(numeroCartaoLimpo.Length - 4)
+            : numeroCartaoLimpo;
+
+        var dadosNovosCartao = new
+        {
+            clienteCodigo = cliente.Codigo,
+            bandeiraId = novoCartao.BandeiraId,
+            bandeiraNome = bandeira?.Nome ?? string.Empty,
+            nomeImpresso = novoCartao.NomeImpresso,
+            ultimosQuatroDigitos = ultimosQuatro,
+            dataValidade = novoCartao.DataValidade,
+            preferencial = novoCartao.Preferencial
+        };
+
+        await _auditoriaService.RegistrarAsync(
+            entidade: "CARTAO",
+            registroId: novoCartao.Id.ToString(),
+            operacao: "INSERCAO",
+            dadosAnteriores: null,
+            dadosNovos: dadosNovosCartao,
+            usuarioResponsavel: "ADMIN",
+            cancellationToken: cancellationToken);
+
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return MapearCartaoParaResponseDto(novoCartao);
     }
@@ -840,10 +1124,36 @@ public class ClienteService : IClienteService
             throw new NotFoundException($"Cartão com identificador '{cartaoId}' não foi encontrado para o cliente informado.");
         }
 
-        // RF0027: Desmarca os demais cartões e define o alvo como preferencial
+        // RF0027: Desmarca os demais cartões e define o alvo como preferencial (RNF0012: audita as alterações reais)
         foreach (var c in cliente.Cartoes)
         {
-            c.Preferencial = (c.Id == cartaoId);
+            if (c.Id == cartaoId)
+            {
+                if (!c.Preferencial)
+                {
+                    c.Preferencial = true;
+                    await _auditoriaService.RegistrarAsync(
+                        entidade: "CARTAO",
+                        registroId: c.Id.ToString(),
+                        operacao: "ALTERACAO",
+                        dadosAnteriores: new { preferencial = false },
+                        dadosNovos: new { preferencial = true },
+                        usuarioResponsavel: "ADMIN",
+                        cancellationToken: cancellationToken);
+                }
+            }
+            else if (c.Preferencial)
+            {
+                c.Preferencial = false;
+                await _auditoriaService.RegistrarAsync(
+                    entidade: "CARTAO",
+                    registroId: c.Id.ToString(),
+                    operacao: "ALTERACAO",
+                    dadosAnteriores: new { preferencial = true },
+                    dadosNovos: new { preferencial = false },
+                    usuarioResponsavel: "ADMIN",
+                    cancellationToken: cancellationToken);
+            }
         }
 
         await _context.SaveChangesAsync(cancellationToken);

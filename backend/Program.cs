@@ -14,6 +14,7 @@ builder.Services.AddControllers();
 
 builder.Services.AddScoped<RunWay.Api.Services.IClienteService, RunWay.Api.Services.ClienteService>();
 builder.Services.AddScoped<RunWay.Api.Services.IBandeiraService, RunWay.Api.Services.BandeiraService>();
+builder.Services.AddScoped<RunWay.Api.Services.IAuditoriaService, RunWay.Api.Services.AuditoriaService>();
 
 builder.Services.AddCors(options =>
 {
