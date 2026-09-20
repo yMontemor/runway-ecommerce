@@ -343,6 +343,47 @@ public class ClienteService : IClienteService
     }
 
     /// <summary>
+    /// RF0023: Inativação lógica de cliente.
+    /// Altera unicamente a situação cadastral do cliente de Ativo = true para Ativo = false.
+    /// Não executa exclusão física (DELETE) e preserva integralmente todos os demais dados do cliente.
+    /// Operação idempotente: se o cliente já estiver inativo, conclui normalmente sem alterações redundantes.
+    /// </summary>
+    public async Task<string> InativarAsync(
+        string codigoCliente,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(codigoCliente))
+        {
+            throw new ValidationException("O código do cliente é obrigatório para inativação.");
+        }
+
+        var codigoNormalizado = codigoCliente.Trim();
+
+        // 1. Localiza o cliente com tracking ativo para atualização
+        var cliente = await _context.Clientes
+            .FirstOrDefaultAsync(c => c.Codigo == codigoNormalizado, cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoNormalizado}' não foi encontrado.");
+        }
+
+        // 2. Idempotência: se já estiver inativo, retorna mensagem informativa sem executar UPDATE no banco
+        if (!cliente.Ativo)
+        {
+            return "O cliente já está inativo.";
+        }
+
+        // 3. Atualização exclusiva do campo Ativo (soft delete / inativação lógica)
+        cliente.Ativo = false;
+
+        // 4. Persistência atômica exclusivamente da coluna ativo no PostgreSQL
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return "Cliente inativado com sucesso.";
+    }
+
+    /// <summary>
     /// RF0024: Consulta persistente de clientes com filtros cadastrais opcionais combinados (AND).
     /// RNF0011: Execução otimizada com AsNoTracking e projeção direta no banco via EF Core.
     /// </summary>

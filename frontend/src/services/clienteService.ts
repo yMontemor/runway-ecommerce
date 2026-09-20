@@ -57,6 +57,12 @@ export interface AlteracaoSenhaResult {
   mensagem?: string;
 }
 
+export interface InativacaoClienteResult {
+  success: boolean;
+  error?: string;
+  mensagem?: string;
+}
+
 export interface TelefoneResponseDto {
   id: number;
   tipo: string;
@@ -461,6 +467,44 @@ export async function alterarSenhaCliente(
     return {
       success: false,
       error: 'Não foi possível conectar ao servidor para alterar a senha.'
+    };
+  }
+}
+
+/**
+ * RF0023: Inativação lógica do cliente via PATCH /api/clientes/{codigo}/inativar.
+ * Operação idempotente sem body e sem DTO.
+ * Retorna 200 OK tanto para inativação com sucesso quanto para cliente que já estava inativo.
+ */
+export async function inativarCliente(
+  codigoCliente: string
+): Promise<InativacaoClienteResult> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/inativar`, {
+      method: 'PATCH'
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        success: true,
+        mensagem: data.mensagem || 'Cliente inativado com sucesso.'
+      };
+    }
+
+    if (response.status === 400 || response.status === 404) {
+      const errorMsg = await extractErrorMessage(response, 'Não foi possível inativar o cliente.');
+      return { success: false, error: errorMsg };
+    }
+
+    return {
+      success: false,
+      error: 'Não foi possível inativar o cliente no momento.'
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para inativar o cliente.'
     };
   }
 }

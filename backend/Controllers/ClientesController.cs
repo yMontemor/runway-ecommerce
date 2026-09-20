@@ -112,6 +112,35 @@ public class ClientesController : ControllerBase
     }
 
     /// <summary>
+    /// RF0023: Inativação de cliente (soft delete).
+    /// Altera a situação cadastral do cliente de Ativo = true para Ativo = false preservando todos os dados.
+    /// Operação idempotente: retorna 200 OK tanto para inativação bem-sucedida quanto se já estiver inativo.
+    /// Sem body e sem DTO.
+    /// </summary>
+    [HttpPatch("{codigo}/inativar")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Inativar(
+        [FromRoute] string codigo,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var mensagem = await _clienteService.InativarAsync(codigo, cancellationToken);
+            return Ok(new { mensagem });
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { erro = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// RF0024: Consulta persistente de clientes utilizando query parameters opcionais.
     /// RNF0011: Execução direta no banco sem materialização excessiva.
     /// Retorna 200 OK com array vazio [] quando nenhum cliente é encontrado.

@@ -1454,3 +1454,30 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Modal de Confirmação de Inativação de Cliente (Card #57 / RF0023) */
+.modal-container.rw-inactivate-confirm-modal {
+  width: 440px !important;
+  max-width: 92vw !important;
+}
+
+.rw-inactivate-confirm-body {
+  padding: 1.5rem 1.75rem;
+}
+
+.rw-inactivate-confirm-text {
+  font-size: 0.95rem;
+  color: #e0e0e0;
+  line-height: 1.5;
+  margin: 0 0 1.5rem 0;
+}
+
+.rw-inactivate-confirm-text strong {
+  color: #ffffff;
+}
+
+.rw-inactivate-confirm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}

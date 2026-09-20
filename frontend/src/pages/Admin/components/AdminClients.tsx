@@ -9,6 +9,7 @@ import {
   consultarClientes,
   alterarCliente,
   alterarSenhaCliente,
+  inativarCliente,
   mapListItemDtoToCustomer,
   convertDateBrToIso,
   type ClienteFiltro,
@@ -16,7 +17,7 @@ import {
 } from '../../../services/clienteService';
 
 export default function AdminClients() {
-  const { orders, updateCustomerStatus, addCustomer } = useApp();
+  const { orders, addCustomer } = useApp();
 
   // Estado da listagem real de clientes persistidos no PostgreSQL (RF0024 / RNF0011)
   const [clientsList, setClientsList] = useState<Customer[]>([]);
@@ -39,6 +40,35 @@ export default function AdminClients() {
   const [filterAtivo, setFilterAtivo] = useState<'TODOS' | 'ATIVO' | 'INATIVO'>('TODOS');
 
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
+
+  // Controle de Inativação de Cliente (Card #57 / RF0023)
+  const [isConfirmInactivateOpen, setIsConfirmInactivateOpen] = useState(false);
+  const [isInactivating, setIsInactivating] = useState(false);
+
+  const handleConfirmInactivate = async () => {
+    if (!selectedClient) return;
+    setIsInactivating(true);
+    try {
+      const res = await inativarCliente(selectedClient.id);
+      if (res.success) {
+        setIsConfirmInactivateOpen(false);
+        setToastType('success');
+        setToastMessage(res.mensagem || 'Cliente inativado com sucesso.');
+        setSelectedClient(null); // Fecha a tela de detalhes para evitar exibir objeto com estado antigo
+        await carregarClientes(); // Recarrega clientes persistidos do PostgreSQL
+      } else {
+        setIsConfirmInactivateOpen(false);
+        setToastType('error');
+        setToastMessage(res.error || 'Não foi possível inativar o cliente.');
+      }
+    } catch {
+      setIsConfirmInactivateOpen(false);
+      setToastType('error');
+      setToastMessage('Falha ao conectar com o servidor para inativar o cliente.');
+    } finally {
+      setIsInactivating(false);
+    }
+  };
 
   // Controle do Modal de Cadastro de Novo Cliente (RF0021)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -428,26 +458,16 @@ export default function AdminClients() {
           <div className="client-status-toggle-action">
             {selectedClient.status === 'ATIVO' ? (
               <button
-                onClick={() => {
-                  updateCustomerStatus(selectedClient.id, 'INATIVO');
-                  setSelectedClient(prev => prev ? { ...prev, status: 'INATIVO' } : null);
-                }}
+                onClick={() => setIsConfirmInactivateOpen(true)}
                 className="btn btn-secondary btn-small btn-danger-border"
                 type="button"
               >
                 Inativar Cadastro
               </button>
             ) : (
-              <button
-                onClick={() => {
-                  updateCustomerStatus(selectedClient.id, 'ATIVO');
-                  setSelectedClient(prev => prev ? { ...prev, status: 'ATIVO' } : null);
-                }}
-                className="btn btn-primary btn-small btn-success-bg"
-                type="button"
-              >
-                Reativar Cadastro
-              </button>
+              <span className="client-inactive-notice" style={{ fontSize: '0.82rem', color: '#888', fontStyle: 'italic' }}>
+                Cadastro Inativo
+              </span>
             )}
           </div>
         </div>
@@ -552,6 +572,46 @@ export default function AdminClients() {
             )}
           </div>
         </div>
+
+        {/* MODAL: Confirmação de Inativação de Cliente (Card #57 / RF0023) */}
+        <Modal
+          isOpen={isConfirmInactivateOpen}
+          onClose={() => !isInactivating && setIsConfirmInactivateOpen(false)}
+          title="Inativar Cliente"
+          className="rw-inactivate-confirm-modal"
+        >
+          <div className="rw-inactivate-confirm-body">
+            <p className="rw-inactivate-confirm-text">
+              Deseja realmente inativar o cadastro de <strong>{selectedClient.name}</strong>?
+            </p>
+            <div className="rw-inactivate-confirm-footer">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setIsConfirmInactivateOpen(false)}
+                disabled={isInactivating}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ backgroundColor: '#dc3545', borderColor: '#dc3545', color: '#fff' }}
+                onClick={handleConfirmInactivate}
+                disabled={isInactivating}
+              >
+                {isInactivating ? 'Inativando...' : 'Confirmar Inativação'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Toast de Notificação no Modo Detalhes */}
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setToastMessage(null)}
+        />
       </div>
     );
   }
