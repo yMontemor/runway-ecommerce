@@ -68,7 +68,7 @@ export default function Header() {
           </button>
 
           {/* Catálogo com ícone de grid/módulos */}
-          <Link to="/catalogo" className="nav-item">
+          <Link to="/catalogo" className="nav-item" data-cy="nav-catalogo">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="7" height="7"></rect>
               <rect x="14" y="3" width="7" height="7"></rect>
@@ -97,7 +97,7 @@ export default function Header() {
           </Link>
 
           {/* Carrinho com badge */}
-          <Link to="/carrinho" className="nav-item cart-btn" title="Carrinho">
+          <Link to="/carrinho" className="nav-item cart-btn" title="Carrinho" data-cy="nav-carrinho">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="9" cy="21" r="1"></circle>
               <circle cx="20" cy="21" r="1"></circle>

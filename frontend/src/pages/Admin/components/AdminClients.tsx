@@ -483,11 +483,16 @@ export default function AdminClients() {
                 onClick={() => setIsConfirmInactivateOpen(true)}
                 className="btn btn-secondary btn-small btn-danger-border"
                 type="button"
+                data-cy="cliente-inativar-btn"
               >
                 Inativar Cadastro
               </button>
             ) : (
-              <span className="client-inactive-notice" style={{ fontSize: '0.82rem', color: '#888', fontStyle: 'italic' }}>
+              <span
+                className="client-inactive-notice"
+                style={{ fontSize: '0.82rem', color: '#888', fontStyle: 'italic' }}
+                data-cy="cliente-inativo-aviso"
+              >
                 Cadastro Inativo
               </span>
             )}
@@ -622,6 +627,7 @@ export default function AdminClients() {
                 className="btn btn-secondary"
                 onClick={() => setIsConfirmInactivateOpen(false)}
                 disabled={isInactivating}
+                data-cy="cancelar-inativacao"
               >
                 Cancelar
               </button>
@@ -631,6 +637,7 @@ export default function AdminClients() {
                 style={{ backgroundColor: '#dc3545', borderColor: '#dc3545', color: '#fff' }}
                 onClick={handleConfirmInactivate}
                 disabled={isInactivating}
+                data-cy="confirmar-inativacao"
               >
                 {isInactivating ? 'Inativando...' : 'Confirmar Inativação'}
               </button>

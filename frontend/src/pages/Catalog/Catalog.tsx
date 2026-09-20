@@ -247,6 +247,7 @@ export default function Catalog() {
                 className="btn btn-primary confirm-btn"
                 disabled={selectedSize === null}
                 onClick={handleConfirmAddToCart}
+                data-cy="btn-confirmar-adicionar-carrinho"
               >
                 ADICIONAR AO CARRINHO
               </button>
@@ -261,8 +262,8 @@ export default function Catalog() {
         onClose={() => setIsInactiveModalOpen(false)}
         title="Cliente Inativo"
       >
-        <div className="inactive-client-modal">
-          <p className="inactive-warning-text">
+        <div className="inactive-client-modal" data-cy="modal-cliente-inativo">
+          <p className="inactive-warning-text" data-cy="aviso-cliente-inativo">
             Clientes inativos não podem realizar compras.
           </p>
           <div className="modal-actions">
@@ -270,6 +271,7 @@ export default function Catalog() {
               type="button" 
               className="btn btn-secondary"
               onClick={() => setIsInactiveModalOpen(false)}
+              data-cy="btn-fechar-aviso-inativo"
             >
               FECHAR
             </button>

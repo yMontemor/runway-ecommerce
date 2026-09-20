@@ -541,7 +541,7 @@ export default function CustomerArea() {
             <h2 className="profile-client-name">{activeCustomer.name || 'Cliente'}</h2>
             <p className="profile-client-email">{activeCustomer.email}</p>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <span className={`status-badge ${activeCustomer.status.toLowerCase()}`}>
+              <span className={`status-badge ${activeCustomer.status.toLowerCase()}`} data-cy="perfil-status-badge">
                 Conta {activeCustomer.status}
               </span>
             </div>
@@ -556,6 +556,7 @@ export default function CustomerArea() {
                 }}
                 className="btn btn-secondary btn-inactivate"
                 type="button"
+                data-cy="perfil-inativar-btn"
               >
                 INATIVAR MEU CADASTRO
               </button>
@@ -1096,6 +1097,7 @@ export default function CustomerArea() {
               className="btn btn-secondary"
               disabled={isInactivating}
               type="button"
+              data-cy="perfil-cancelar-inativacao"
             >
               CANCELAR
             </button>
@@ -1105,6 +1107,7 @@ export default function CustomerArea() {
               style={{ backgroundColor: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
               disabled={isInactivating}
               type="button"
+              data-cy="perfil-confirmar-inativacao"
             >
               {isInactivating ? 'INATIVANDO...' : 'CONFIRMAR INATIVAÇÃO'}
             </button>

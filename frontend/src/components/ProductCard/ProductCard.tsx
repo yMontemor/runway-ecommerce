@@ -62,6 +62,7 @@ export default function ProductCard({ product, onAddToCartClick }: ProductCardPr
             type="button" 
             onClick={() => onAddToCartClick(product)} 
             className="card-btn-add"
+            data-cy="btn-card-adicionar"
           >
             + ADICIONAR
           </button>
