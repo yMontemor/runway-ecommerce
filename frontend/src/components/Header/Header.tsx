@@ -122,6 +122,7 @@ export default function Header() {
               type="button"
               aria-expanded={showDropdown}
               title="Alternar Cliente / Admin"
+              data-cy="user-dropdown"
             >
               <span className="user-name">{activeCustomer.name ? activeCustomer.name.split(' ')[0] : 'Cliente'}</span>
               <span className="dropdown-arrow" style={{ fontSize: '0.6rem', marginLeft: '0.15rem' }}>▼</span>
@@ -153,7 +154,12 @@ export default function Header() {
                 )}
                 <div className="dropdown-divider"></div>
                 <div className="dropdown-section-title">Demonstração</div>
-                <button onClick={handleAdminSelect} className="dropdown-item admin-item" type="button">
+                <button
+                  onClick={handleAdminSelect}
+                  className="dropdown-item admin-item"
+                  type="button"
+                  data-cy="painel-admin"
+                >
                   Painel Administrativo
                 </button>
               </div>

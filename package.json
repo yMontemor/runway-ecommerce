@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "cy:run": "cypress run"
+  },
+  "devDependencies": {
+    "cypress": "^16.1.0"
+  },
+  "allowScripts": {
+    "cypress@16.1.0": true
+  }
+}

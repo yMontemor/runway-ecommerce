@@ -27,7 +27,7 @@ export default function Toast({
   if (!message) return null;
 
   return (
-    <div className={`rw-toast-container rw-toast-${type}`} role="alert" aria-live="assertive">
+    <div className={`rw-toast-container rw-toast-${type}`} role="alert" aria-live="assertive" data-cy="toast-container">
       <div className="rw-toast-icon">
         {type === 'error' && (
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -58,7 +58,7 @@ export default function Toast({
         )}
       </div>
 
-      <div className="rw-toast-message">
+      <div className="rw-toast-message" data-cy="toast-message">
         {message}
       </div>
 

@@ -663,6 +663,7 @@ export default function AdminClients() {
                 onChange={e => setSearch(e.target.value)}
                 className="admin-search-input"
                 style={{ minWidth: '240px' }}
+                data-cy="admin-search-input"
               />
             </div>
             <button
@@ -670,6 +671,7 @@ export default function AdminClients() {
               className="btn btn-secondary btn-small"
               disabled={isLoading}
               title="Buscar clientes"
+              data-cy="admin-search-btn"
             >
               Buscar
             </button>
@@ -719,6 +721,7 @@ export default function AdminClients() {
             onClick={handleOpenAddModal}
             className="btn btn-primary"
             style={{ padding: '0.45rem 1rem', fontSize: '0.85rem' }}
+            data-cy="novo-cliente"
           >
             + NOVO CLIENTE
           </button>
@@ -873,7 +876,7 @@ export default function AdminClients() {
 
       {/* TABELA DE CLIENTES PERSISTIDOS (RF0024 / RNF0011) */}
       <div className="admin-table-container">
-        <table className="admin-table">
+        <table className="admin-table" data-cy="tabela-clientes">
           <thead>
             <tr>
               <th>Código</th>
@@ -925,11 +928,11 @@ export default function AdminClients() {
               </tr>
             ) : (
               clientsList.map(c => (
-                <tr key={c.id}>
-                  <td><span style={{ fontSize: '0.78rem', color: '#888' }}>{c.id}</span></td>
-                  <td><strong>{c.name}</strong></td>
-                  <td>{c.cpf}</td>
-                  <td>{c.email}</td>
+                <tr key={c.id} data-cy="cliente-row">
+                  <td><span style={{ fontSize: '0.78rem', color: '#888' }} data-cy="cliente-codigo">{c.id}</span></td>
+                  <td data-cy="cliente-nome-cell"><strong>{c.name}</strong></td>
+                  <td data-cy="cliente-cpf-cell">{c.cpf}</td>
+                  <td data-cy="cliente-email-cell">{c.email}</td>
                   <td>
                     <span className={`status-badge ${c.status.toLowerCase()}`}>
                       {c.status}
@@ -983,7 +986,7 @@ export default function AdminClients() {
           {/* Corpo com Rolagem Suave */}
           <div className="rw-client-form-scroll">
             {formError && (
-              <div className="rw-form-error-banner">
+              <div className="rw-form-error-banner" data-cy="form-error-banner">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
                   <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -1010,6 +1013,7 @@ export default function AdminClients() {
                   onChange={e => setClientForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Ex: João da Silva"
                   required
+                  data-cy="cliente-nome"
                 />
               </div>
 
@@ -1025,6 +1029,7 @@ export default function AdminClients() {
                     placeholder="000.000.000-00"
                     maxLength={14}
                     required
+                    data-cy="cliente-cpf"
                   />
                 </div>
                 <div className="rw-form-group flex-1">
@@ -1038,6 +1043,7 @@ export default function AdminClients() {
                     placeholder="dd/mm/aaaa"
                     maxLength={10}
                     required
+                    data-cy="cliente-data-nascimento"
                   />
                 </div>
                 <div className="rw-form-group flex-1">
@@ -1048,6 +1054,7 @@ export default function AdminClients() {
                     value={clientForm.gender}
                     onChange={e => setClientForm(prev => ({ ...prev, gender: e.target.value }))}
                     required
+                    data-cy="cliente-genero"
                   >
                     <option value="">Selecione...</option>
                     <option value="Feminino">Feminino</option>
@@ -1075,6 +1082,7 @@ export default function AdminClients() {
                   onChange={e => setClientForm(prev => ({ ...prev, email: e.target.value }))}
                   placeholder="cliente@email.com"
                   required
+                  data-cy="cliente-email"
                 />
               </div>
 
@@ -1087,6 +1095,7 @@ export default function AdminClients() {
                     value={clientForm.phoneType}
                     onChange={e => setClientForm(prev => ({ ...prev, phoneType: e.target.value }))}
                     required
+                    data-cy="cliente-telefone-tipo"
                   >
                     <option value="">Selecione...</option>
                     <option value="Celular">Celular</option>
@@ -1105,6 +1114,7 @@ export default function AdminClients() {
                     placeholder="11"
                     maxLength={2}
                     required
+                    data-cy="cliente-telefone-ddd"
                   />
                 </div>
                 <div className="rw-form-group flex-2-5">
@@ -1118,6 +1128,7 @@ export default function AdminClients() {
                     placeholder="98765-4321"
                     maxLength={10}
                     required
+                    data-cy="cliente-telefone-numero"
                   />
                 </div>
               </div>
@@ -1141,6 +1152,7 @@ export default function AdminClients() {
                     onChange={e => setClientForm(prev => ({ ...prev, senha: e.target.value }))}
                     placeholder="Mínimo 8 caracteres"
                     required
+                    data-cy="cliente-senha"
                   />
                   <small style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem', color: '#888' }}>
                     Mínimo 8 caracteres com letras maiúsculas, minúsculas e caractere especial (!, @, #, $, etc.).
@@ -1156,6 +1168,7 @@ export default function AdminClients() {
                     onChange={e => setClientForm(prev => ({ ...prev, confirmacaoSenha: e.target.value }))}
                     placeholder="Repita a senha digitada"
                     required
+                    data-cy="cliente-confirmacao-senha"
                   />
                 </div>
               </div>
@@ -1182,6 +1195,7 @@ export default function AdminClients() {
                     }))}
                     placeholder="Ex: Minha Casa, Trabalho"
                     required
+                    data-cy="endereco-identificacao"
                   />
                 </div>
                 <div className="rw-form-group flex-1">
@@ -1195,6 +1209,7 @@ export default function AdminClients() {
                       initialAddress: { ...prev.initialAddress, residenceType: e.target.value }
                     }))}
                     required
+                    data-cy="endereco-tipo-residencia"
                   >
                     <option value="">Selecione...</option>
                     <option value="Casa">Casa</option>
@@ -1218,6 +1233,7 @@ export default function AdminClients() {
                       initialAddress: { ...prev.initialAddress, streetType: e.target.value }
                     }))}
                     required
+                    data-cy="endereco-tipo-logradouro"
                   >
                     <option value="">Selecione...</option>
                     <option value="Rua">Rua</option>
@@ -1242,6 +1258,7 @@ export default function AdminClients() {
                     }))}
                     placeholder="Nome da rua / avenida"
                     required
+                    data-cy="endereco-logradouro"
                   />
                 </div>
               </div>
@@ -1260,6 +1277,7 @@ export default function AdminClients() {
                     }))}
                     placeholder="123"
                     required
+                    data-cy="endereco-numero"
                   />
                 </div>
                 <div className="rw-form-group flex-3">
@@ -1274,6 +1292,7 @@ export default function AdminClients() {
                       initialAddress: { ...prev.initialAddress, complement: e.target.value }
                     }))}
                     placeholder="Apto, Bloco (opcional)"
+                    data-cy="endereco-complemento"
                   />
                 </div>
               </div>
@@ -1291,6 +1310,7 @@ export default function AdminClients() {
                   }))}
                   placeholder="Bairro"
                   required
+                  data-cy="endereco-bairro"
                 />
               </div>
 
@@ -1306,6 +1326,7 @@ export default function AdminClients() {
                     placeholder="00000-000"
                     maxLength={9}
                     required
+                    data-cy="endereco-cep"
                   />
                 </div>
                 <div className="rw-form-group flex-2-5">
@@ -1321,6 +1342,7 @@ export default function AdminClients() {
                     }))}
                     placeholder="Cidade"
                     required
+                    data-cy="endereco-cidade"
                   />
                 </div>
                 <div className="rw-form-group flex-2">
@@ -1334,6 +1356,7 @@ export default function AdminClients() {
                       initialAddress: { ...prev.initialAddress, state: e.target.value }
                     }))}
                     required
+                    data-cy="endereco-estado"
                   >
                     <option value="">Selecione...</option>
                     {BRAZILIAN_STATES.map(uf => (
@@ -1356,6 +1379,7 @@ export default function AdminClients() {
                   autoComplete="off"
                   tabIndex={-1}
                   style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', cursor: 'default', color: '#ccc' }}
+                  data-cy="endereco-pais"
                 />
                 <small style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem', color: '#888' }}>
                   Atendimento fixo em território nacional.
@@ -1374,6 +1398,7 @@ export default function AdminClients() {
                     initialAddress: { ...prev.initialAddress, observations: e.target.value }
                   }))}
                   placeholder="Instruções de entrega, pontos de referência... (opcional)"
+                  data-cy="endereco-observacoes"
                 />
               </div>
 
@@ -1410,10 +1435,16 @@ export default function AdminClients() {
                 setIsAddModalOpen(false);
                 setToastMessage(null);
               }}
+              data-cy="cancelar-cliente"
             >
               CANCELAR
             </button>
-            <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isSubmitting}>
+            <button
+              type="submit"
+              className="btn btn-primary rw-btn-submit"
+              disabled={isSubmitting}
+              data-cy="salvar-cliente"
+            >
               {isSubmitting ? 'CADASTRANDO...' : 'CADASTRAR CLIENTE'}
             </button>
           </div>
