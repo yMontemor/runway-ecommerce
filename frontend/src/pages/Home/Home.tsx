@@ -141,7 +141,7 @@ export default function Home() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.88rem', margin: 0 }}>
-            Sua conta está inativa. Reative sua conta na área do cliente para adicionar produtos ao carrinho.
+            Sua conta está inativa. Clientes inativos não podem realizar compras.
           </p>
           <div className="modal-actions" style={{ border: 'none', padding: 0 }}>
             <button type="button" className="btn btn-primary" onClick={() => setInactiveWarning(false)}>ENTENDI</button>
