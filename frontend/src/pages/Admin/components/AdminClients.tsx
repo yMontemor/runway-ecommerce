@@ -698,6 +698,7 @@ export default function AdminClients() {
             }}
             className="admin-filter-select"
             aria-label="Filtrar clientes por situação cadastral"
+            data-cy="admin-status-select"
           >
             <option value="TODOS">Status: Todos</option>
             <option value="ATIVO">Apenas Ativos</option>
@@ -710,6 +711,7 @@ export default function AdminClients() {
             onClick={() => setIsAdvancedFiltersOpen(prev => !prev)}
             className={`btn ${isAdvancedFiltersOpen ? 'btn-primary' : 'btn-secondary'} btn-small`}
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}
+            data-cy="toggle-filtros-avancados"
           >
             <span>Filtros Avançados</span>
             <span style={{ fontSize: '0.7rem' }}>{isAdvancedFiltersOpen ? '▲' : '▼'}</span>
@@ -752,6 +754,7 @@ export default function AdminClients() {
                   placeholder="Ex: CLI-0001"
                   value={filterCodigo}
                   onChange={e => setFilterCodigo(e.target.value)}
+                  data-cy="filtro-codigo"
                 />
               </div>
 
@@ -765,6 +768,7 @@ export default function AdminClients() {
                   placeholder="Nome do cliente"
                   value={filterNome}
                   onChange={e => setFilterNome(e.target.value)}
+                  data-cy="filtro-nome"
                 />
               </div>
 
@@ -778,6 +782,7 @@ export default function AdminClients() {
                   placeholder="Com ou sem máscara"
                   value={filterCpf}
                   onChange={e => setFilterCpf(e.target.value)}
+                  data-cy="filtro-cpf"
                 />
               </div>
 
@@ -791,6 +796,7 @@ export default function AdminClients() {
                   placeholder="cliente@email.com"
                   value={filterEmail}
                   onChange={e => setFilterEmail(e.target.value)}
+                  data-cy="filtro-email"
                 />
               </div>
 
@@ -802,6 +808,7 @@ export default function AdminClients() {
                   className="rw-select adv-filter-input"
                   value={filterGenero}
                   onChange={e => setFilterGenero(e.target.value)}
+                  data-cy="filtro-genero"
                 >
                   <option value="">Todos</option>
                   <option value="Feminino">Feminino</option>
@@ -821,6 +828,7 @@ export default function AdminClients() {
                   value={filterDataNascimento}
                   onChange={e => setFilterDataNascimento(maskBirthDate(e.target.value))}
                   maxLength={10}
+                  data-cy="filtro-data-nascimento"
                 />
               </div>
 
@@ -834,6 +842,7 @@ export default function AdminClients() {
                   placeholder="DDD + número ou número"
                   value={filterTelefone}
                   onChange={e => setFilterTelefone(e.target.value)}
+                  data-cy="filtro-telefone"
                 />
               </div>
 
@@ -845,6 +854,7 @@ export default function AdminClients() {
                   className="rw-select adv-filter-input"
                   value={filterAtivo}
                   onChange={e => setFilterAtivo(e.target.value as 'TODOS' | 'ATIVO' | 'INATIVO')}
+                  data-cy="filtro-status"
                 >
                   <option value="TODOS">Todos</option>
                   <option value="ATIVO">Ativo</option>
@@ -859,6 +869,7 @@ export default function AdminClients() {
                 onClick={limparFiltros}
                 className="btn btn-secondary btn-small"
                 disabled={isLoading}
+                data-cy="btn-limpar-filtros"
               >
                 Limpar Filtros
               </button>
@@ -866,6 +877,7 @@ export default function AdminClients() {
                 type="submit"
                 className="btn btn-primary btn-small"
                 disabled={isLoading}
+                data-cy="btn-aplicar-filtros"
               >
                 {isLoading ? 'Filtrando...' : 'Aplicar Filtros'}
               </button>
@@ -914,13 +926,14 @@ export default function AdminClients() {
             ) : clientsList.length === 0 ? (
               <tr>
                 <td colSpan={7} style={{ textAlign: 'center', color: '#888', padding: '2.5rem' }}>
-                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>
+                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }} data-cy="empty-state-message">
                     Nenhum cliente encontrado com os filtros selecionados.
                   </p>
                   <button
                     type="button"
                     onClick={limparFiltros}
                     className="btn btn-secondary btn-small"
+                    data-cy="btn-limpar-filtros-empty"
                   >
                     Limpar Filtros
                   </button>
@@ -934,7 +947,7 @@ export default function AdminClients() {
                   <td data-cy="cliente-cpf-cell">{c.cpf}</td>
                   <td data-cy="cliente-email-cell">{c.email}</td>
                   <td>
-                    <span className={`status-badge ${c.status.toLowerCase()}`}>
+                    <span className={`status-badge ${c.status.toLowerCase()}`} data-cy="cliente-status-cell">
                       {c.status}
                     </span>
                   </td>
