@@ -455,6 +455,7 @@ export default function AdminClients() {
             type="button" 
             onClick={() => setSelectedClient(null)} 
             className="btn-back-link"
+            data-cy="btn-voltar-clientes"
           >
             &larr; Voltar a Clientes
           </button>
@@ -465,7 +466,7 @@ export default function AdminClients() {
             {selectedClient.name.charAt(0).toUpperCase()}
           </div>
           <div className="client-name-status-block">
-            <h2 className="client-detail-name">{selectedClient.name}</h2>
+            <h2 className="client-detail-name" data-cy="detalhe-cliente-nome">{selectedClient.name}</h2>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <span className={`status-badge-inline ${selectedClient.status.toLowerCase()}`}>
                 {selectedClient.status}
@@ -500,19 +501,19 @@ export default function AdminClients() {
             <div className="panel-rows">
               <div className="panel-row">
                 <span className="row-label">Código / ID</span>
-                <span className="row-val">{selectedClient.id}</span>
+                <span className="row-val" data-cy="detalhe-cliente-codigo">{selectedClient.id}</span>
               </div>
               <div className="panel-row">
                 <span className="row-label">CPF</span>
-                <span className="row-val">{selectedClient.cpf}</span>
+                <span className="row-val" data-cy="detalhe-cliente-cpf">{selectedClient.cpf}</span>
               </div>
               <div className="panel-row">
                 <span className="row-label">E-mail</span>
-                <span className="row-val">{selectedClient.email}</span>
+                <span className="row-val" data-cy="detalhe-cliente-email">{selectedClient.email}</span>
               </div>
               <div className="panel-row">
                 <span className="row-label">Telefone</span>
-                <span className="row-val">
+                <span className="row-val" data-cy="detalhe-cliente-telefone">
                   {selectedClient.phoneDdd && selectedClient.phoneNumber 
                     ? `(${selectedClient.phoneDdd}) ${selectedClient.phoneNumber} (${selectedClient.phoneType || 'Celular'})` 
                     : `${selectedClient.phone} (${selectedClient.phoneType || 'Celular'})`}
@@ -520,15 +521,15 @@ export default function AdminClients() {
               </div>
               <div className="panel-row">
                 <span className="row-label">Gênero</span>
-                <span className="row-val">{selectedClient.gender}</span>
+                <span className="row-val" data-cy="detalhe-cliente-genero">{selectedClient.gender}</span>
               </div>
               <div className="panel-row">
                 <span className="row-label">Nascimento</span>
-                <span className="row-val">{selectedClient.birthDate}</span>
+                <span className="row-val" data-cy="detalhe-cliente-nascimento">{selectedClient.birthDate}</span>
               </div>
               <div className="panel-row">
                 <span className="row-label">Ranking Numérico</span>
-                <span className="row-val" style={{ color: 'var(--color-primary)' }}>★ {selectedClient.ranking ?? 1} (Pontuação base)</span>
+                <span className="row-val" style={{ color: 'var(--color-primary)' }} data-cy="detalhe-cliente-ranking">★ {selectedClient.ranking ?? 1} (Pontuação base)</span>
               </div>
             </div>
           </div>
@@ -958,6 +959,7 @@ export default function AdminClients() {
                         onClick={() => handleOpenDetails(c)}
                         className="btn btn-secondary btn-small"
                         type="button"
+                        data-cy="cliente-detalhes-btn"
                       >
                         Detalhes
                       </button>
@@ -965,6 +967,7 @@ export default function AdminClients() {
                         onClick={() => handleOpenEditModal(c)}
                         className="btn btn-primary btn-small"
                         type="button"
+                        data-cy="cliente-editar-btn"
                       >
                         Editar
                       </button>
@@ -1477,7 +1480,7 @@ export default function AdminClients() {
         <form onSubmit={handleSaveEditClient} className="rw-client-modal-body" style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', margin: 0 }}>
           <div className="rw-client-form-scroll">
             {editFormError && (
-              <div className="rw-form-error-banner">
+              <div className="rw-form-error-banner" data-cy="edit-form-error-banner">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
                   <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -1506,6 +1509,7 @@ export default function AdminClients() {
                     autoComplete="off"
                     tabIndex={-1}
                     style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', cursor: 'default', color: '#aaa' }}
+                    data-cy="editar-cliente-codigo"
                   />
                   <small style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem', color: '#888' }}>
                     Identificador único gerado no cadastro (somente leitura).
@@ -1523,6 +1527,7 @@ export default function AdminClients() {
                     autoComplete="off"
                     tabIndex={-1}
                     style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', cursor: 'default', color: '#aaa' }}
+                    data-cy="editar-cliente-cpf"
                   />
                   <small style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem', color: '#888' }}>
                     Documento fixo do cliente (somente leitura).
@@ -1540,6 +1545,7 @@ export default function AdminClients() {
                   onChange={e => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Ex: João da Silva"
                   required
+                  data-cy="editar-cliente-nome"
                 />
               </div>
 
@@ -1555,6 +1561,7 @@ export default function AdminClients() {
                     placeholder="dd/mm/aaaa"
                     maxLength={10}
                     required
+                    data-cy="editar-cliente-data-nascimento"
                   />
                 </div>
                 <div className="rw-form-group flex-1">
@@ -1565,6 +1572,7 @@ export default function AdminClients() {
                     value={editFormData.gender}
                     onChange={e => setEditFormData(prev => ({ ...prev, gender: e.target.value }))}
                     required
+                    data-cy="editar-cliente-genero"
                   >
                     <option value="">Selecione...</option>
                     <option value="Feminino">Feminino</option>
@@ -1592,6 +1600,7 @@ export default function AdminClients() {
                   onChange={e => setEditFormData(prev => ({ ...prev, email: e.target.value }))}
                   placeholder="cliente@email.com"
                   required
+                  data-cy="editar-cliente-email"
                 />
               </div>
 
@@ -1604,6 +1613,7 @@ export default function AdminClients() {
                     value={editFormData.phoneType}
                     onChange={e => setEditFormData(prev => ({ ...prev, phoneType: e.target.value }))}
                     required
+                    data-cy="editar-cliente-telefone-tipo"
                   >
                     <option value="">Selecione...</option>
                     <option value="Celular">Celular</option>
@@ -1622,6 +1632,7 @@ export default function AdminClients() {
                     placeholder="11"
                     maxLength={2}
                     required
+                    data-cy="editar-cliente-telefone-ddd"
                   />
                 </div>
                 <div className="rw-form-group flex-2-5">
@@ -1635,6 +1646,7 @@ export default function AdminClients() {
                     placeholder="98765-4321"
                     maxLength={10}
                     required
+                    data-cy="editar-cliente-telefone-numero"
                   />
                 </div>
               </div>
@@ -1651,10 +1663,11 @@ export default function AdminClients() {
                 setIsEditModalOpen(false);
                 setEditFormError(null);
               }}
+              data-cy="cancelar-alteracao-cliente"
             >
               CANCELAR
             </button>
-            <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isEditSubmitting}>
+            <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isEditSubmitting} data-cy="salvar-alteracao-cliente">
               {isEditSubmitting ? 'SALVANDO...' : 'SALVAR ALTERAÇÕES'}
             </button>
           </div>

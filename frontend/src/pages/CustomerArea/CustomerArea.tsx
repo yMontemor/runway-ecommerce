@@ -610,6 +610,7 @@ export default function CustomerArea() {
                         onClick={() => setIsEditingProfile(true)}
                         className="btn btn-secondary btn-small"
                         type="button"
+                        data-cy="perfil-editar-btn"
                       >
                         EDITAR
                       </button>
@@ -622,19 +623,19 @@ export default function CustomerArea() {
                 <div className="personal-data-grid">
                   <div className="data-field">
                     <span className="field-label">Nome Completo</span>
-                    <span className="field-val">{activeCustomer.name}</span>
+                    <span className="field-val" data-cy="perfil-nome-val">{activeCustomer.name}</span>
                   </div>
                   <div className="data-field">
                     <span className="field-label">E-mail</span>
-                    <span className="field-val">{activeCustomer.email}</span>
+                    <span className="field-val" data-cy="perfil-email-val">{activeCustomer.email}</span>
                   </div>
                   <div className="data-field">
                     <span className="field-label">CPF</span>
-                    <span className="field-val">{activeCustomer.cpf}</span>
+                    <span className="field-val" data-cy="perfil-cpf-val">{activeCustomer.cpf}</span>
                   </div>
                   <div className="data-field">
                     <span className="field-label">Telefone</span>
-                    <span className="field-val">
+                    <span className="field-val" data-cy="perfil-telefone-val">
                       {activeCustomer.phoneDdd && activeCustomer.phoneNumber 
                         ? `(${activeCustomer.phoneDdd}) ${activeCustomer.phoneNumber} (${activeCustomer.phoneType || 'Celular'})`
                         : `${activeCustomer.phone} (${activeCustomer.phoneType || 'Celular'})`}
@@ -642,27 +643,30 @@ export default function CustomerArea() {
                   </div>
                   <div className="data-field">
                     <span className="field-label">Gênero</span>
-                    <span className="field-val">{activeCustomer.gender}</span>
+                    <span className="field-val" data-cy="perfil-genero-val">{activeCustomer.gender}</span>
                   </div>
                   <div className="data-field">
                     <span className="field-label">Data de Nascimento</span>
-                    <span className="field-val">{activeCustomer.birthDate}</span>
+                    <span className="field-val" data-cy="perfil-nascimento-val">{activeCustomer.birthDate}</span>
                   </div>
                 </div>
               ) : (
                 <form onSubmit={handleSaveProfile} className="personal-data-form">
                   {profileError && (
-                    <div style={{
-                      backgroundColor: 'rgba(255, 69, 69, 0.1)',
-                      border: '1px solid var(--color-danger)',
-                      color: 'var(--color-danger)',
-                      padding: '0.65rem 0.9rem',
-                      borderRadius: '6px',
-                      fontSize: '0.85rem',
-                      fontWeight: 600,
-                      marginBottom: '1rem',
-                      gridColumn: '1 / -1'
-                    }}>
+                    <div
+                      data-cy="perfil-error-banner"
+                      style={{
+                        backgroundColor: 'rgba(255, 69, 69, 0.1)',
+                        border: '1px solid var(--color-danger)',
+                        color: 'var(--color-danger)',
+                        padding: '0.65rem 0.9rem',
+                        borderRadius: '6px',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        marginBottom: '1rem',
+                        gridColumn: '1 / -1'
+                      }}
+                    >
                       ⚠️ {profileError}
                     </div>
                   )}
@@ -675,6 +679,7 @@ export default function CustomerArea() {
                         value={profileForm.name}
                         onChange={e => setProfileForm(p => ({ ...p, name: e.target.value }))}
                         required
+                        data-cy="perfil-input-nome"
                       />
                     </div>
                     <div className="form-group">
@@ -685,11 +690,12 @@ export default function CustomerArea() {
                         value={profileForm.email}
                         onChange={e => setProfileForm(p => ({ ...p, email: e.target.value }))}
                         required
+                        data-cy="perfil-input-email"
                       />
                     </div>
                     <div className="form-group">
                       <label>CPF (Apenas Leitura)</label>
-                      <input type="text" value={activeCustomer.cpf} disabled className="disabled-field" />
+                      <input type="text" value={activeCustomer.cpf} disabled className="disabled-field" data-cy="perfil-input-cpf" />
                     </div>
                     <div className="form-group">
                       <label htmlFor="edit-phone-type">Tipo de Telefone</label>
@@ -697,6 +703,7 @@ export default function CustomerArea() {
                         id="edit-phone-type"
                         value={profileForm.phoneType}
                         onChange={e => setProfileForm(p => ({ ...p, phoneType: e.target.value }))}
+                        data-cy="perfil-select-phone-type"
                       >
                         <option value="Celular">Celular</option>
                         <option value="Fixo">Fixo</option>
@@ -713,6 +720,7 @@ export default function CustomerArea() {
                           onChange={e => setProfileForm(p => ({ ...p, phoneDdd: e.target.value.replace(/\D/g, '').slice(0, 2) }))}
                           maxLength={2}
                           required
+                          data-cy="perfil-input-phone-ddd"
                         />
                       </div>
                       <div style={{ flex: 1 }}>
@@ -724,6 +732,7 @@ export default function CustomerArea() {
                           onChange={e => handleEditPhoneNumChange(e.target.value)}
                           maxLength={10}
                           required
+                          data-cy="perfil-input-phone-num"
                         />
                       </div>
                     </div>
@@ -733,6 +742,7 @@ export default function CustomerArea() {
                         id="edit-gender"
                         value={profileForm.gender}
                         onChange={e => setProfileForm(p => ({ ...p, gender: e.target.value }))}
+                        data-cy="perfil-select-gender"
                       >
                         <option value="Feminino">Feminino</option>
                         <option value="Masculino">Masculino</option>
@@ -749,6 +759,7 @@ export default function CustomerArea() {
                         placeholder="dd/mm/aaaa"
                         maxLength={10}
                         required
+                        data-cy="perfil-input-birth"
                       />
                     </div>
                   </div>
@@ -769,6 +780,7 @@ export default function CustomerArea() {
                         setIsEditingProfile(false);
                       }}
                       className="btn btn-secondary btn-small"
+                      data-cy="perfil-cancelar-btn"
                     >
                       CANCELAR
                     </button>
@@ -776,6 +788,7 @@ export default function CustomerArea() {
                       type="submit"
                       className="btn btn-primary btn-small"
                       disabled={isSavingProfile}
+                      data-cy="perfil-salvar-btn"
                     >
                       {isSavingProfile ? 'SALVANDO...' : 'SALVAR ALTERAÇÕES'}
                     </button>

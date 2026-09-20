@@ -107,7 +107,7 @@ export default function Header() {
           </Link>
 
           {/* Perfil do Usuário (Apenas ícone de silhueta de busto) */}
-          <Link to="/cliente?tab=perfil" className="nav-item profile-icon-only" title="Meu Perfil">
+          <Link to="/cliente?tab=perfil" className="nav-item profile-icon-only" title="Meu Perfil" data-cy="nav-perfil">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
               <circle cx="12" cy="7" r="4"></circle>
@@ -143,6 +143,7 @@ export default function Header() {
                         onClick={() => handleCustomerSelect(c.id)}
                         className={`dropdown-item ${c.id === activeCustomer.id ? 'active' : ''}`}
                         type="button"
+                        data-cy={`select-customer-${c.id}`}
                       >
                         <span className="cust-name-text">{c.name ? c.name.split(' ')[0] : c.id}</span>
                         <span className={`status-tag ${c.status.toLowerCase()}`}>
