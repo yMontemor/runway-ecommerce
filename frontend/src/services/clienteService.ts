@@ -435,8 +435,14 @@ export async function alterarCliente(
  */
 export async function alterarSenhaCliente(
   codigoCliente: string,
-  dados: ClienteSenhaUpdateRequestDto
+  dadosOrNovaSenha: ClienteSenhaUpdateRequestDto | string,
+  confirmacao?: string
 ): Promise<AlteracaoSenhaResult> {
+  const dados: ClienteSenhaUpdateRequestDto =
+    typeof dadosOrNovaSenha === 'string'
+      ? { novaSenha: dadosOrNovaSenha, confirmacaoNovaSenha: confirmacao || '' }
+      : dadosOrNovaSenha;
+
   try {
     const response = await fetch(`${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/senha`, {
       method: 'PATCH',
@@ -940,4 +946,17 @@ export async function consultarClientes(filtro?: ClienteFiltro): Promise<Consult
       clientes: []
     };
   }
+}
+
+/**
+ * Consulta pontual de um cliente pelo seu código único CLI-XXXX.
+ * Utiliza internamente consultarClientes({ codigo }) e retorna o primeiro resultado ou null.
+ */
+export async function obterClientePorCodigo(codigo: string): Promise<ClienteListItemResponseDto | null> {
+  if (!codigo?.trim()) return null;
+  const res = await consultarClientes({ codigo: codigo.trim() });
+  if (res.success && res.clientes.length > 0) {
+    return res.clientes[0];
+  }
+  return null;
 }

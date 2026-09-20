@@ -10,6 +10,7 @@ import {
   alterarCliente,
   alterarSenhaCliente,
   inativarCliente,
+  listarEnderecosCliente,
   mapListItemDtoToCustomer,
   convertDateBrToIso,
   type ClienteFiltro,
@@ -40,6 +41,26 @@ export default function AdminClients() {
   const [filterAtivo, setFilterAtivo] = useState<'TODOS' | 'ATIVO' | 'INATIVO'>('TODOS');
 
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
+  const [isLoadingAddresses, setIsLoadingAddresses] = useState(false);
+
+  const handleOpenDetails = async (client: Customer) => {
+    setSelectedClient(client);
+    setIsLoadingAddresses(true);
+    try {
+      const res = await listarEnderecosCliente(client.id);
+      if (res.success && res.addresses) {
+        setSelectedClient(prev =>
+          prev && prev.id === client.id
+            ? { ...prev, addresses: res.addresses! }
+            : prev
+        );
+      }
+    } catch {
+      // Preserva lista de endereços caso ocorra falha de rede
+    } finally {
+      setIsLoadingAddresses(false);
+    }
+  };
 
   // Controle de Inativação de Cliente (Card #57 / RF0023)
   const [isConfirmInactivateOpen, setIsConfirmInactivateOpen] = useState(false);
@@ -515,34 +536,44 @@ export default function AdminClients() {
           {/* Endereços */}
           <div className="detail-card-panel">
             <h4 className="panel-title">ENDEREÇOS ({selectedClient.addresses.length})</h4>
-            <div className="addresses-list">
-              {selectedClient.addresses.map(addr => (
-                <div key={addr.id} className="addr-block">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="addr-label">{addr.label}</span>
-                    <div style={{ display: 'flex', gap: '0.35rem' }}>
-                      {addr.isDelivery && (
-                        <span style={{ fontSize: '0.68rem', backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--color-success)' }}>
-                          Entrega
-                        </span>
-                      )}
-                      {addr.isBilling && (
-                        <span style={{ fontSize: '0.68rem', backgroundColor: 'rgba(0, 191, 255, 0.15)', color: '#00bfff', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid #00bfff' }}>
-                          Cobrança
-                        </span>
-                      )}
+            {isLoadingAddresses ? (
+              <p style={{ color: '#888', fontSize: '0.85rem', padding: '0.5rem 0' }}>
+                Carregando endereços reais do cliente...
+              </p>
+            ) : selectedClient.addresses.length === 0 ? (
+              <p className="no-items-txt" style={{ color: '#888', fontSize: '0.85rem', padding: '0.5rem 0' }}>
+                Nenhum endereço cadastrado para este cliente.
+              </p>
+            ) : (
+              <div className="addresses-list">
+                {selectedClient.addresses.map(addr => (
+                  <div key={addr.id} className="addr-block">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="addr-label">{addr.label}</span>
+                      <div style={{ display: 'flex', gap: '0.35rem' }}>
+                        {addr.isDelivery && (
+                          <span style={{ fontSize: '0.68rem', backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--color-success)' }}>
+                            Entrega
+                          </span>
+                        )}
+                        {addr.isBilling && (
+                          <span style={{ fontSize: '0.68rem', backgroundColor: 'rgba(0, 191, 255, 0.15)', color: '#00bfff', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid #00bfff' }}>
+                            Cobrança
+                          </span>
+                        )}
+                      </div>
                     </div>
+                    <span className="addr-text">
+                      {addr.streetType ? `${addr.streetType} ` : ''}{addr.street}, nº {addr.number} {addr.complement && `— ${addr.complement}`} ({addr.residenceType || 'Residencial'})
+                    </span>
+                    <span className="addr-text" style={{ color: '#aaa', fontSize: '0.8rem' }}>
+                      {addr.neighborhood} — {addr.city}/{addr.state} — {addr.country || 'Brasil'}
+                    </span>
+                    <span className="addr-cep">CEP {addr.zipCode}</span>
                   </div>
-                  <span className="addr-text">
-                    {addr.streetType ? `${addr.streetType} ` : ''}{addr.street}, nº {addr.number} {addr.complement && `— ${addr.complement}`} ({addr.residenceType || 'Residencial'})
-                  </span>
-                  <span className="addr-text" style={{ color: '#aaa', fontSize: '0.8rem' }}>
-                    {addr.neighborhood} — {addr.city}/{addr.state} — {addr.country || 'Brasil'}
-                  </span>
-                  <span className="addr-cep">CEP {addr.zipCode}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -908,7 +939,7 @@ export default function AdminClients() {
                   <td>
                     <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                       <button
-                        onClick={() => setSelectedClient(c)}
+                        onClick={() => handleOpenDetails(c)}
                         className="btn btn-secondary btn-small"
                         type="button"
                       >

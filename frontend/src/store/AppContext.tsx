@@ -1,11 +1,10 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { Customer, CartItem, Order, Coupon, Exchange, ExchangeItem, Address, CreditCard, NewCustomerInput } from '../types';
 import { mockCustomers } from '../data/customers';
 import { mockCoupons } from '../data/coupons';
 import { products } from '../data/products';
-import { maskZipCode } from '../utils/maskAndValidate';
 import {
   cadastrarCliente,
   cadastrarEnderecoCliente,
@@ -14,20 +13,47 @@ import {
   listarCartoesCliente,
   cadastrarCartaoCliente,
   definirCartaoPreferencial,
-  type CartaoCreateRequestDto
+  consultarClientes,
+  alterarCliente,
+  inativarCliente,
+  mapListItemDtoToCustomer,
+  convertDateIsoToBr,
+  type CartaoCreateRequestDto,
+  type ClienteUpdateRequestDto
 } from '../services/clienteService';
+
+const emptyCustomer: Customer = {
+  id: '',
+  name: '',
+  email: '',
+  cpf: '',
+  phone: '',
+  phoneType: 'Celular',
+  phoneDdd: '',
+  phoneNumber: '',
+  gender: '',
+  birthDate: '',
+  status: 'ATIVO',
+  ranking: 1,
+  addresses: [],
+  cards: []
+};
 
 interface AppContextType {
   customers: Customer[];
   activeCustomer: Customer;
+  isLoadingCustomers: boolean;
+  customerLoadError: string | null;
+  refreshCustomers: () => Promise<void>;
   cartsByCustomer: Record<string, CartItem[]>;
   orders: Order[];
   coupons: Coupon[];
   exchanges: Exchange[];
   setActiveCustomer: (id: string) => void;
   addCustomer: (data: NewCustomerInput) => Promise<{ success: boolean; error?: string; customer?: Customer }>;
-  updateCustomerStatus: (id: string, status: 'ATIVO' | 'INATIVO') => void;
-  addToCart: (productId: string, size: number, quantity: number) => { success: boolean; isInactive?: boolean };
+  updateCustomerProfile: (codigo: string, payload: ClienteUpdateRequestDto) => Promise<{ success: boolean; error?: string }>;
+  inativarCustomer: (codigo: string) => Promise<{ success: boolean; error?: string; mensagem?: string }>;
+  addToCart: (productId: string, size: number, quantity: number) => { success: boolean; isInactive?: boolean; notReady?: boolean };
   updateCartQuantity: (productId: string, size: number, delta: number) => void;
   removeFromCart: (productId: string, size: number) => void;
   clearCart: (customerId: string) => void;
@@ -54,7 +80,6 @@ interface AppContextType {
   ) => void;
   updateExchangeStatus: (exchangeId: string, status: Exchange['status'], returnToStockSimulated?: boolean) => void;
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
-  updateCustomerProfile: (updatedCustomer: Customer) => void;
   addCustomerAddress: (customerId: string, address: Omit<Address, 'id'>) => Promise<{ success: boolean; error?: string; address?: Address }>;
   updateCustomerAddress: (customerId: string, address: Address) => Promise<{ success: boolean; error?: string; address?: Address }>;
   refreshCustomerAddresses: (customerId: string) => Promise<void>;
@@ -80,8 +105,10 @@ export function useApp() {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [customers, setCustomers] = useState<Customer[]>(mockCustomers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [activeCustomerId, setActiveCustomerId] = useState<string>('CLI-0001');
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+  const [customerLoadError, setCustomerLoadError] = useState<string | null>(null);
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
 
   const toggleChatbot = () => setIsChatbotOpen(prev => !prev);
@@ -204,22 +231,108 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Lista de trocas
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
 
-  // Determinar cliente ativo
-  const activeCustomer = customers.find(c => c.id === activeCustomerId) || customers[0];
+  // Determinar cliente ativo a partir da lista real persistida
+  const activeCustomer = useMemo(() => {
+    return customers.find(c => c.id === activeCustomerId) || customers[0] || emptyCustomer;
+  }, [customers, activeCustomerId]);
 
   const setActiveCustomer = (id: string) => {
     setActiveCustomerId(id);
+    refreshCustomerAddresses(id);
+    refreshCustomerCards(id);
   };
 
-  // Alteração de status (ATIVO/INATIVO)
-  const updateCustomerStatus = (id: string, status: 'ATIVO' | 'INATIVO') => {
-    setCustomers(prev =>
-      prev.map(c => (c.id === id ? { ...c, status } : c))
-    );
+  // Inativação lógica real no PostgreSQL via PATCH /api/clientes/{codigo}/inativar
+  const inativarCustomer = async (
+    codigo: string
+  ): Promise<{ success: boolean; error?: string; mensagem?: string }> => {
+    const res = await inativarCliente(codigo);
+    if (res.success) {
+      setCustomers(prev =>
+        prev.map(c =>
+          c.id === codigo
+            ? { ...c, status: 'INATIVO' }
+            : c
+        )
+      );
+      return { success: true, mensagem: res.mensagem };
+    }
+    return { success: false, error: res.error };
   };
+
+  // Carrega endereços persistidos do PostgreSQL para um cliente
+  const refreshCustomerAddresses = useCallback(async (customerId: string) => {
+    if (!customerId) return;
+    const result = await listarEnderecosCliente(customerId);
+    if (result.success && result.addresses) {
+      setCustomers(prev =>
+        prev.map(c =>
+          c.id === customerId
+            ? { ...c, addresses: result.addresses! }
+            : c
+        )
+      );
+    }
+  }, []);
+
+  // Carrega cartões persistidos do PostgreSQL para um cliente
+  const refreshCustomerCards = useCallback(async (customerId: string) => {
+    if (!customerId) return;
+    const result = await listarCartoesCliente(customerId);
+    if (result.success && result.cards) {
+      setCustomers(prev =>
+        prev.map(c =>
+          c.id === customerId
+            ? { ...c, cards: result.cards! }
+            : c
+        )
+      );
+    }
+  }, []);
+
+  // Carga inicial dos clientes reais persistidos no PostgreSQL
+  const carregarClientesReais = useCallback(async () => {
+    setIsLoadingCustomers(true);
+    try {
+      const res = await consultarClientes();
+      if (res.success) {
+        const mapped = res.clientes.map(mapListItemDtoToCustomer);
+        setCustomers(mapped);
+        setCustomerLoadError(null);
+        if (mapped.length > 0) {
+          const exists = mapped.some(c => c.id === activeCustomerId);
+          const targetId = exists ? activeCustomerId : mapped[0].id;
+          if (!exists) {
+            setActiveCustomerId(targetId);
+          }
+          await Promise.all([
+            refreshCustomerAddresses(targetId),
+            refreshCustomerCards(targetId)
+          ]);
+        }
+      } else {
+        setCustomerLoadError(res.error || 'Não foi possível carregar os clientes do servidor.');
+      }
+    } catch {
+      setCustomerLoadError('Falha de conexão com a API do RunWay.');
+    } finally {
+      setIsLoadingCustomers(false);
+    }
+  }, [activeCustomerId, refreshCustomerAddresses, refreshCustomerCards]);
+
+  useEffect(() => {
+    carregarClientesReais();
+  }, []);
 
   // Adicionar produto ao carrinho do cliente ativo
   const addToCart = (productId: string, size: number, quantity: number) => {
+    if (!activeCustomer.id || isLoadingCustomers) {
+      return {
+        success: false,
+        notReady: true
+      };
+    }
+
     if (activeCustomer.status === 'INATIVO') {
       return { success: false, isInactive: true };
     }
@@ -227,8 +340,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const product = products.find(p => p.id === productId);
     if (!product) return { success: false };
 
+    const customerId = activeCustomer.id;
+
     setCartsByCustomer(prev => {
-      const customerCart = prev[activeCustomerId] || [];
+      const customerCart = prev[customerId] || [];
       const existingItemIndex = customerCart.findIndex(
         item => item.product.id === productId && item.size === size
       );
@@ -243,7 +358,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       return {
         ...prev,
-        [activeCustomerId]: updatedCart
+        [customerId]: updatedCart
       };
     });
 
@@ -252,8 +367,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Atualizar quantidade no carrinho
   const updateCartQuantity = (productId: string, size: number, delta: number) => {
+    const customerId = activeCustomer.id;
+    if (!customerId) return;
+
     setCartsByCustomer(prev => {
-      const customerCart = prev[activeCustomerId] || [];
+      const customerCart = prev[customerId] || [];
       const updatedCart = customerCart
         .map(item => {
           if (item.product.id === productId && item.size === size) {
@@ -266,27 +384,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       return {
         ...prev,
-        [activeCustomerId]: updatedCart
+        [customerId]: updatedCart
       };
     });
   };
 
   // Remover do carrinho
   const removeFromCart = (productId: string, size: number) => {
+    const customerId = activeCustomer.id;
+    if (!customerId) return;
+
     setCartsByCustomer(prev => {
-      const customerCart = prev[activeCustomerId] || [];
+      const customerCart = prev[customerId] || [];
       const updatedCart = customerCart.filter(
         item => !(item.product.id === productId && item.size === size)
       );
 
       return {
         ...prev,
-        [activeCustomerId]: updatedCart
+        [customerId]: updatedCart
       };
     });
   };
 
   const clearCart = (customerId: string) => {
+    if (!customerId) return;
     setCartsByCustomer(prev => ({
       ...prev,
       [customerId]: []
@@ -308,13 +430,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       discountExchange?: number;
     }
   ) => {
-    const customerCart = cartsByCustomer[activeCustomerId] || [];
+    const customerId = activeCustomer.id;
+    if (!customerId) {
+      throw new Error('Não é possível realizar checkout sem um cliente válido.');
+    }
+    const customerCart = cartsByCustomer[customerId] || [];
     const newOrderId = `RW-2026-00${orders.length + 1}`;
     
     const newOrder: Order = {
       id: newOrderId,
       date: new Date().toLocaleDateString('pt-BR'),
-      customerId: activeCustomerId,
+      customerId: customerId,
       status: 'EM ABERTO',
       items: [...customerCart],
       shippingAddress: { ...shippingAddress },
@@ -350,7 +476,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         value: parseFloat(surplusAmount.toFixed(2)),
         description: `Saldo restante de troca (${exchangeCoupon.code})`,
         expirationDate: exchangeCoupon.expirationDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
-        customerId: activeCustomerId
+        customerId: customerId
       };
     }
 
@@ -360,7 +486,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     // Limpar o carrinho deste cliente
-    clearCart(activeCustomerId);
+    clearCart(customerId);
 
     return newOrder;
   };
@@ -556,52 +682,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (result.success && result.customer) {
       // Atualiza o estado da lista de clientes com o registro persistido
       setCustomers(prev => [...prev, result.customer!]);
+      setActiveCustomerId(result.customer.id);
 
       // Inicializa carrinho em memória para o novo código de cliente
       setCartsByCustomer(prev => ({
         ...prev,
         [result.customer!.id]: []
       }));
+
+      // Carrega endereços e cartões do novo cliente persistido
+      await Promise.all([
+        refreshCustomerAddresses(result.customer.id),
+        refreshCustomerCards(result.customer.id)
+      ]);
     }
 
     return result;
   };
 
-  // Editar Perfil do Cliente
-  const updateCustomerProfile = (updatedCustomer: Customer) => {
-    setCustomers(prev =>
-      prev.map(c => {
-        if (c.id === updatedCustomer.id) {
-          const derivedPhone = updatedCustomer.phoneDdd && updatedCustomer.phoneNumber
-            ? `(${updatedCustomer.phoneDdd.replace(/\D/g, '')}) ${updatedCustomer.phoneNumber.trim()}`
-            : (updatedCustomer.phone || c.phone);
+  // Editar Perfil do Cliente (RF0022 - Comunicação real via PUT /api/clientes/{codigo})
+  const updateCustomerProfile = async (
+    codigo: string,
+    payload: ClienteUpdateRequestDto
+  ): Promise<{ success: boolean; error?: string }> => {
+    const res = await alterarCliente(codigo, payload);
+    if (res.success && res.cliente) {
+      const updatedDto = res.cliente;
+      const phoneDdd = updatedDto.telefone.ddd;
+      const phoneNum = updatedDto.telefone.numero;
+      const formattedPhoneNum =
+        phoneNum.length === 9
+          ? `${phoneNum.slice(0, 5)}-${phoneNum.slice(5)}`
+          : phoneNum.length === 8
+            ? `${phoneNum.slice(0, 4)}-${phoneNum.slice(4)}`
+            : phoneNum;
+      const derivedPhone = `(${phoneDdd}) ${formattedPhoneNum}`;
 
-          return {
-            ...c,
-            ...updatedCustomer,
-            cpf: c.cpf, // CPF imutável
-            phone: derivedPhone
-          };
-        }
-        return c;
-      })
-    );
+      setCustomers(prev =>
+        prev.map(c => {
+          if (c.id === codigo) {
+            return {
+              ...c,
+              name: updatedDto.nome,
+              email: updatedDto.email,
+              gender: updatedDto.genero,
+              birthDate: convertDateIsoToBr(updatedDto.dataNascimento),
+              phone: derivedPhone,
+              phoneType: updatedDto.telefone.tipo,
+              phoneDdd,
+              phoneNumber: formattedPhoneNum
+            };
+          }
+          return c;
+        })
+      );
+      return { success: true };
+    }
+    return { success: false, error: res.error };
   };
 
   // Endereços (Card #51 - Gestão de Endereços)
-  const refreshCustomerAddresses = async (customerId: string) => {
-    const result = await listarEnderecosCliente(customerId);
-    if (result.success && result.addresses) {
-      setCustomers(prev =>
-        prev.map(c =>
-          c.id === customerId
-            ? { ...c, addresses: result.addresses! }
-            : c
-        )
-      );
-    }
-  };
-
   const addCustomerAddress = async (
     customerId: string,
     address: Omit<Address, 'id'>
@@ -618,24 +758,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
       return { success: true, address: savedAddress };
     }
-
-    // Se o cliente não existir no banco (mock customer em memória), atualiza em memória
-    if (result.error && result.error.toLowerCase().includes('não foi encontrado')) {
-      const newAddress: Address = {
-        ...address,
-        zipCode: maskZipCode(address.zipCode),
-        id: `addr_${Math.random().toString(36).substr(2, 9)}`
-      };
-      setCustomers(prev =>
-        prev.map(c =>
-          c.id === customerId
-            ? { ...c, addresses: [...c.addresses, newAddress] }
-            : c
-        )
-      );
-      return { success: true, address: newAddress };
-    }
-
     return { success: false, error: result.error };
   };
 
@@ -658,26 +780,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
       return { success: true, address: savedAddress };
     }
-
-    // Se o cliente não existir no banco (mock customer em memória), atualiza em memória
-    if (result.error && result.error.toLowerCase().includes('não foi encontrado')) {
-      const formattedAddress: Address = {
-        ...address,
-        zipCode: maskZipCode(address.zipCode)
-      };
-      setCustomers(prev =>
-        prev.map(c =>
-          c.id === customerId
-            ? {
-                ...c,
-                addresses: c.addresses.map(a => (a.id === address.id ? formattedAddress : a))
-              }
-            : c
-        )
-      );
-      return { success: true, address: formattedAddress };
-    }
-
     return { success: false, error: result.error };
   };
 
@@ -695,20 +797,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return c;
       })
     );
-  };
-
-  // Cartões (Card #52 - Gestão de Cartões de Crédito)
-  const refreshCustomerCards = async (customerId: string) => {
-    const result = await listarCartoesCliente(customerId);
-    if (result.success && result.cards) {
-      setCustomers(prev =>
-        prev.map(c =>
-          c.id === customerId
-            ? { ...c, cards: result.cards! }
-            : c
-        )
-      );
-    }
   };
 
   const addCustomerCard = async (
@@ -815,13 +903,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       value={{
         customers,
         activeCustomer,
+        isLoadingCustomers,
+        customerLoadError,
+        refreshCustomers: carregarClientesReais,
         cartsByCustomer,
         orders,
         coupons,
         exchanges,
         setActiveCustomer,
         addCustomer,
-        updateCustomerStatus,
+        updateCustomerProfile,
+        inativarCustomer,
         addToCart,
         updateCartQuantity,
         removeFromCart,
@@ -832,7 +924,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         requestExchange,
         updateExchangeStatus,
         updateOrderStatus,
-        updateCustomerProfile,
         addCustomerAddress,
         updateCustomerAddress,
         refreshCustomerAddresses,

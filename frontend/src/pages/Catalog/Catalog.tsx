@@ -73,6 +73,14 @@ export default function Catalog() {
   }
 
   const handleAddToCartClick = (product: Product) => {
+    if (!activeCustomer.id) {
+      setToastMessage('Aguarde o carregamento do cliente ou selecione um cliente válido.');
+      setTimeout(() => {
+        setToastMessage(null);
+      }, 2500);
+      return;
+    }
+
     if (activeCustomer.status === 'INATIVO') {
       setIsInactiveModalOpen(true);
       return;
@@ -95,6 +103,11 @@ export default function Catalog() {
       }, 2500);
     } else if (result.isInactive) {
       setIsInactiveModalOpen(true);
+    } else if (result.notReady) {
+      setToastMessage('Aguarde o carregamento do cliente ou selecione um cliente válido.');
+      setTimeout(() => {
+        setToastMessage(null);
+      }, 2500);
     }
   };
 

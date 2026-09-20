@@ -6,7 +6,12 @@ import Toast from '../../components/Toast/Toast';
 import OrderDetailsModal from '../../components/OrderDetailsModal/OrderDetailsModal';
 import { BRAZILIAN_STATES } from '../../data/brazilianStates';
 import type { Address, Order, BandeiraDto } from '../../types';
-import { listarBandeiras } from '../../services/clienteService';
+import {
+  listarBandeiras,
+  alterarSenhaCliente,
+  convertDateBrToIso,
+  type ClienteUpdateRequestDto
+} from '../../services/clienteService';
 import {
   maskBirthDate,
   maskPhoneNumber,
@@ -32,7 +37,7 @@ export default function CustomerArea() {
     orders,
     coupons,
     exchanges,
-    updateCustomerStatus,
+    inativarCustomer,
     cancelOrder,
     confirmOrderReceipt,
     requestExchange,
@@ -63,8 +68,9 @@ export default function CustomerArea() {
     setSearchParams({ tab: tabName });
   };
 
-  // Módulos de Edição de Perfil
+  // Módulos de Edição de Perfil (RF0022 - Comunicação real com a API)
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     name: activeCustomer.name,
     email: activeCustomer.email,
@@ -92,7 +98,7 @@ export default function CustomerArea() {
     });
   }
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileError(null);
 
@@ -108,12 +114,35 @@ export default function CustomerArea() {
       return;
     }
 
-    updateCustomerProfile({
-      ...activeCustomer,
-      ...profileForm,
-      phone: `(${profileForm.phoneDdd.replace(/\D/g, '')}) ${profileForm.phoneNumber.trim()}`
-    });
-    setIsEditingProfile(false);
+    const cleanDdd = profileForm.phoneDdd.replace(/\D/g, '').slice(0, 2);
+    const cleanPhone = profileForm.phoneNumber.replace(/\D/g, '');
+    const payload: ClienteUpdateRequestDto = {
+      nome: profileForm.name.trim(),
+      email: profileForm.email.trim(),
+      genero: profileForm.gender,
+      dataNascimento: convertDateBrToIso(profileForm.birthDate),
+      telefone: {
+        tipo: profileForm.phoneType,
+        ddd: cleanDdd,
+        numero: cleanPhone
+      }
+    };
+
+    setIsSavingProfile(true);
+    try {
+      const res = await updateCustomerProfile(activeCustomer.id, payload);
+      if (res.success) {
+        setToastMessage('Dados cadastrais atualizados com sucesso!');
+        setToastType('success');
+        setIsEditingProfile(false);
+      } else {
+        setProfileError(res.error || 'Não foi possível atualizar os dados cadastrais.');
+      }
+    } catch {
+      setProfileError('Erro de conexão ao atualizar os dados cadastrais.');
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handleEditBirthDateChange = (val: string) => {
@@ -124,9 +153,80 @@ export default function CustomerArea() {
     setProfileForm(p => ({ ...p, phoneNumber: maskPhoneNumber(val) }));
   };
 
-  // Módulos de Inativação/Reativação
+  // Módulo de Inativação (Card #57 / RF0023 - Comunicação real via PATCH)
   const [isInactivateModalOpen, setIsInactivateModalOpen] = useState(false);
-  const [isReactivateModalOpen, setIsReactivateModalOpen] = useState(false);
+  const [isInactivating, setIsInactivating] = useState(false);
+  const [inactivateError, setInactivateError] = useState<string | null>(null);
+
+  const handleConfirmInactivate = async () => {
+    setIsInactivating(true);
+    setInactivateError(null);
+    try {
+      const res = await inativarCustomer(activeCustomer.id);
+      if (res.success) {
+        setToastMessage(res.mensagem || 'Cadastro inativado com sucesso.');
+        setToastType('success');
+        setIsInactivateModalOpen(false);
+      } else {
+        setInactivateError(res.error || 'Não foi possível inativar o cadastro.');
+      }
+    } catch {
+      setInactivateError('Falha ao conectar com o servidor para inativar o cadastro.');
+    } finally {
+      setIsInactivating(false);
+    }
+  };
+
+  // Módulo de Alteração de Senha (RF0028 - Comunicação real via PATCH)
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordForm, setPasswordForm] = useState({
+    novaSenha: '',
+    confirmacaoNovaSenha: ''
+  });
+
+  const handleOpenPasswordModal = () => {
+    setPasswordForm({ novaSenha: '', confirmacaoNovaSenha: '' });
+    setPasswordError(null);
+    setIsPasswordModalOpen(true);
+  };
+
+  const handleSavePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+
+    // Validações de UX
+    if (!passwordForm.novaSenha) {
+      setPasswordError('Informe a nova senha.');
+      return;
+    }
+    if (passwordForm.novaSenha.length < 8) {
+      setPasswordError('A nova senha deve ter no mínimo 8 caracteres.');
+      return;
+    }
+    if (passwordForm.novaSenha !== passwordForm.confirmacaoNovaSenha) {
+      setPasswordError('A confirmação da nova senha não confere com a senha digitada.');
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      const res = await alterarSenhaCliente(activeCustomer.id, passwordForm.novaSenha, passwordForm.confirmacaoNovaSenha);
+      if (res.success) {
+        setToastMessage(res.mensagem || 'Senha alterada com sucesso!');
+        setToastType('success');
+        setIsPasswordModalOpen(false);
+        setPasswordForm({ novaSenha: '', confirmacaoNovaSenha: '' });
+      } else {
+        setPasswordError(res.error || 'Não foi possível alterar a senha.');
+      }
+    } catch {
+      setPasswordError('Falha ao conectar com o servidor para alterar a senha.');
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
 
   // Módulos de Cartões (Card #52)
   const [bandeiras, setBandeiras] = useState<BandeiraDto[]>([]);
@@ -435,10 +535,10 @@ export default function CustomerArea() {
         {/* Banner do Perfil do Cliente */}
         <div className="profile-header-banner">
           <div className="profile-avatar">
-            {activeCustomer.name.charAt(0)}
+            {activeCustomer.name ? activeCustomer.name.charAt(0).toUpperCase() : 'C'}
           </div>
           <div className="profile-header-info">
-            <h2 className="profile-client-name">{activeCustomer.name}</h2>
+            <h2 className="profile-client-name">{activeCustomer.name || 'Cliente'}</h2>
             <p className="profile-client-email">{activeCustomer.email}</p>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <span className={`status-badge ${activeCustomer.status.toLowerCase()}`}>
@@ -448,21 +548,16 @@ export default function CustomerArea() {
           </div>
 
           <div className="profile-header-action">
-            {activeCustomer.status === 'ATIVO' ? (
+            {activeCustomer.status === 'ATIVO' && (
               <button
-                onClick={() => setIsInactivateModalOpen(true)}
+                onClick={() => {
+                  setInactivateError(null);
+                  setIsInactivateModalOpen(true);
+                }}
                 className="btn btn-secondary btn-inactivate"
                 type="button"
               >
                 INATIVAR MEU CADASTRO
-              </button>
-            ) : (
-              <button
-                onClick={() => setIsReactivateModalOpen(true)}
-                className="btn btn-primary btn-reactivate"
-                type="button"
-              >
-                REATIVAR MEU CADASTRO
               </button>
             )}
           </div>
@@ -501,15 +596,26 @@ export default function CustomerArea() {
             <div className="profile-card-section">
               <div className="section-card-header">
                 <h3 className="section-card-title">Dados Pessoais</h3>
-                {!isEditingProfile && (
-                  <button
-                    onClick={() => setIsEditingProfile(true)}
-                    className="btn btn-secondary btn-small"
-                    type="button"
-                  >
-                    EDITAR
-                  </button>
-                )}
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {!isEditingProfile && (
+                    <>
+                      <button
+                        onClick={handleOpenPasswordModal}
+                        className="btn btn-secondary btn-small"
+                        type="button"
+                      >
+                        ALTERAR SENHA
+                      </button>
+                      <button
+                        onClick={() => setIsEditingProfile(true)}
+                        className="btn btn-secondary btn-small"
+                        type="button"
+                      >
+                        EDITAR
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               {!isEditingProfile ? (
@@ -666,8 +772,12 @@ export default function CustomerArea() {
                     >
                       CANCELAR
                     </button>
-                    <button type="submit" className="btn btn-primary btn-small">
-                      SALVAR ALTERAÇÕES
+                    <button
+                      type="submit"
+                      className="btn btn-primary btn-small"
+                      disabled={isSavingProfile}
+                    >
+                      {isSavingProfile ? 'SALVANDO...' : 'SALVAR ALTERAÇÕES'}
                     </button>
                   </div>
                 </form>
@@ -942,54 +1052,132 @@ export default function CustomerArea() {
 
       </div>
 
-      {/* MODAL: Confirma Inativação */}
+      {/* MODAL: Confirma Inativação (Card #57 / RF0023) */}
       <Modal
         isOpen={isInactivateModalOpen}
-        onClose={() => setIsInactivateModalOpen(false)}
+        onClose={() => !isInactivating && setIsInactivateModalOpen(false)}
         title="Inativar Cadastro?"
       >
         <div className="inactive-confirm-modal">
+          {inactivateError && (
+            <div style={{
+              backgroundColor: 'rgba(255, 69, 69, 0.1)',
+              border: '1px solid var(--color-danger)',
+              color: 'var(--color-danger)',
+              padding: '0.65rem 0.9rem',
+              borderRadius: '6px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              marginBottom: '1rem'
+            }}>
+              ⚠️ {inactivateError}
+            </div>
+          )}
           <p className="modal-description-txt">
             Deseja realmente inativar seu cadastro? Após a inativação, você poderá consultar seus dados e pedidos anteriores, mas não poderá realizar novas compras.
           </p>
           <div className="modal-actions">
-            <button onClick={() => setIsInactivateModalOpen(false)} className="btn btn-secondary">CANCELAR</button>
             <button
-              onClick={() => {
-                updateCustomerStatus(activeCustomer.id, 'INATIVO');
-                setIsInactivateModalOpen(false);
-              }}
-              className="btn btn-primary"
+              onClick={() => setIsInactivateModalOpen(false)}
+              className="btn btn-secondary"
+              disabled={isInactivating}
+              type="button"
             >
-              CONFIRMAR INATIVAÇÃO
+              CANCELAR
+            </button>
+            <button
+              onClick={handleConfirmInactivate}
+              className="btn btn-primary"
+              style={{ backgroundColor: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
+              disabled={isInactivating}
+              type="button"
+            >
+              {isInactivating ? 'INATIVANDO...' : 'CONFIRMAR INATIVAÇÃO'}
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* MODAL: Confirma Reativação */}
+      {/* MODAL: Alterar Senha (RF0028) */}
       <Modal
-        isOpen={isReactivateModalOpen}
-        onClose={() => setIsReactivateModalOpen(false)}
-        title="Reativar Cadastro?"
+        isOpen={isPasswordModalOpen}
+        onClose={() => {
+          if (!isSavingPassword) {
+            setIsPasswordModalOpen(false);
+            setPasswordError(null);
+            setPasswordForm({ novaSenha: '', confirmacaoNovaSenha: '' });
+          }
+        }}
+        title="Alterar Minha Senha"
       >
-        <div className="inactive-confirm-modal">
-          <p className="modal-description-txt">
-            Deseja reativar seu cadastro de cliente para voltar a fazer compras no RunWay?
+        <form onSubmit={handleSavePassword} className="address-modal-form">
+          {passwordError && (
+            <div style={{
+              backgroundColor: 'rgba(255, 69, 69, 0.1)',
+              border: '1px solid var(--color-danger)',
+              color: 'var(--color-danger)',
+              padding: '0.65rem 0.9rem',
+              borderRadius: '6px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              marginBottom: '1rem'
+            }}>
+              ⚠️ {passwordError}
+            </div>
+          )}
+
+          <p style={{ color: '#888', fontSize: '0.82rem', lineHeight: '1.4', margin: '0 0 1rem 0' }}>
+            A nova senha deve ter no mínimo 8 caracteres, contendo ao menos uma letra maiúscula, uma minúscula e um caractere especial (!@#$%&*...).
           </p>
-          <div className="modal-actions">
-            <button onClick={() => setIsReactivateModalOpen(false)} className="btn btn-secondary">CANCELAR</button>
+
+          <div className="form-group">
+            <label htmlFor="user-new-pwd">Nova Senha *</label>
+            <input
+              type="password"
+              id="user-new-pwd"
+              value={passwordForm.novaSenha}
+              onChange={e => setPasswordForm(prev => ({ ...prev, novaSenha: e.target.value }))}
+              placeholder="Digite a nova senha"
+              required
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="user-confirm-pwd">Confirmação da Nova Senha *</label>
+            <input
+              type="password"
+              id="user-confirm-pwd"
+              value={passwordForm.confirmacaoNovaSenha}
+              onChange={e => setPasswordForm(prev => ({ ...prev, confirmacaoNovaSenha: e.target.value }))}
+              placeholder="Confirme a nova senha"
+              required
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
             <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={isSavingPassword}
               onClick={() => {
-                updateCustomerStatus(activeCustomer.id, 'ATIVO');
-                setIsReactivateModalOpen(false);
+                setIsPasswordModalOpen(false);
+                setPasswordError(null);
+                setPasswordForm({ novaSenha: '', confirmacaoNovaSenha: '' });
               }}
-              className="btn btn-primary"
             >
-              CONFIRMAR REATIVAÇÃO
+              CANCELAR
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isSavingPassword || !passwordForm.novaSenha || !passwordForm.confirmacaoNovaSenha}
+            >
+              {isSavingPassword ? 'SALVANDO...' : 'SALVAR SENHA'}
             </button>
           </div>
-        </div>
+        </form>
       </Modal>
       {/* MODAL: Adicionar Cartão */}
       <Modal

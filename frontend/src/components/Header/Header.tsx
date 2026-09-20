@@ -123,26 +123,32 @@ export default function Header() {
               aria-expanded={showDropdown}
               title="Alternar Cliente / Admin"
             >
-              <span className="user-name">{activeCustomer.name.split(' ')[0]}</span>
+              <span className="user-name">{activeCustomer.name ? activeCustomer.name.split(' ')[0] : 'Cliente'}</span>
               <span className="dropdown-arrow" style={{ fontSize: '0.6rem', marginLeft: '0.15rem' }}>▼</span>
             </button>
 
             {showDropdown && (
               <div className="dropdown-menu">
                 <div className="dropdown-section-title">Alternar Cliente</div>
-                {customers.map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => handleCustomerSelect(c.id)}
-                    className={`dropdown-item ${c.id === activeCustomer.id ? 'active' : ''}`}
-                    type="button"
-                  >
-                    <span className="cust-name-text">{c.name.split(' ')[0]}</span>
-                    <span className={`status-tag ${c.status.toLowerCase()}`}>
-                      {c.status}
-                    </span>
-                  </button>
-                ))}
+                {customers.length === 0 ? (
+                  <div style={{ padding: '0.5rem 0.75rem', fontSize: '0.8rem', color: '#888', fontStyle: 'italic' }}>
+                    Nenhum cliente carregado
+                  </div>
+                ) : (
+                  customers.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => handleCustomerSelect(c.id)}
+                      className={`dropdown-item ${c.id === activeCustomer.id ? 'active' : ''}`}
+                      type="button"
+                    >
+                      <span className="cust-name-text">{c.name ? c.name.split(' ')[0] : c.id}</span>
+                      <span className={`status-tag ${c.status.toLowerCase()}`}>
+                        {c.status}
+                      </span>
+                    </button>
+                  ))
+                )}
                 <div className="dropdown-divider"></div>
                 <div className="dropdown-section-title">Demonstração</div>
                 <button onClick={handleAdminSelect} className="dropdown-item admin-item" type="button">
