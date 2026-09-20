@@ -135,19 +135,21 @@ export default function Header() {
                     Nenhum cliente carregado
                   </div>
                 ) : (
-                  customers.map(c => (
-                    <button
-                      key={c.id}
-                      onClick={() => handleCustomerSelect(c.id)}
-                      className={`dropdown-item ${c.id === activeCustomer.id ? 'active' : ''}`}
-                      type="button"
-                    >
-                      <span className="cust-name-text">{c.name ? c.name.split(' ')[0] : c.id}</span>
-                      <span className={`status-tag ${c.status.toLowerCase()}`}>
-                        {c.status}
-                      </span>
-                    </button>
-                  ))
+                  <div className="dropdown-customers-list">
+                    {customers.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => handleCustomerSelect(c.id)}
+                        className={`dropdown-item ${c.id === activeCustomer.id ? 'active' : ''}`}
+                        type="button"
+                      >
+                        <span className="cust-name-text">{c.name ? c.name.split(' ')[0] : c.id}</span>
+                        <span className={`status-tag ${c.status.toLowerCase()}`}>
+                          {c.status}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 )}
                 <div className="dropdown-divider"></div>
                 <div className="dropdown-section-title">Demonstração</div>
