@@ -976,6 +976,7 @@ export default function AdminClients() {
                         className="btn btn-secondary btn-small"
                         type="button"
                         title="Alterar somente a senha do cliente"
+                        data-cy="admin-cliente-senha-btn"
                       >
                         Senha
                       </button>
@@ -1683,7 +1684,7 @@ export default function AdminClients() {
       >
         <form onSubmit={handleSavePassword} className="rw-password-modal-body">
           {passwordError && (
-            <div className="rw-modal-error-banner" role="alert">
+            <div className="rw-modal-error-banner" role="alert" data-cy="admin-senha-error-banner">
               <strong>Erro:</strong> {passwordError}
             </div>
           )}
@@ -1708,6 +1709,7 @@ export default function AdminClients() {
                 onChange={e => setNewPassword(e.target.value)}
                 placeholder="Informe a nova senha"
                 required
+                data-cy="admin-nova-senha"
               />
             </div>
 
@@ -1721,6 +1723,7 @@ export default function AdminClients() {
                 onChange={e => setConfirmNewPassword(e.target.value)}
                 placeholder="Confirme a nova senha"
                 required
+                data-cy="admin-confirmacao-nova-senha"
               />
             </div>
 
@@ -1756,10 +1759,11 @@ export default function AdminClients() {
               className="btn btn-secondary rw-btn-cancel"
               disabled={isPasswordSubmitting}
               onClick={handleClosePasswordModal}
+              data-cy="admin-cancelar-nova-senha"
             >
               CANCELAR
             </button>
-            <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isPasswordSubmitting}>
+            <button type="submit" className="btn btn-primary rw-btn-submit" disabled={isPasswordSubmitting} data-cy="admin-salvar-nova-senha">
               {isPasswordSubmitting ? 'SALVANDO...' : 'SALVAR SENHA'}
             </button>
           </div>

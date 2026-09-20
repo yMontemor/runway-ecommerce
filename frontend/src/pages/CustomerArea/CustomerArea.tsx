@@ -603,6 +603,7 @@ export default function CustomerArea() {
                         onClick={handleOpenPasswordModal}
                         className="btn btn-secondary btn-small"
                         type="button"
+                        data-cy="alterar-senha-btn"
                       >
                         ALTERAR SENHA
                       </button>
@@ -1125,16 +1126,19 @@ export default function CustomerArea() {
       >
         <form onSubmit={handleSavePassword} className="address-modal-form">
           {passwordError && (
-            <div style={{
-              backgroundColor: 'rgba(255, 69, 69, 0.1)',
-              border: '1px solid var(--color-danger)',
-              color: 'var(--color-danger)',
-              padding: '0.65rem 0.9rem',
-              borderRadius: '6px',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              marginBottom: '1rem'
-            }}>
+            <div
+              data-cy="senha-error-banner"
+              style={{
+                backgroundColor: 'rgba(255, 69, 69, 0.1)',
+                border: '1px solid var(--color-danger)',
+                color: 'var(--color-danger)',
+                padding: '0.65rem 0.9rem',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                marginBottom: '1rem'
+              }}
+            >
               ⚠️ {passwordError}
             </div>
           )}
@@ -1153,6 +1157,7 @@ export default function CustomerArea() {
               placeholder="Digite a nova senha"
               required
               autoComplete="new-password"
+              data-cy="nova-senha"
             />
           </div>
 
@@ -1166,6 +1171,7 @@ export default function CustomerArea() {
               placeholder="Confirme a nova senha"
               required
               autoComplete="new-password"
+              data-cy="confirmacao-nova-senha"
             />
           </div>
 
@@ -1179,6 +1185,7 @@ export default function CustomerArea() {
                 setPasswordError(null);
                 setPasswordForm({ novaSenha: '', confirmacaoNovaSenha: '' });
               }}
+              data-cy="cancelar-nova-senha"
             >
               CANCELAR
             </button>
@@ -1186,6 +1193,7 @@ export default function CustomerArea() {
               type="submit"
               className="btn btn-primary"
               disabled={isSavingPassword || !passwordForm.novaSenha || !passwordForm.confirmacaoNovaSenha}
+              data-cy="salvar-nova-senha"
             >
               {isSavingPassword ? 'SALVANDO...' : 'SALVAR SENHA'}
             </button>
