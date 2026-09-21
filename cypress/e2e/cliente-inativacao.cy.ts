@@ -500,6 +500,8 @@ describe('Suíte E2E: Inativação de Cliente — RunWay (RF0023 / Integração 
       cy.visit('/');
       cy.get('[data-cy="user-dropdown"]').click();
       cy.get(`[data-cy="select-customer-${cliente.codigo}"]`).click();
+      cy.get('[data-cy="user-dropdown"]')
+        .should('contain', cliente.nome.split(' ')[0]);
 
       // Acessa o catálogo de calçados via Header (preservando o cliente ativo na aplicação)
       cy.get('[data-cy="nav-catalogo"]').click();
