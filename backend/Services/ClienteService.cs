@@ -624,7 +624,7 @@ public class ClienteService : IClienteService
 
         // Projeção enxuta para ClienteListItemResponseDto (sem dados sensíveis ou desnecessários)
         return await query
-            .OrderBy(c => c.Nome)
+            .OrderBy(c => c.Codigo)
             .Select(c => new ClienteListItemResponseDto
             {
                 Codigo = c.Codigo,
