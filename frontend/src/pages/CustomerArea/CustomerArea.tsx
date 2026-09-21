@@ -255,7 +255,7 @@ export default function CustomerArea() {
   const handleOpenAddCard = () => {
     setCardModalError(null);
     setCardForm({
-      bandeiraId: bandeiras.length > 0 ? bandeiras[0].id : 1,
+      bandeiraId: 0,
       cardNumber: '',
       holderName: '',
       expirationDate: '',
@@ -867,13 +867,14 @@ export default function CustomerArea() {
             </div>
 
             {/* Cartões de Crédito */}
-            <div className="profile-card-section">
+            <div className="profile-card-section" data-cy="cartoes-section">
               <div className="section-card-header">
                 <h3 className="section-card-title">Cartões de Crédito</h3>
                 <button
                   onClick={handleOpenAddCard}
                   className="btn btn-secondary btn-small"
                   type="button"
+                  data-cy="novo-cartao-btn"
                 >
                   + ADICIONAR CARTÃO
                 </button>
@@ -882,12 +883,12 @@ export default function CustomerArea() {
               <div className="profile-cards-list">
                 {activeCustomer.cards.length > 0 ? (
                   activeCustomer.cards.map(card => (
-                    <div key={card.id} className="profile-card-row">
+                    <div key={card.id} className="profile-card-row" data-cy="cartao-card">
                       <div className="card-left-info">
-                        <span className="card-brand">{card.brand}</span>
-                        <span className="card-digits">final {card.lastFour}</span>
+                        <span className="card-brand" data-cy="cartao-bandeira">{card.brand}</span>
+                        <span className="card-digits" data-cy="cartao-final">final {card.lastFour}</span>
                         <span className="card-exp">val {card.expirationDate}</span>
-                        {card.isPreferred && <span className="pref-tag">Preferencial</span>}
+                        {card.isPreferred && <span className="pref-tag" data-cy="cartao-preferencial-badge">Preferencial</span>}
                       </div>
 
                       <div className="card-row-actions">
@@ -896,6 +897,7 @@ export default function CustomerArea() {
                             onClick={() => handleSetCardAsPreferred(card.id)}
                             className="btn-text-action"
                             type="button"
+                            data-cy="cartao-definir-preferencial"
                           >
                             Tornar preferencial
                           </button>
@@ -904,7 +906,7 @@ export default function CustomerArea() {
                     </div>
                   ))
                 ) : (
-                  <p className="no-cards-txt">Nenhum cartão cadastrado.</p>
+                  <p className="no-cards-txt" data-cy="sem-cartoes-txt">Nenhum cartão cadastrado.</p>
                 )}
               </div>
             </div>
@@ -1224,9 +1226,9 @@ export default function CustomerArea() {
         }}
         title="Adicionar Novo Cartão"
       >
-        <form onSubmit={handleSaveCard} className="address-modal-form">
+        <form onSubmit={handleSaveCard} className="address-modal-form" data-cy="cartao-form">
           {cardModalError && (
-            <div style={{
+            <div data-cy="cartao-error-banner" style={{
               backgroundColor: 'rgba(255, 69, 69, 0.1)',
               border: '1px solid var(--color-danger)',
               color: 'var(--color-danger)',
@@ -1245,6 +1247,7 @@ export default function CustomerArea() {
             <input
               type="text"
               id="card-number"
+              data-cy="cartao-input-numero"
               maxLength={19}
               value={cardForm.cardNumber}
               onChange={e => setCardForm(prev => ({ ...prev, cardNumber: maskCardNumber(e.target.value) }))}
@@ -1258,6 +1261,7 @@ export default function CustomerArea() {
             <input
               type="text"
               id="card-holder"
+              data-cy="cartao-input-nome"
               value={cardForm.holderName}
               onChange={e => setCardForm(prev => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
               placeholder="NOME COMO NO CARTÃO"
@@ -1270,11 +1274,12 @@ export default function CustomerArea() {
               <label htmlFor="card-brand">Bandeira *</label>
               <select
                 id="card-brand"
-                value={cardForm.bandeiraId}
-                onChange={e => setCardForm(prev => ({ ...prev, bandeiraId: parseInt(e.target.value, 10) }))}
+                data-cy="cartao-select-bandeira"
+                value={cardForm.bandeiraId || ''}
+                onChange={e => setCardForm(prev => ({ ...prev, bandeiraId: e.target.value ? parseInt(e.target.value, 10) : 0 }))}
                 required
               >
-                {bandeiras.length === 0 && <option value="">Carregando bandeiras...</option>}
+                <option value="">Selecione a bandeira...</option>
                 {bandeiras.map(b => (
                   <option key={b.id} value={b.id}>
                     {b.nome}
@@ -1287,6 +1292,7 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="card-exp"
+                data-cy="cartao-input-validade"
                 placeholder="MM/AA"
                 maxLength={5}
                 value={cardForm.expirationDate}
@@ -1299,6 +1305,7 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="card-cvv"
+                data-cy="cartao-input-cvv"
                 placeholder="123"
                 maxLength={4}
                 value={cardForm.cvv}
@@ -1311,6 +1318,7 @@ export default function CustomerArea() {
           <label className="checkbox-preferred-label" style={{ display: 'flex', gap: '0.5rem', fontSize: '0.8rem', color: '#888', cursor: 'pointer', marginTop: '0.5rem' }}>
             <input
               type="checkbox"
+              data-cy="cartao-checkbox-preferencial"
               checked={cardForm.isPreferred}
               onChange={e => setCardForm(prev => ({ ...prev, isPreferred: e.target.checked }))}
             />
@@ -1321,6 +1329,7 @@ export default function CustomerArea() {
             <button
               type="button"
               className="btn btn-secondary"
+              data-cy="cancelar-cartao"
               onClick={() => {
                 setIsCardModalOpen(false);
                 setCardModalError(null);
@@ -1328,7 +1337,7 @@ export default function CustomerArea() {
             >
               CANCELAR
             </button>
-            <button type="submit" className="btn btn-primary" disabled={isSavingCard}>
+            <button type="submit" className="btn btn-primary" data-cy="salvar-cartao" disabled={isSavingCard}>
               {isSavingCard ? 'SALVANDO...' : 'SALVAR CARTÃO'}
             </button>
           </div>
