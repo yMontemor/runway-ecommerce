@@ -412,7 +412,17 @@ export default function CustomerArea() {
     e.preventDefault();
     setAddrModalError(null);
 
-    if (!addrForm.label.trim() || !addrForm.street.trim() || !addrForm.number.trim() || !addrForm.city.trim() || !addrForm.state.trim()) {
+    if (
+      !addrForm.label.trim() ||
+      !addrForm.residenceType.trim() ||
+      !addrForm.streetType.trim() ||
+      !addrForm.street.trim() ||
+      !addrForm.number.trim() ||
+      !addrForm.neighborhood.trim() ||
+      !addrForm.city.trim() ||
+      !addrForm.state.trim() ||
+      !addrForm.country.trim()
+    ) {
       setAddrModalError('Por favor, preencha todos os campos obrigatórios do endereço.');
       return;
     }
@@ -800,13 +810,14 @@ export default function CustomerArea() {
             </div>
 
             {/* Endereços de Entrega */}
-            <div className="profile-card-section">
+            <div className="profile-card-section" data-cy="enderecos-section">
               <div className="section-card-header">
                 <h3 className="section-card-title">Meus Endereços</h3>
                 <button
                   onClick={handleOpenAddAddr}
                   className="btn btn-secondary btn-small"
                   type="button"
+                  data-cy="novo-endereco-btn"
                 >
                   + ADICIONAR ENDEREÇO
                 </button>
@@ -814,22 +825,22 @@ export default function CustomerArea() {
 
               <div className="profile-addresses-grid">
                 {activeCustomer.addresses.map(addr => (
-                  <div key={addr.id} className="profile-address-card">
+                  <div key={addr.id} className="profile-address-card" data-cy="endereco-card">
                     <div className="addr-card-header">
                       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem', rowGap: '0.25rem' }}>
-                        <span className="profile-addr-label">{addr.label}</span>
+                        <span className="profile-addr-label" data-cy="endereco-nome">{addr.label}</span>
                         {addr.isResidential && (
-                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(255, 165, 0, 0.15)', color: '#ffaa00', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid #ffaa00' }}>
+                          <span data-cy="tag-residencial" style={{ fontSize: '0.65rem', backgroundColor: 'rgba(255, 165, 0, 0.15)', color: '#ffaa00', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid #ffaa00' }}>
                             Residencial
                           </span>
                         )}
                         {addr.isDelivery && (
-                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--color-success)' }}>
+                          <span data-cy="tag-entrega" style={{ fontSize: '0.65rem', backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--color-success)' }}>
                             Entrega
                           </span>
                         )}
                         {addr.isBilling && (
-                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(0, 191, 255, 0.15)', color: '#00bfff', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid #00bfff' }}>
+                          <span data-cy="tag-cobranca" style={{ fontSize: '0.65rem', backgroundColor: 'rgba(0, 191, 255, 0.15)', color: '#00bfff', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid #00bfff' }}>
                             Cobrança
                           </span>
                         )}
@@ -839,16 +850,17 @@ export default function CustomerArea() {
                           type="button"
                           onClick={() => handleOpenEditAddr(addr)}
                           className="btn-edit-link"
+                          data-cy="endereco-editar-btn"
                         >
                           Editar
                         </button>
                       </div>
                     </div>
-                    <p className="addr-txt">
+                    <p className="addr-txt" data-cy="endereco-logradouro-txt">
                       {addr.streetType ? `${addr.streetType} ` : ''}{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`} ({addr.residenceType || 'Residencial'})
                     </p>
-                    <p className="addr-txt">{addr.neighborhood} - {addr.city} / {addr.state} - {addr.country || 'Brasil'}</p>
-                    <p className="addr-txt text-light">CEP {addr.zipCode}</p>
+                    <p className="addr-txt" data-cy="endereco-cidade-txt">{addr.neighborhood} - {addr.city} / {addr.state} - {addr.country || 'Brasil'}</p>
+                    <p className="addr-txt text-light" data-cy="endereco-cep-txt">CEP {addr.zipCode}</p>
                   </div>
                 ))}
               </div>
@@ -1332,9 +1344,9 @@ export default function CustomerArea() {
         }}
         title={editingAddress ? 'Editar Endereço' : 'Adicionar Novo Endereço'}
       >
-        <form onSubmit={handleSaveAddress} className="address-modal-form">
+        <form onSubmit={handleSaveAddress} className="address-modal-form" data-cy="endereco-form">
           {addrModalError && (
-            <div style={{
+            <div data-cy="endereco-error-banner" style={{
               backgroundColor: 'rgba(255, 69, 69, 0.1)',
               border: '1px solid var(--color-danger)',
               color: 'var(--color-danger)',
@@ -1354,6 +1366,7 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="m-addr-label"
+                data-cy="endereco-input-nome"
                 value={addrForm.label}
                 onChange={e => setAddrForm(prev => ({ ...prev, label: e.target.value }))}
                 placeholder="Ex: Casa, Escritório"
@@ -1364,6 +1377,7 @@ export default function CustomerArea() {
               <label htmlFor="m-res-type">Tipo de Residência *</label>
               <select
                 id="m-res-type"
+                data-cy="endereco-tipo-residencia"
                 value={addrForm.residenceType}
                 onChange={e => setAddrForm(prev => ({ ...prev, residenceType: e.target.value }))}
                 required
@@ -1379,6 +1393,7 @@ export default function CustomerArea() {
               <label htmlFor="m-street-type">Tipo de Logradouro *</label>
               <select
                 id="m-street-type"
+                data-cy="endereco-tipo-logradouro"
                 value={addrForm.streetType}
                 onChange={e => setAddrForm(prev => ({ ...prev, streetType: e.target.value }))}
                 required
@@ -1400,6 +1415,7 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="m-addr-street"
+                data-cy="endereco-logradouro"
                 value={addrForm.street}
                 onChange={e => setAddrForm(prev => ({ ...prev, street: e.target.value }))}
                 placeholder="Rua, Avenida, Alameda..."
@@ -1411,6 +1427,7 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="m-addr-num"
+                data-cy="endereco-numero"
                 value={addrForm.number}
                 onChange={e => setAddrForm(prev => ({ ...prev, number: e.target.value }))}
                 placeholder="123"
@@ -1425,6 +1442,7 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="m-addr-comp"
+                data-cy="endereco-complemento"
                 value={addrForm.complement}
                 onChange={e => setAddrForm(prev => ({ ...prev, complement: e.target.value }))}
                 placeholder="Apto 42, Bloco B (opcional)"
@@ -1435,6 +1453,7 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="m-addr-neigh"
+                data-cy="endereco-bairro"
                 value={addrForm.neighborhood}
                 onChange={e => setAddrForm(prev => ({ ...prev, neighborhood: e.target.value }))}
                 placeholder="Bairro"
@@ -1449,6 +1468,7 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="m-addr-zip"
+                data-cy="endereco-cep"
                 value={addrForm.zipCode}
                 onChange={e => setAddrForm(prev => ({ ...prev, zipCode: maskZipCode(e.target.value) }))}
                 placeholder="00000-000"
@@ -1461,6 +1481,7 @@ export default function CustomerArea() {
               <input
                 type="text"
                 id="m-addr-city"
+                data-cy="endereco-cidade"
                 value={addrForm.city}
                 onChange={e => setAddrForm(prev => ({ ...prev, city: e.target.value }))}
                 placeholder="Cidade"
@@ -1471,6 +1492,7 @@ export default function CustomerArea() {
               <label htmlFor="m-addr-state">Estado *</label>
               <select
                 id="m-addr-state"
+                data-cy="endereco-estado"
                 value={addrForm.state}
                 onChange={e => setAddrForm(prev => ({ ...prev, state: e.target.value }))}
                 required
@@ -1485,11 +1507,38 @@ export default function CustomerArea() {
             </div>
           </div>
 
+          <div className="form-row">
+            <div className="form-group flex-1">
+              <label htmlFor="m-addr-country">País *</label>
+              <input
+                type="text"
+                id="m-addr-country"
+                data-cy="endereco-pais"
+                value={addrForm.country}
+                onChange={e => setAddrForm(prev => ({ ...prev, country: e.target.value }))}
+                placeholder="Brasil"
+                required
+              />
+            </div>
+            <div className="form-group flex-2">
+              <label htmlFor="m-addr-obs">Observações (opcional)</label>
+              <input
+                type="text"
+                id="m-addr-obs"
+                data-cy="endereco-observacoes"
+                value={addrForm.observations}
+                onChange={e => setAddrForm(prev => ({ ...prev, observations: e.target.value }))}
+                placeholder="Ponto de referência, instruções de entrega..."
+              />
+            </div>
+          </div>
+
           {/* Finalidades do Endereço */}
           <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.5rem', padding: '0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
               <input
                 type="checkbox"
+                data-cy="endereco-residencial"
                 checked={addrForm.isResidential}
                 onChange={e => setAddrForm(prev => ({ ...prev, isResidential: e.target.checked }))}
               />
@@ -1498,6 +1547,7 @@ export default function CustomerArea() {
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
               <input
                 type="checkbox"
+                data-cy="endereco-entrega"
                 checked={addrForm.isDelivery}
                 onChange={e => setAddrForm(prev => ({ ...prev, isDelivery: e.target.checked }))}
               />
@@ -1506,6 +1556,7 @@ export default function CustomerArea() {
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
               <input
                 type="checkbox"
+                data-cy="endereco-cobranca"
                 checked={addrForm.isBilling}
                 onChange={e => setAddrForm(prev => ({ ...prev, isBilling: e.target.checked }))}
               />
@@ -1514,8 +1565,8 @@ export default function CustomerArea() {
           </div>
 
           <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setIsAddrModalOpen(false)}>CANCELAR</button>
-            <button type="submit" className="btn btn-primary" disabled={isSavingAddr}>
+            <button type="button" className="btn btn-secondary" data-cy="cancelar-endereco" onClick={() => setIsAddrModalOpen(false)}>CANCELAR</button>
+            <button type="submit" className="btn btn-primary" data-cy="salvar-endereco" disabled={isSavingAddr}>
               {isSavingAddr ? 'SALVANDO...' : 'SALVAR ENDEREÇO'}
             </button>
           </div>

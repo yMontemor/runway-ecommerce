@@ -203,7 +203,7 @@ export function mapAddressToRequestDto(address: Partial<Address>): EnderecoReque
     cep: address.zipCode?.replace(/\D/g, '') || '',
     cidade: address.city?.trim() || '',
     estado: address.state?.trim().toUpperCase() || '',
-    pais: address.country?.trim() || 'Brasil',
+    pais: address.country !== undefined ? address.country.trim() : 'Brasil',
     observacoes: address.observations?.trim() || null,
     residencial: address.isResidential ?? false,
     entrega: address.isDelivery ?? false,
