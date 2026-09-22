@@ -197,26 +197,60 @@ describe('Suíte E2E: Cartões de Crédito do Cliente — RunWay (RF0027 / RN002
 
   /**
    * Helper para selecionar o cliente no Header Dropdown e navegar até a Área do Cliente -> Perfil -> Cartões.
+   * Sincroniza via eventos reais de rede e confirmação de estado da interface.
    */
   function selecionarClienteEAcessarCartoes(cliente: ClienteControle): void {
+    cy.intercept('GET', '**/api/clientes').as('listarClientesNav');
+    cy.intercept('GET', `**/api/clientes/${encodeURIComponent(cliente.codigo)}/cartoes`).as('listarCartoesClienteNav');
+
     cy.visit('/');
+    cy.wait('@listarClientesNav');
+
     cy.get('[data-cy="user-dropdown"]').click();
-    cy.get(`[data-cy="select-customer-${cliente.codigo}"]`).click();
+    cy.get(`[data-cy="select-customer-${cliente.codigo}"]`).scrollIntoView().click();
+
+    // Confirma que o cliente selecionado foi registrado no Header
+    cy.get('[data-cy="user-dropdown"]').should('contain.text', cliente.nome.split(' ')[0]);
+
     cy.get('[data-cy="nav-perfil"]').click();
     cy.url().should('include', '/cliente?tab=perfil');
+
+    // Confirma que a Área do Cliente carregou com o cliente correto
+    cy.get('.profile-client-name').should('contain.text', cliente.nome);
+    cy.get('.profile-client-email').should('contain.text', cliente.email);
+
+    // Aguarda a resposta real da API de cartões para este cliente
+    cy.wait('@listarCartoesClienteNav');
     cy.get('[data-cy="cartoes-section"]').should('be.visible');
   }
 
   /**
    * Recarrega a página (cy.reload) e resseleciona o cliente de controle pelo header,
    * retornando à seção de cartões sem depender de localStorage.
+   * Sincroniza via eventos reais de rede e confirmação de estado da interface.
    */
   function recarregarEReselecionarCliente(cliente: ClienteControle): void {
+    cy.intercept('GET', '**/api/clientes').as('listarClientesReload');
+    cy.intercept('GET', `**/api/clientes/${encodeURIComponent(cliente.codigo)}/cartoes`).as('listarCartoesClienteReload');
+
     cy.reload();
+    cy.wait('@listarClientesReload');
+
     cy.get('[data-cy="user-dropdown"]').click();
-    cy.get(`[data-cy="select-customer-${cliente.codigo}"]`).click();
+    cy.get(`[data-cy="select-customer-${cliente.codigo}"]`).scrollIntoView().click();
+
+    // Confirma que o cliente selecionado foi registrado no Header
+    cy.get('[data-cy="user-dropdown"]').should('contain.text', cliente.nome.split(' ')[0]);
+
     cy.get('[data-cy="nav-perfil"]').click();
     cy.url().should('include', '/cliente?tab=perfil');
+
+    // Confirma que a Área do Cliente carregou com o cliente correto
+    cy.get('.profile-client-name').should('contain.text', cliente.nome);
+    cy.get('.profile-client-email').should('contain.text', cliente.email);
+
+    // Aguarda a resposta real da API de cartões para este cliente
+    cy.wait('@listarCartoesClienteReload');
     cy.get('[data-cy="cartoes-section"]').should('be.visible');
   }
 
@@ -333,6 +367,7 @@ describe('Suíte E2E: Cartões de Crédito do Cliente — RunWay (RF0027 / RN002
       cy.get('[data-cy="cartao-input-cvv"]').type('321');
       cy.get('[data-cy="salvar-cartao"]').click();
       cy.wait('@criarCartaoReal').its('response.statusCode').should('eq', 201);
+      cy.contains('[data-cy="cartao-card"]', 'final 1111').should('be.visible');
 
       // 2. Cadastra segundo cartão (Mastercard - final 5105)
       cy.get('[data-cy="novo-cartao-btn"]').click();
