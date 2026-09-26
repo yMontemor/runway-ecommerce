@@ -1,19 +1,41 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../../store/AppContext';
 import './Header.css';
 
 export default function Header() {
   const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const { customers, activeCustomer, setActiveCustomer, cartsByCustomer, toggleChatbot } = useApp();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const isAdmin = location.pathname.startsWith('/admin');
 
   const currentCart = cartsByCustomer[activeCustomer.id] || [];
   const cartCount = currentCart.reduce((sum, item) => sum + item.quantity, 0);
 
+  // Fecha o dropdown ao clicar fora do componente
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    if (showDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
+
   const handleCustomerSelect = (id: string) => {
     setActiveCustomer(id);
     setShowDropdown(false);
+    if (isAdmin) {
+      navigate('/cliente');
+    }
   };
 
   const handleAdminSelect = () => {
@@ -114,55 +136,114 @@ export default function Header() {
             </svg>
           </Link>
 
-          {/* Cliente: Menu Dropdown de Demonstração */}
-          <div className="user-dropdown-container">
+          {/* Cliente / Admin: Menu Dropdown de Demonstração */}
+          <div className="user-dropdown-container" ref={dropdownRef}>
             <button 
               onClick={() => setShowDropdown(!showDropdown)} 
-              className="nav-item user-btn"
+              className={`nav-item user-btn ${isAdmin ? 'admin-user-btn' : ''}`}
               type="button"
               aria-expanded={showDropdown}
-              title="Alternar Cliente / Admin"
+              title={isAdmin ? "Administrador (Painel Admin)" : "Alternar Cliente / Admin"}
               data-cy="user-dropdown"
             >
-              <span className="user-name">{activeCustomer.name ? activeCustomer.name.split(' ')[0] : 'Cliente'}</span>
+              <span className="user-name">
+                {isAdmin ? 'Admin' : (activeCustomer.name ? activeCustomer.name.split(' ')[0] : 'Cliente')}
+              </span>
               <span className="dropdown-arrow" style={{ fontSize: '0.6rem', marginLeft: '0.15rem' }}>▼</span>
             </button>
 
             {showDropdown && (
               <div className="dropdown-menu">
-                <div className="dropdown-section-title">Alternar Cliente</div>
-                {customers.length === 0 ? (
-                  <div style={{ padding: '0.5rem 0.75rem', fontSize: '0.8rem', color: '#888', fontStyle: 'italic' }}>
-                    Nenhum cliente carregado
-                  </div>
+                {isAdmin ? (
+                  <>
+                    <div className="dropdown-section-title">Modo Administrativo</div>
+                    <button
+                      onClick={handleAdminSelect}
+                      className="dropdown-item admin-item active"
+                      type="button"
+                      data-cy="painel-admin"
+                    >
+                      <span className="cust-name-text">Painel Administrativo</span>
+                      <span className="status-tag admin-tag">ATIVO</span>
+                    </button>
+                    <div className="dropdown-divider"></div>
+                    <div className="dropdown-section-title">Alternar para Cliente</div>
+                    {customers.length === 0 ? (
+                      <div style={{ padding: '0.5rem 0.75rem', fontSize: '0.8rem', color: '#888', fontStyle: 'italic' }}>
+                        Nenhum cliente carregado
+                      </div>
+                    ) : (
+                      <div className="dropdown-customers-list">
+                        {customers.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => handleCustomerSelect(c.id)}
+                            className="dropdown-item"
+                            type="button"
+                            data-cy={`select-customer-${c.id}`}
+                          >
+                            <span className="cust-name-text">{c.name ? c.name.split(' ')[0] : c.id}</span>
+                            <span className={`status-tag ${c.status.toLowerCase()}`}>
+                              {c.status}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="dropdown-divider"></div>
+                    <button
+                      onClick={() => {
+                        navigate('/catalogo');
+                        setShowDropdown(false);
+                      }}
+                      className="dropdown-item return-store-item"
+                      type="button"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.45rem' }}>
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                      </svg>
+                      Voltar à Loja
+                    </button>
+                  </>
                 ) : (
-                  <div className="dropdown-customers-list">
-                    {customers.map(c => (
-                      <button
-                        key={c.id}
-                        onClick={() => handleCustomerSelect(c.id)}
-                        className={`dropdown-item ${c.id === activeCustomer.id ? 'active' : ''}`}
-                        type="button"
-                        data-cy={`select-customer-${c.id}`}
-                      >
-                        <span className="cust-name-text">{c.name ? c.name.split(' ')[0] : c.id}</span>
-                        <span className={`status-tag ${c.status.toLowerCase()}`}>
-                          {c.status}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  <>
+                    <div className="dropdown-section-title">Alternar Cliente</div>
+                    {customers.length === 0 ? (
+                      <div style={{ padding: '0.5rem 0.75rem', fontSize: '0.8rem', color: '#888', fontStyle: 'italic' }}>
+                        Nenhum cliente carregado
+                      </div>
+                    ) : (
+                      <div className="dropdown-customers-list">
+                        {customers.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => handleCustomerSelect(c.id)}
+                            className={`dropdown-item ${c.id === activeCustomer.id ? 'active' : ''}`}
+                            type="button"
+                            data-cy={`select-customer-${c.id}`}
+                          >
+                            <span className="cust-name-text">{c.name ? c.name.split(' ')[0] : c.id}</span>
+                            <span className={`status-tag ${c.status.toLowerCase()}`}>
+                              {c.status}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="dropdown-divider"></div>
+                    <div className="dropdown-section-title">Demonstração</div>
+                    <button
+                      onClick={handleAdminSelect}
+                      className="dropdown-item admin-item"
+                      type="button"
+                      data-cy="painel-admin"
+                    >
+                      Painel Administrativo
+                    </button>
+                  </>
                 )}
-                <div className="dropdown-divider"></div>
-                <div className="dropdown-section-title">Demonstração</div>
-                <button
-                  onClick={handleAdminSelect}
-                  className="dropdown-item admin-item"
-                  type="button"
-                  data-cy="painel-admin"
-                >
-                  Painel Administrativo
-                </button>
               </div>
             )}
           </div>

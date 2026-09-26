@@ -266,3 +266,37 @@
   background-color: rgba(255, 69, 69, 0.1);
   color: var(--color-danger);
 }
+
+/* Modo Admin no Header */
+.user-btn.admin-user-btn {
+  color: var(--color-primary);
+}
+
+.user-btn.admin-user-btn .user-name {
+  color: var(--color-primary);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.user-btn.admin-user-btn .dropdown-arrow {
+  color: var(--color-primary);
+}
+
+.status-tag.admin-tag {
+  background-color: rgba(198, 255, 0, 0.15);
+  color: var(--color-primary);
+  border: 1px solid rgba(198, 255, 0, 0.35);
+}
+
+.return-store-item {
+  color: var(--color-danger);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+
+.return-store-item:hover {
+  background-color: rgba(255, 69, 69, 0.08);
+  color: #ff6b6b;
+}
+
