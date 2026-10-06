@@ -3,7 +3,11 @@
  * 
  * NOTA: O parcelamento em até 6x sem juros com parcela mínima de R$ 10,00
  * é uma melhoria própria implementada no protótipo RunWay (não é regra do DRS).
- * Regras do DRS relacionadas (RN0034 / RN0035) dizem respeito ao valor mínimo por cartão.
+ * Regras do DRS relacionadas:
+ * - RN0033: Apenas um cupom promocional por compra;
+ * - RN0034: Múltiplos cartões, mínimo R$ 10 por cartão;
+ * - RN0035: Cupons + cartão, usar valor máximo dos cupons e permitir residual < R$ 10;
+ * - RN0036: Gerar cupom de troca pelo excedente.
  */
 
 export const MAX_INSTALLMENTS = 6;

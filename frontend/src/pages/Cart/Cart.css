@@ -162,6 +162,11 @@
   background-color: #222222;
 }
 
+.quantity-adjuster button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .qty-value {
   width: 25px;
   text-align: center;

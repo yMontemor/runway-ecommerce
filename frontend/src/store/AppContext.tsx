@@ -1,10 +1,11 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
-import type { Customer, CartItem, Order, Coupon, Exchange, ExchangeItem, Address, CreditCard, NewCustomerInput } from '../types';
+import type { Customer, CartItem, Order, Coupon, Exchange, ExchangeItem, Address, CreditCard, NewCustomerInput, Product, ValidacaoEstoqueResponse } from '../types';
 import { mockCustomers } from '../data/customers';
 import { mockCoupons } from '../data/coupons';
-import { products } from '../data/products';
+import { products as mockProducts } from '../data/products';
+import { produtoService } from '../services/produtoService';
 import {
   cadastrarCliente,
   cadastrarEnderecoCliente,
@@ -47,14 +48,19 @@ interface AppContextType {
   refreshCustomers: () => Promise<void>;
   cartsByCustomer: Record<string, CartItem[]>;
   orders: Order[];
+  products: Product[];
+  isLoadingProducts: boolean;
+  productsLoadError: string | null;
+  refreshProducts: () => Promise<void>;
   coupons: Coupon[];
   exchanges: Exchange[];
   setActiveCustomer: (id: string) => void;
   addCustomer: (data: NewCustomerInput) => Promise<{ success: boolean; error?: string; customer?: Customer }>;
   updateCustomerProfile: (codigo: string, payload: ClienteUpdateRequestDto) => Promise<{ success: boolean; error?: string }>;
   inativarCustomer: (codigo: string) => Promise<{ success: boolean; error?: string; mensagem?: string }>;
-  addToCart: (productId: string, size: number, quantity: number) => { success: boolean; isInactive?: boolean; notReady?: boolean };
-  updateCartQuantity: (productId: string, size: number, delta: number) => void;
+  addToCart: (productId: string, size: number, quantity: number, variacaoId?: number) => Promise<{ success: boolean; isInactive?: boolean; notReady?: boolean; message?: string }>;
+  updateCartQuantity: (productId: string, size: number, delta: number) => Promise<{ success: boolean; message?: string }>;
+  validarEstoqueCarrinho: (customerId?: string) => Promise<ValidacaoEstoqueResponse>;
   removeFromCart: (productId: string, size: number) => void;
   clearCart: (customerId: string) => void;
   checkoutCart: (
@@ -111,6 +117,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [customerLoadError, setCustomerLoadError] = useState<string | null>(null);
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
 
+  // Produtos reais da API
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [productsLoadError, setProductsLoadError] = useState<string | null>(null);
+
+  const carregarProdutos = async () => {
+    try {
+      setIsLoadingProducts(true);
+      setProductsLoadError(null);
+      const apiProducts = await produtoService.listar();
+      if (apiProducts && apiProducts.length > 0) {
+        setProductsList(apiProducts);
+      } else {
+        setProductsList([]);
+        setProductsLoadError('Nenhum produto disponível no catálogo no momento.');
+      }
+    } catch (err) {
+      console.error('Falha ao carregar produtos do backend:', err);
+      setProductsList([]);
+      setProductsLoadError('Não foi possível carregar os produtos do catálogo. Verifique sua conexão e tente novamente.');
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  };
+
+  useEffect(() => {
+    carregarProdutos();
+  }, []);
+
+  const pendingItemUpdatesRef = useRef<Set<string>>(new Set());
+
   const toggleChatbot = () => setIsChatbotOpen(prev => !prev);
   
   // Carrinhos isolados por cliente
@@ -133,7 +170,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clientConfirmedReceipt: true,
       items: [
         {
-          product: products.find(p => p.id === 'nike_pegasus_41') || products[0],
+          product: mockProducts.find(p => p.id === 'nike_pegasus_41') || mockProducts[0],
+          variacaoId: 8,
           size: 39,
           quantity: 1
         }
@@ -156,7 +194,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clientConfirmedReceipt: true,
       items: [
         {
-          product: products.find(p => p.id === 'adidas_terrex_agravic') || products[2],
+          product: mockProducts.find(p => p.id === 'adidas_terrex_agravic') || mockProducts[2],
+          variacaoId: 0,
           size: 42,
           quantity: 1
         }
@@ -178,7 +217,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       status: 'EM ABERTO',
       items: [
         {
-          product: products.find(p => p.id === 'saucony_triumph_23') || products[1],
+          product: mockProducts.find(p => p.id === 'saucony_triumph_23') || mockProducts[1],
+          variacaoId: 0,
           size: 39,
           quantity: 1
         }
@@ -201,17 +241,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clientConfirmedReceipt: true,
       items: [
         {
-          product: products.find(p => p.id === 'olympikus_corre_turbo') || products[0],
+          product: mockProducts.find(p => p.id === 'olympikus_corre_turbo') || mockProducts[0],
+          variacaoId: 0,
           size: 39,
           quantity: 2
         },
         {
-          product: products.find(p => p.id === 'saucony_triumph_23') || products[1],
+          product: mockProducts.find(p => p.id === 'saucony_triumph_23') || mockProducts[1],
+          variacaoId: 0,
           size: 40,
           quantity: 1
         },
         {
-          product: products.find(p => p.id === 'fila_float_maxxi_2') || products[0],
+          product: mockProducts.find(p => p.id === 'fila_float_maxxi_2') || mockProducts[0],
+          variacaoId: 0,
           size: 39,
           quantity: 1
         }
@@ -324,8 +367,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     carregarClientesReais();
   }, []);
 
-  // Adicionar produto ao carrinho do cliente ativo
-  const addToCart = (productId: string, size: number, quantity: number) => {
+  // Adicionar produto ao carrinho do cliente ativo com validação real de estoque
+  const addToCart = async (productId: string, size: number, quantity: number, variacaoId?: number) => {
     if (!activeCustomer.id || isLoadingCustomers) {
       return {
         success: false,
@@ -337,23 +380,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { success: false, isInactive: true };
     }
 
-    const product = products.find(p => p.id === productId);
-    if (!product) return { success: false };
+    const product = productsList.find(p => p.id === productId);
+    if (!product) return { success: false, message: 'Produto não encontrado no catálogo.' };
 
+    // Identificar a variação selecionada (por tamanho ou ID)
+    const variacao = product.variacoes?.find(v => v.tamanho === size)
+      || (variacaoId ? product.variacoes?.find(v => v.id === variacaoId) : undefined);
+
+    const realVariacaoId = variacao?.id ?? 0;
     const customerId = activeCustomer.id;
+    const customerCart = cartsByCustomer[customerId] || [];
+    const existingItemIndex = customerCart.findIndex(
+      item => item.product.id === productId && item.size === size
+    );
+
+    const currentQty = existingItemIndex > -1 ? customerCart[existingItemIndex].quantity : 0;
+    const proposedQty = currentQty + quantity;
+
+    // Validação real de estoque no backend se a variação for conhecida
+    if (realVariacaoId > 0) {
+      try {
+        const validacao = await produtoService.validarEstoque([
+          { produtoVariacaoId: realVariacaoId, quantidade: proposedQty }
+        ]);
+
+        if (!validacao.valido) {
+          const itemInvalido = validacao.itens.find(i => !i.disponivel);
+          const msg = itemInvalido?.mensagem || validacao.mensagem;
+          return { success: false, message: msg };
+        }
+      } catch (err) {
+        console.error('Erro ao validar estoque no backend ao adicionar:', err);
+        return { success: false, message: 'Não foi possível validar o estoque. Tente novamente.' };
+      }
+    } else if (variacao && proposedQty > variacao.quantidadeEstoque) {
+      const msg = variacao.quantidadeEstoque <= 0
+        ? 'Este tamanho está esgotado no momento.'
+        : `Há apenas ${variacao.quantidadeEstoque} unidades disponíveis deste produto.`;
+      return { success: false, message: msg };
+    }
 
     setCartsByCustomer(prev => {
-      const customerCart = prev[customerId] || [];
-      const existingItemIndex = customerCart.findIndex(
-        item => item.product.id === productId && item.size === size
-      );
-
-      let updatedCart;
+      const cart = prev[customerId] || [];
+      let updatedCart: CartItem[];
       if (existingItemIndex > -1) {
-        updatedCart = [...customerCart];
-        updatedCart[existingItemIndex].quantity += quantity;
+        updatedCart = [...cart];
+        updatedCart[existingItemIndex] = {
+          ...updatedCart[existingItemIndex],
+          variacaoId: realVariacaoId,
+          quantity: proposedQty
+        };
       } else {
-        updatedCart = [...customerCart, { product, size, quantity }];
+        updatedCart = [...cart, { product, variacaoId: realVariacaoId, size, quantity }];
       }
 
       return {
@@ -365,28 +443,94 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { success: true };
   };
 
-  // Atualizar quantidade no carrinho
-  const updateCartQuantity = (productId: string, size: number, delta: number) => {
-    const customerId = activeCustomer.id;
-    if (!customerId) return;
+  // Atualizar quantidade no carrinho com validação real de estoque ao incrementar
+  const updateCartQuantity = async (productId: string, size: number, delta: number): Promise<{ success: boolean; message?: string }> => {
+    const itemKey = `${productId}-${size}`;
+    if (pendingItemUpdatesRef.current.has(itemKey)) {
+      return { success: false, message: 'Alteração já em andamento para este item.' };
+    }
 
-    setCartsByCustomer(prev => {
-      const customerCart = prev[customerId] || [];
-      const updatedCart = customerCart
-        .map(item => {
-          if (item.product.id === productId && item.size === size) {
-            const newQty = item.quantity + delta;
-            return { ...item, quantity: newQty };
+    pendingItemUpdatesRef.current.add(itemKey);
+    try {
+      const customerId = activeCustomer.id;
+      if (!customerId) return { success: false, message: 'Cliente não selecionado.' };
+
+      const customerCart = cartsByCustomer[customerId] || [];
+      const item = customerCart.find(i => i.product.id === productId && i.size === size);
+      if (!item) return { success: false, message: 'Item não encontrado no carrinho.' };
+
+      const newQty = item.quantity + delta;
+      if (newQty <= 0) {
+        removeFromCart(productId, size);
+        return { success: true };
+      }
+
+      // Se está aumentando a quantidade, validar estoque real no backend
+      if (delta > 0 && item.variacaoId > 0) {
+        try {
+          const validacao = await produtoService.validarEstoque([
+            { produtoVariacaoId: item.variacaoId, quantidade: newQty }
+          ]);
+
+          if (!validacao.valido) {
+            const itemInvalido = validacao.itens.find(i => !i.disponivel);
+            const msg = itemInvalido?.mensagem || validacao.mensagem;
+            return { success: false, message: msg };
           }
-          return item;
-        })
-        .filter(item => item.quantity > 0);
+        } catch (err) {
+          console.error('Erro ao verificar estoque na alteração de quantidade:', err);
+          return { success: false, message: 'Não foi possível verificar o estoque no momento.' };
+        }
+      }
 
+      setCartsByCustomer(prev => {
+        const cart = prev[customerId] || [];
+        const updatedCart = cart
+          .map(i => {
+            if (i.product.id === productId && i.size === size) {
+              return { ...i, quantity: newQty };
+            }
+            return i;
+          })
+          .filter(i => i.quantity > 0);
+
+        return {
+          ...prev,
+          [customerId]: updatedCart
+        };
+      });
+
+      return { success: true };
+    } finally {
+      pendingItemUpdatesRef.current.delete(itemKey);
+    }
+  };
+
+  // Validação de estoque de todos os itens do carrinho antes do checkout
+  const validarEstoqueCarrinho = async (customerId?: string): Promise<ValidacaoEstoqueResponse> => {
+    const targetId = customerId || activeCustomer.id;
+    const cart = cartsByCustomer[targetId] || [];
+    if (cart.length === 0) {
+      return { valido: true, mensagem: 'Carrinho vazio.', itens: [] };
+    }
+
+    const itensComVariacao = cart.filter(i => i.variacaoId > 0);
+    if (itensComVariacao.length === 0) {
+      return { valido: true, mensagem: 'Todos os itens estão disponíveis.', itens: [] };
+    }
+
+    try {
+      return await produtoService.validarEstoque(
+        itensComVariacao.map(i => ({ produtoVariacaoId: i.variacaoId, quantidade: i.quantity }))
+      );
+    } catch (err) {
+      console.error('Erro na validação pré-checkout de estoque:', err);
       return {
-        ...prev,
-        [customerId]: updatedCart
+        valido: false,
+        mensagem: 'Não foi possível validar o estoque antes do checkout. Tente novamente.',
+        itens: []
       };
-    });
+    }
   };
 
   // Remover do carrinho
@@ -901,6 +1045,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider
       value={{
+        products: productsList,
+        isLoadingProducts,
+        productsLoadError,
+        refreshProducts: carregarProdutos,
         customers,
         activeCustomer,
         isLoadingCustomers,
@@ -916,6 +1064,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         inativarCustomer,
         addToCart,
         updateCartQuantity,
+        validarEstoqueCarrinho,
         removeFromCart,
         clearCart,
         checkoutCart,

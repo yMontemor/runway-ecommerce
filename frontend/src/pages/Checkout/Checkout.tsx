@@ -2,8 +2,25 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../../store/AppContext';
 import Modal from '../../components/Modal/Modal';
-import type { Address, Coupon, Order, BandeiraDto } from '../../types';
+import type { 
+  Address, 
+  Order, 
+  BandeiraDto, 
+  CreditCard,
+  CalcularFreteRequestDto, 
+  CalcularFreteResponseDto,
+  CupomResponseDto,
+  ValidarPagamentoRequestDto,
+  ValidarPagamentoResponseDto,
+  NovoCartaoPagamentoDto,
+  CriarPedidoRequestDto,
+  PedidoResponseDto
+} from '../../types';
 import { listarBandeiras } from '../../services/clienteService';
+import { freteService } from '../../services/freteService';
+import { cupomService } from '../../services/cupomService';
+import { pagamentoService } from '../../services/pagamentoService';
+import { pedidoService } from '../../services/pedidoService';
 import { BRAZILIAN_STATES } from '../../data/brazilianStates';
 import { getInstallmentOptions, getMaxInstallments } from '../../utils/payment';
 import {
@@ -18,13 +35,25 @@ import {
 } from '../../utils/maskAndValidate';
 import './Checkout.css';
 
+interface CustomCreditCard extends CreditCard {
+  isTemporary?: boolean;
+  rawNovoCartao?: NovoCartaoPagamentoDto;
+}
+
+function parseNumericId(id: string | number | undefined): number | undefined {
+  if (id === undefined || id === null) return undefined;
+  if (typeof id === 'number') return id > 0 ? id : undefined;
+  const cleaned = String(id).replace(/^(card_|addr_)/, '');
+  const num = parseInt(cleaned, 10);
+  return !isNaN(num) && num > 0 ? num : undefined;
+}
+
 export default function Checkout() {
   const navigate = useNavigate();
   const { 
     activeCustomer, 
     cartsByCustomer, 
-    coupons, 
-    checkoutCart,
+    clearCart,
     addCustomerAddress,
     updateCustomerAddress,
     addCustomerCard
@@ -34,8 +63,11 @@ export default function Checkout() {
     return cartsByCustomer[activeCustomer.id] || [];
   }, [cartsByCustomer, activeCustomer.id]);
   
-  const [step, setStep] = useState(1); // 1: Em aberto, 2: Pagamento, 3: Revisão, 4: Confirmado
+  const [step, setStep] = useState(1); // 1: Endereço, 2: Pagamento, 3: Revisão, 4: Confirmado
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
+  const [createdPedidoResponse, setCreatedPedidoResponse] = useState<PedidoResponseDto | null>(null);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [orderPlacementError, setOrderPlacementError] = useState<string | null>(null);
 
   // Se o carrinho estiver vazio e não houver pedido confirmado, volta para o carrinho
   useEffect(() => {
@@ -45,16 +77,34 @@ export default function Checkout() {
   }, [cartItems, step, navigate]);
 
   // --- STEP 1: ENDEREÇO ---
+  const [temporaryAddress, setTemporaryAddress] = useState<Address | null>(null);
+  const [saveAddressToProfile, setSaveAddressToProfile] = useState<boolean>(true);
+
+  const availableAddresses = useMemo(() => {
+    if (temporaryAddress) {
+      const exists = activeCustomer.addresses.some(a => a.id === temporaryAddress.id);
+      if (!exists) {
+        return [...activeCustomer.addresses, temporaryAddress];
+      }
+    }
+    return activeCustomer.addresses;
+  }, [activeCustomer.addresses, temporaryAddress]);
+
   const [selectedAddressId, setSelectedAddressId] = useState<string>(
     activeCustomer.addresses[0]?.id || ''
   );
 
+  const selectedAddress = useMemo(() => {
+    return availableAddresses.find(a => a.id === selectedAddressId) || null;
+  }, [availableAddresses, selectedAddressId]);
+
   // Se o endereço selecionado deixar de existir, limpa e exige seleção explícita do cliente
   useEffect(() => {
-    if (selectedAddressId && !activeCustomer.addresses.some(a => a.id === selectedAddressId)) {
-      setSelectedAddressId('');
+    if (selectedAddressId && !availableAddresses.some(a => a.id === selectedAddressId)) {
+      setSelectedAddressId(availableAddresses[0]?.id || '');
     }
-  }, [activeCustomer.addresses, selectedAddressId]);
+  }, [availableAddresses, selectedAddressId]);
+
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [addressModalError, setAddressModalError] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
@@ -77,6 +127,7 @@ export default function Checkout() {
 
   const handleOpenAddAddress = () => {
     setEditingAddress(null);
+    setSaveAddressToProfile(true);
     setAddressModalError(null);
     setAddressForm({
       label: '',
@@ -101,9 +152,10 @@ export default function Checkout() {
     e.preventDefault();
     e.stopPropagation();
     setEditingAddress(addr);
+    setSaveAddressToProfile(addr.id !== 'temp-checkout-address');
     setAddressModalError(null);
     setAddressForm({
-      label: addr.label,
+      label: addr.label.replace(' (Apenas nesta compra)', ''),
       residenceType: addr.residenceType || 'Casa',
       streetType: addr.streetType || 'Rua',
       street: addr.street,
@@ -121,11 +173,11 @@ export default function Checkout() {
     setIsAddressModalOpen(true);
   };
 
-  const handleSaveAddress = (e: React.FormEvent) => {
+  const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddressModalError(null);
 
-    if (!addressForm.label.trim() || !addressForm.street.trim() || !addressForm.number.trim() || !addressForm.city.trim() || !addressForm.state.trim()) {
+    if (!addressForm.label.trim() || !addressForm.street.trim() || !addressForm.number.trim() || !addressForm.city.trim() || !addressForm.state.trim() || !(addressForm.country || 'Brasil').trim()) {
       setAddressModalError('Por favor, preencha todos os campos obrigatórios do endereço.');
       return;
     }
@@ -137,22 +189,64 @@ export default function Checkout() {
     }
     
     if (editingAddress) {
-      updateCustomerAddress(activeCustomer.id, {
-        ...editingAddress,
-        ...addressForm,
-        zipCode: maskZipCode(addressForm.zipCode)
-      });
-      setSelectedAddressId(editingAddress.id);
+      if (editingAddress.id === 'temp-checkout-address') {
+        const updatedTemp: Address = {
+          ...editingAddress,
+          ...addressForm,
+          country: 'Brasil',
+          state: addressForm.state.toUpperCase().trim(),
+          zipCode: maskZipCode(addressForm.zipCode)
+        };
+        setTemporaryAddress(updatedTemp);
+        setSelectedAddressId(updatedTemp.id);
+      } else {
+        await updateCustomerAddress(activeCustomer.id, {
+          ...editingAddress,
+          ...addressForm,
+          country: 'Brasil',
+          zipCode: maskZipCode(addressForm.zipCode)
+        });
+        setSelectedAddressId(editingAddress.id);
+      }
     } else {
-      addCustomerAddress(activeCustomer.id, {
-        ...addressForm,
-        zipCode: maskZipCode(addressForm.zipCode)
-      });
+      if (saveAddressToProfile) {
+        const res = await addCustomerAddress(activeCustomer.id, {
+          ...addressForm,
+          country: 'Brasil',
+          zipCode: maskZipCode(addressForm.zipCode)
+        });
+        if (res.success && res.address) {
+          setSelectedAddressId(res.address.id);
+        } else if (res.error) {
+          setAddressModalError(res.error);
+          return;
+        }
+      } else {
+        const tempAddr: Address = {
+          id: 'temp-checkout-address',
+          label: addressForm.label || 'Endereço de Entrega',
+          residenceType: addressForm.residenceType,
+          streetType: addressForm.streetType,
+          street: addressForm.street,
+          number: addressForm.number,
+          complement: addressForm.complement,
+          neighborhood: addressForm.neighborhood,
+          zipCode: maskZipCode(addressForm.zipCode),
+          city: addressForm.city,
+          state: addressForm.state.toUpperCase().trim(),
+          country: addressForm.country || 'Brasil',
+          observations: addressForm.observations,
+          isDelivery: true,
+          isBilling: false,
+          isResidential: false
+        };
+        setTemporaryAddress(tempAddr);
+        setSelectedAddressId(tempAddr.id);
+      }
     }
     setIsAddressModalOpen(false);
     setEditingAddress(null);
     
-    // Reset form
     setAddressForm({
       label: '',
       residenceType: 'Casa',
@@ -171,20 +265,111 @@ export default function Checkout() {
     });
   };
 
-  // --- STEP 2: PAGAMENTO ---
-  const customerCoupons = coupons.filter(c => c.customerId === activeCustomer.id);
-  const promoCoupons = customerCoupons.filter(c => c.type === 'promo');
-  const exchangeCoupons = customerCoupons.filter(c => c.type === 'exchange');
+  // --- CÁLCULO DE FRETE (STEP 1) ---
+  const [shippingCost, setShippingCost] = useState<number>(0);
+  const [isCalculatingFrete, setIsCalculatingFrete] = useState<boolean>(false);
+  const [freteError, setFreteError] = useState<string | null>(null);
+  const [freteDetalhes, setFreteDetalhes] = useState<CalcularFreteResponseDto | null>(null);
 
-  const [selectedPromoCouponId, setSelectedPromoCouponId] = useState<string>('');
-  const [selectedExchangeCouponId, setSelectedExchangeCouponId] = useState<string>('');
+  useEffect(() => {
+    let isCancelled = false;
 
-  const [prevCustomerId, setPrevCustomerId] = useState(activeCustomer.id);
+    async function recalcularFrete() {
+      if (!selectedAddress || cartItems.length === 0) {
+        setShippingCost(0);
+        setFreteError(null);
+        setFreteDetalhes(null);
+        setIsCalculatingFrete(false);
+        return;
+      }
+
+      setIsCalculatingFrete(true);
+      setFreteError(null);
+
+      const numericAddressId = parseNumericId(selectedAddress.id);
+
+      const request: CalcularFreteRequestDto = {
+        codigoCliente: activeCustomer.id,
+        enderecoId: numericAddressId,
+        estado: selectedAddress.state,
+        cep: selectedAddress.zipCode,
+        itens: cartItems.map(item => ({
+          produtoVariacaoId: item.variacaoId,
+          quantidade: item.quantity
+        }))
+      };
+
+      const result = await freteService.calcularFrete(request);
+      if (isCancelled) return;
+
+      if (result.success && result.dados) {
+        setShippingCost(Number(result.dados.valorFrete));
+        setFreteDetalhes(result.dados);
+        setFreteError(null);
+      } else {
+        setShippingCost(0);
+        setFreteDetalhes(null);
+        setFreteError(result.error || 'Não foi possível calcular o frete para este endereço.');
+      }
+      setIsCalculatingFrete(false);
+    }
+
+    recalcularFrete();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedAddress, cartItems, activeCustomer.id]);
+
+  const hasSelectedAddress = !!selectedAddressId;
+
+  // --- STEP 2: CUPONS E FORMAS DE PAGAMENTO ---
+  const defaultPromoCoupons: CupomResponseDto[] = useMemo(() => [
+    { id: 1, codigo: 'PROMO20', tipo: 'PROMOCIONAL', valor: 20 },
+    { id: 2, codigo: 'BEMVINDO50', tipo: 'PROMOCIONAL', valor: 50 }
+  ], []);
+
+  const [exchangeCoupons, setExchangeCoupons] = useState<CupomResponseDto[]>([]);
+  const [customCoupons, setCustomCoupons] = useState<CupomResponseDto[]>([]);
+  const [selectedCouponCodes, setSelectedCouponCodes] = useState<string[]>([]);
+  const [manualCouponCode, setManualCouponCode] = useState('');
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
+  const [isCheckingCoupon, setIsCheckingCoupon] = useState(false);
+
+  // Carregar cupons de troca reais do cliente
+  useEffect(() => {
+    let isCancelled = false;
+    async function carregarCuponsTroca() {
+      const res = await cupomService.listarCuponsTrocaCliente(activeCustomer.id);
+      if (!isCancelled && res.success && res.cupons) {
+        setExchangeCoupons(res.cupons);
+      }
+    }
+    carregarCuponsTroca();
+    return () => { isCancelled = true; };
+  }, [activeCustomer.id]);
+
+  const allAvailableCoupons = useMemo(() => {
+    const map = new Map<string, CupomResponseDto>();
+    defaultPromoCoupons.forEach(c => map.set(c.codigo, c));
+    exchangeCoupons.forEach(c => map.set(c.codigo, c));
+    customCoupons.forEach(c => map.set(c.codigo, c));
+    return Array.from(map.values());
+  }, [defaultPromoCoupons, exchangeCoupons, customCoupons]);
+
+  // Cartões
+  const [temporaryCards, setTemporaryCards] = useState<CustomCreditCard[]>([]);
+  const [saveCardToProfile, setSaveCardToProfile] = useState<boolean>(true);
+  const availableCards: CustomCreditCard[] = useMemo(() => {
+    return [...activeCustomer.cards, ...temporaryCards];
+  }, [activeCustomer.cards, temporaryCards]);
+
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [cardAmounts, setCardAmounts] = useState<Record<string, string>>({});
   const [cardInstallments, setCardInstallments] = useState<Record<string, number>>({});
 
-  // Modal de novo cartão no checkout (Card #52: Bandeiras dinâmicas da API)
+  // Modal de novo cartão
   const [bandeiras, setBandeiras] = useState<BandeiraDto[]>([]);
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
   const [cardModalError, setCardModalError] = useState<string | null>(null);
@@ -247,18 +432,54 @@ export default function Checkout() {
       return;
     }
 
-    const res = await addCustomerCard(activeCustomer.id, {
-      bandeiraId: newCard.bandeiraId,
-      numeroCartao: cleanNum,
-      nomeImpresso: newCard.holderName.toUpperCase().trim(),
-      dataValidade: newCard.expirationDate.trim(),
-      cvv: newCard.cvv.replace(/\D/g, ''),
-      preferencial: newCard.isPreferred
-    });
+    const selectedBandeira = bandeiras.find(b => b.id === newCard.bandeiraId);
 
-    if (res.success && res.card) {
-      // Selecionar imediatamente o cartão adicionado
-      setSelectedCardIds(prev => [...prev, res.card!.id]);
+    if (saveCardToProfile) {
+      const res = await addCustomerCard(activeCustomer.id, {
+        bandeiraId: newCard.bandeiraId,
+        numeroCartao: cleanNum,
+        nomeImpresso: newCard.holderName.toUpperCase().trim(),
+        dataValidade: newCard.expirationDate.trim(),
+        cvv: newCard.cvv.replace(/\D/g, ''),
+        preferencial: newCard.isPreferred
+      });
+
+      if (res.success && res.card) {
+        setSelectedCardIds(prev => [...prev, res.card!.id]);
+        setIsCardModalOpen(false);
+        setNewCard({
+          bandeiraId: bandeiras.length > 0 ? bandeiras[0].id : 1,
+          cardNumber: '',
+          holderName: '',
+          expirationDate: '',
+          cvv: '',
+          isPreferred: false
+        });
+      } else {
+        setCardModalError(res.error || 'Erro ao cadastrar o cartão.');
+      }
+    } else {
+      const tempId = `temp-card-${Date.now()}`;
+      const tempCard: CustomCreditCard = {
+        id: tempId,
+        brand: selectedBandeira?.nome || 'Cartão',
+        lastFour: cleanNum.slice(-4),
+        holderName: newCard.holderName.toUpperCase().trim(),
+        expirationDate: newCard.expirationDate.trim(),
+        isPreferred: false,
+        isTemporary: true,
+        rawNovoCartao: {
+          bandeiraId: newCard.bandeiraId,
+          numeroCartao: cleanNum,
+          nomeImpresso: newCard.holderName.toUpperCase().trim(),
+          dataValidade: newCard.expirationDate.trim(),
+          cvv: newCard.cvv.replace(/\D/g, ''),
+          salvarNoPerfil: false
+        }
+      };
+
+      setTemporaryCards(prev => [...prev, tempCard]);
+      setSelectedCardIds(prev => [...prev, tempId]);
       setIsCardModalOpen(false);
       setNewCard({
         bandeiraId: bandeiras.length > 0 ? bandeiras[0].id : 1,
@@ -268,69 +489,126 @@ export default function Checkout() {
         cvv: '',
         isPreferred: false
       });
-    } else {
-      setCardModalError(res.error || 'Erro ao cadastrar o cartão.');
     }
   };
 
-  // Sincronizar mudança de cliente na renderização
+  // Reset ao trocar de cliente
+  const [prevCustomerId, setPrevCustomerId] = useState(activeCustomer.id);
   if (activeCustomer.id !== prevCustomerId) {
     setPrevCustomerId(activeCustomer.id);
     const newAddrId = activeCustomer.addresses[0]?.id || '';
+    setTemporaryAddress(null);
     setSelectedAddressId(newAddrId);
-    setSelectedPromoCouponId('');
-    setSelectedExchangeCouponId('');
+    setSelectedCouponCodes([]);
+    setTemporaryCards([]);
     setSelectedCardIds([]);
     setCardAmounts({});
     setCardInstallments({});
   }
 
-  // Cálculos do checkout
-  const subtotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-  
-  const calculateShipping = (addressId: string): number => {
-    const addr = activeCustomer.addresses.find(a => a.id === addressId);
-    if (!addr) return 0;
-    if (subtotal >= 500) return 0; // Frete grátis acima de R$ 500
-    const freteByState: Record<string, number> = {
-      'SP': 18.90, 'RJ': 22.50, 'MG': 24.90, 'ES': 26.90,
-      'PR': 25.90, 'SC': 27.90, 'RS': 29.90
-    };
-    return freteByState[addr.state.toUpperCase()] ?? 29.90;
-  };
+  // --- VALIDAÇÃO OFICIAL DE PAGAMENTO COM O BACKEND ---
+  const [paymentValidation, setPaymentValidation] = useState<ValidarPagamentoResponseDto | null>(null);
+  const [isValidatingPayment, setIsValidatingPayment] = useState<boolean>(false);
+  const [paymentValidationError, setPaymentValidationError] = useState<string | null>(null);
 
-  const isFreeShipping = subtotal >= 500;
-  const hasSelectedAddress = !!selectedAddressId;
-  const shippingCost = hasSelectedAddress ? calculateShipping(selectedAddressId) : 0;
-  
-  // Calcular descontos
-  const promoCoupon = promoCoupons.find(c => c.id === selectedPromoCouponId);
-  const exchangeCoupon = exchangeCoupons.find(c => c.id === selectedExchangeCouponId);
+  // Valores oficiais (com fallback provisório até resposta do backend)
+  const provisionalSubtotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const subtotal = paymentValidation?.subtotal ?? provisionalSubtotal;
+  const officialFrete = paymentValidation?.valorFrete ?? shippingCost;
+  const valorTotal = paymentValidation?.valorTotal ?? (subtotal + officialFrete);
 
-  const discountPromo = promoCoupon ? (subtotal * (promoCoupon.value / 100)) : 0;
-  const totalPayableBeforeExchange = Math.max(0, subtotal + shippingCost - discountPromo);
-  const discountExchange = exchangeCoupon ? exchangeCoupon.value : 0;
-  const discountExchangeApplied = Math.min(totalPayableBeforeExchange, discountExchange);
+  const provisionalSumCoupons = allAvailableCoupons
+    .filter(c => selectedCouponCodes.includes(c.codigo))
+    .reduce((sum, c) => sum + c.valor, 0);
 
-  const totalDiscount = discountPromo + discountExchangeApplied;
-  const remainingToPay = Math.max(0, totalPayableBeforeExchange - discountExchange);
-  const surplusExchangeCoupon = exchangeCoupon ? Math.max(0, discountExchange - totalPayableBeforeExchange) : 0;
+  const totalPagoCupons = paymentValidation?.totalPagoCupons ?? Math.min(valorTotal, provisionalSumCoupons);
+  const saldoRestante = paymentValidation?.saldoRestante ?? Math.max(0, valorTotal - provisionalSumCoupons);
+  const valorExcedenteCupons = paymentValidation?.valorExcedenteCupons ?? Math.max(0, provisionalSumCoupons - valorTotal);
 
-  // Sincronizar autofill do cartão na renderização
+  // Sincronizar autofill do cartão quando o saldo restante mudar
   const [prevCardIds, setPrevCardIds] = useState(selectedCardIds);
-  const [prevRemainingToPay, setPrevRemainingToPay] = useState(remainingToPay);
+  const [prevSaldoRestante, setPrevSaldoRestante] = useState(saldoRestante);
 
-  if (selectedCardIds !== prevCardIds || remainingToPay !== prevRemainingToPay) {
+  if (selectedCardIds !== prevCardIds || saldoRestante !== prevSaldoRestante) {
     setPrevCardIds(selectedCardIds);
-    setPrevRemainingToPay(remainingToPay);
-    if (selectedCardIds.length === 0) {
+    setPrevSaldoRestante(saldoRestante);
+    if (selectedCardIds.length === 0 || saldoRestante === 0) {
       setCardAmounts({});
     } else if (selectedCardIds.length === 1) {
       setCardAmounts({
-        [selectedCardIds[0]]: remainingToPay.toFixed(2)
+        [selectedCardIds[0]]: saldoRestante.toFixed(2)
       });
     }
   }
+
+  // Efeito de validação contínua e determinística no backend
+  useEffect(() => {
+    if (step !== 2 || !selectedAddress || cartItems.length === 0) return;
+
+    let isCancelled = false;
+    const timeoutId = setTimeout(async () => {
+      const numericAddressId = parseNumericId(selectedAddress.id);
+
+      const effectiveCardAmounts = { ...cardAmounts };
+      if (selectedCardIds.length === 1 && !effectiveCardAmounts[selectedCardIds[0]] && saldoRestante > 0) {
+        effectiveCardAmounts[selectedCardIds[0]] = saldoRestante.toFixed(2);
+      }
+
+      const cartoesComValor = selectedCardIds
+        .filter(id => (parseFloat(effectiveCardAmounts[id]) || 0) > 0)
+        .map(id => {
+          const card = availableCards.find(c => c.id === id);
+          const amount = parseFloat(effectiveCardAmounts[id]) || 0;
+          const isTemp = card?.isTemporary || card?.id.startsWith('temp-');
+          const numericCardId = parseNumericId(card?.id);
+          return {
+            cartaoId: isTemp ? undefined : numericCardId,
+            cartaoNovo: isTemp ? card?.rawNovoCartao : undefined,
+            valor: amount
+          };
+        });
+
+      const request: ValidarPagamentoRequestDto = {
+        codigoCliente: activeCustomer.id,
+        itens: cartItems.map(item => ({
+          produtoVariacaoId: item.variacaoId,
+          quantidade: item.quantity
+        })),
+        enderecoId: numericAddressId,
+        estado: selectedAddress.state,
+        cep: selectedAddress.zipCode,
+        cupons: selectedCouponCodes,
+        cartoes: cartoesComValor
+      };
+
+      setIsValidatingPayment(true);
+      const res = await pagamentoService.validarPagamento(request);
+      if (isCancelled) return;
+      setIsValidatingPayment(false);
+
+      if (res.success && res.dados) {
+        setPaymentValidation(res.dados);
+        setPaymentValidationError(null);
+      } else {
+        setPaymentValidation(null);
+        setPaymentValidationError(res.error || 'Erro na composição do pagamento.');
+      }
+    }, 300);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [
+    step,
+    selectedAddress,
+    cartItems,
+    activeCustomer.id,
+    selectedCouponCodes,
+    selectedCardIds,
+    cardAmounts,
+    availableCards
+  ]);
 
   const handleCardToggle = (cardId: string) => {
     setSelectedCardIds(prev => {
@@ -367,7 +645,7 @@ export default function Checkout() {
     const sumOthers = selectedCardIds
       .filter(id => id !== cardId)
       .reduce((sum, id) => sum + (parseFloat(cardAmounts[id]) || 0), 0);
-    const rest = Math.max(0, remainingToPay - sumOthers);
+    const rest = Math.max(0, saldoRestante - sumOthers);
     setCardAmounts(prev => ({
       ...prev,
       [cardId]: rest.toFixed(2)
@@ -376,12 +654,12 @@ export default function Checkout() {
 
   const distributeEqually = () => {
     if (selectedCardIds.length === 0) return;
-    const splitVal = (remainingToPay / selectedCardIds.length).toFixed(2);
+    const splitVal = (saldoRestante / selectedCardIds.length).toFixed(2);
     const newAmounts: Record<string, string> = {};
     selectedCardIds.forEach(id => {
       newAmounts[id] = splitVal;
     });
-    const diff = remainingToPay - (parseFloat(splitVal) * selectedCardIds.length);
+    const diff = saldoRestante - (parseFloat(splitVal) * selectedCardIds.length);
     if (diff !== 0 && selectedCardIds.length > 0) {
       const lastId = selectedCardIds[selectedCardIds.length - 1];
       newAmounts[lastId] = (parseFloat(splitVal) + diff).toFixed(2);
@@ -389,75 +667,210 @@ export default function Checkout() {
     setCardAmounts(newAmounts);
   };
 
-  // Validação de pagamento:
-  // Se remainingToPay === 0: 100% coberto por cupom de troca -> cartão NÃO é obrigatório
-  // Se remainingToPay > 0:
-  // - Exige ao menos um cartão selecionado
-  // - Soma dos valores distribuídos deve ser igual a remainingToPay
-  // - Cada cartão com valor deve pagar no mínimo R$ 10,00 (exceto se o próprio remainingToPay for inferior a R$ 10)
-  const cardAmountsSum = selectedCardIds.reduce((sum, id) => sum + (parseFloat(cardAmounts[id]) || 0), 0);
-  
-  const isMinAmountPerCardValid = remainingToPay < 10
-    ? (selectedCardIds.length === 1 && (parseFloat(cardAmounts[selectedCardIds[0]]) || 0) > 0)
-    : (selectedCardIds.length > 0 && selectedCardIds.every(id => {
-        const val = parseFloat(cardAmounts[id]) || 0;
-        return val >= 10.0;
-      }));
+  const handleCouponToggle = (codigo: string) => {
+    setCouponError(null);
+    setCouponSuccess(null);
+    setSelectedCouponCodes(prev => {
+      if (prev.includes(codigo)) {
+        return prev.filter(c => c !== codigo);
+      } else {
+        return [...prev, codigo];
+      }
+    });
+  };
 
-  const isPaymentValid = remainingToPay === 0 
-    ? (selectedCardIds.length === 0 || Math.abs(cardAmountsSum - remainingToPay) < 0.01)
-    : (selectedCardIds.length > 0 && Math.abs(cardAmountsSum - remainingToPay) < 0.01 && isMinAmountPerCardValid);
+  const handleApplyManualCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = manualCouponCode.trim().toUpperCase();
+    if (!code) return;
+
+    setCouponError(null);
+    setCouponSuccess(null);
+
+    if (selectedCouponCodes.includes(code)) {
+      setCouponError(`O cupom '${code}' já está selecionado.`);
+      return;
+    }
+
+    setIsCheckingCoupon(true);
+    const res = await cupomService.consultarCupom(code, activeCustomer.id);
+    setIsCheckingCoupon(false);
+
+    if (res.success && res.cupom) {
+      const c = res.cupom;
+      setCustomCoupons(prev => {
+        const exists = prev.some(x => x.codigo === c.codigo);
+        return exists ? prev : [...prev, c];
+      });
+      setSelectedCouponCodes(prev => [...prev, c.codigo]);
+      setManualCouponCode('');
+      setCouponSuccess(`Cupom '${c.codigo}' aplicado com sucesso!`);
+    } else {
+      setCouponError(res.error || 'Cupom inválido ou não disponível.');
+    }
+  };
+
+  const cardAmountsSum = selectedCardIds.reduce((sum, id) => sum + (parseFloat(cardAmounts[id]) || 0), 0);
+
+  const handleGoToReview = async () => {
+    setPaymentValidationError(null);
+    setIsValidatingPayment(true);
+
+    const numericAddressId = parseNumericId(selectedAddress?.id);
+
+    const effectiveCardAmounts = { ...cardAmounts };
+    if (selectedCardIds.length === 1 && !effectiveCardAmounts[selectedCardIds[0]] && saldoRestante > 0) {
+      effectiveCardAmounts[selectedCardIds[0]] = saldoRestante.toFixed(2);
+    }
+
+    const cartoesComValor = selectedCardIds
+      .filter(id => (parseFloat(effectiveCardAmounts[id]) || 0) > 0)
+      .map(id => {
+        const card = availableCards.find(c => c.id === id);
+        const amount = parseFloat(effectiveCardAmounts[id]) || 0;
+        const isTemp = card?.isTemporary || card?.id.startsWith('temp-');
+        const numericCardId = parseNumericId(card?.id);
+        return {
+          cartaoId: isTemp ? undefined : numericCardId,
+          cartaoNovo: isTemp ? card?.rawNovoCartao : undefined,
+          valor: amount
+        };
+      });
+
+    const request: ValidarPagamentoRequestDto = {
+      codigoCliente: activeCustomer.id,
+      itens: cartItems.map(item => ({
+        produtoVariacaoId: item.variacaoId,
+        quantidade: item.quantity
+      })),
+      enderecoId: numericAddressId,
+      estado: selectedAddress?.state,
+      cep: selectedAddress?.zipCode,
+      cupons: selectedCouponCodes,
+      cartoes: cartoesComValor
+    };
+
+    const res = await pagamentoService.validarPagamento(request);
+    setIsValidatingPayment(false);
+
+    if (res.success && res.dados && res.dados.valido) {
+      setPaymentValidation(res.dados);
+      setPaymentValidationError(null);
+      setStep(3);
+    } else {
+      setPaymentValidation(null);
+      setPaymentValidationError(res.error || 'Erro na composição do pagamento.');
+    }
+  };
 
   // --- STEP 3: REVISÃO E CONFIRMAÇÃO ---
-  const handleConfirmOrder = () => {
-    const address = activeCustomer.addresses.find(a => a.id === selectedAddressId);
-    if (!address) return;
+  const handleConfirmOrder = async () => {
+    const address = availableAddresses.find(a => a.id === selectedAddressId) || temporaryAddress;
+    if (!address || !paymentValidation) return;
 
-    const cardsForPayment = remainingToPay === 0 
+    const numericAddressId = parseNumericId(address.id);
+
+    const effectiveCardAmounts = { ...cardAmounts };
+    if (selectedCardIds.length === 1 && !effectiveCardAmounts[selectedCardIds[0]] && saldoRestante > 0) {
+      effectiveCardAmounts[selectedCardIds[0]] = saldoRestante.toFixed(2);
+    }
+
+    const cardsForPayment = saldoRestante === 0 
       ? [] 
       : selectedCardIds
-          .filter(id => (parseFloat(cardAmounts[id]) || 0) > 0)
+          .filter(id => (parseFloat(effectiveCardAmounts[id]) || 0) > 0)
           .map(id => {
-            const amount = parseFloat(cardAmounts[id]) || 0;
-            const maxInst = getMaxInstallments(amount);
-            const chosenInst = cardInstallments[id] || 1;
+            const card = availableCards.find(c => c.id === id);
+            const amount = parseFloat(effectiveCardAmounts[id]) || 0;
+            const isTemp = card?.isTemporary || card?.id.startsWith('temp-');
+            const numericCardId = parseNumericId(card?.id);
             return {
-              cardId: id,
-              amount,
-              installments: Math.min(chosenInst, maxInst)
+              cartaoId: isTemp ? undefined : numericCardId,
+              cartaoNovo: isTemp ? card?.rawNovoCartao : undefined,
+              valor: amount
             };
           });
 
-    const appliedCoupons: Coupon[] = [];
-    if (promoCoupon) appliedCoupons.push(promoCoupon);
-    if (exchangeCoupon) appliedCoupons.push(exchangeCoupon);
+    const request: CriarPedidoRequestDto = {
+      codigoCliente: activeCustomer.id,
+      itens: cartItems.map(item => ({
+        produtoVariacaoId: item.variacaoId,
+        quantidade: item.quantity
+      })),
+      enderecoId: numericAddressId,
+      enderecoAvulso: !numericAddressId ? {
+        tipoResidencia: address.residenceType || 'Casa',
+        tipoLogradouro: address.streetType || 'Rua',
+        logradouro: address.street,
+        numero: address.number,
+        complemento: address.complement,
+        bairro: address.neighborhood,
+        cep: address.zipCode,
+        cidade: address.city,
+        estado: address.state,
+        pais: address.country || 'Brasil',
+        observacoes: address.observations,
+        salvarNoPerfil: !!address.saveToProfile
+      } : undefined,
+      cupons: selectedCouponCodes,
+      cartoes: cardsForPayment
+    };
 
-    const order = checkoutCart(
-      address,
-      cardsForPayment,
-      appliedCoupons,
-      subtotal,
-      totalDiscount,
-      remainingToPay,
-      surplusExchangeCoupon,
-      {
-        shippingCost,
-        discountPromo,
-        discountExchange: discountExchangeApplied
-      }
-    );
+    setIsPlacingOrder(true);
+    setOrderPlacementError(null);
 
-    setCreatedOrder(order);
-    setStep(4);
+    const res = await pedidoService.criarPedido(request);
+    setIsPlacingOrder(false);
+
+    if (res.success && res.dados) {
+      setCreatedPedidoResponse(res.dados);
+
+      // Limpeza do carrinho SOMENTE após confirmação bem-sucedida do backend
+      clearCart(activeCustomer.id);
+
+      const order: Order = {
+        id: res.dados.codigo,
+        date: new Date(res.dados.dataPedido).toLocaleDateString('pt-BR'),
+        customerId: activeCustomer.id,
+        status: 'EM PROCESSAMENTO',
+        items: [...cartItems],
+        shippingAddress: { ...address },
+        paymentMethods: cardsForPayment.map(c => ({
+          cardId: String(c.cartaoId || 'novo'),
+          amount: c.valor,
+          installments: 1
+        })),
+        couponsUsed: paymentValidation.cuponsUtilizados.map(c => ({
+          id: `cupom_${c.codigo}`,
+          code: c.codigo,
+          type: c.tipo === 'PROMOCIONAL' ? 'promo' : 'exchange',
+          value: c.valorUtilizado,
+          description: `Cupom ${c.tipo.toLowerCase()} ${c.codigo}`,
+          expirationDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
+          customerId: activeCustomer.id
+        })),
+        subtotal: res.dados.subtotal,
+        shippingCost: res.dados.valorFrete,
+        discountPromo: paymentValidation.cuponsUtilizados.filter(c => c.tipo === 'PROMOCIONAL').reduce((s, c) => s + c.valorUtilizado, 0),
+        discountExchange: paymentValidation.cuponsUtilizados.filter(c => c.tipo === 'TROCA').reduce((s, c) => s + c.valorUtilizado, 0),
+        discount: paymentValidation.totalPagoCupons,
+        total: res.dados.valorTotal
+      };
+
+      setCreatedOrder(order);
+      setStep(4);
+    } else {
+      setOrderPlacementError(res.error || 'Erro ao processar e finalizar o pedido no servidor.');
+    }
   };
 
-  const selectedAddressObj = activeCustomer.addresses.find(a => a.id === selectedAddressId);
+  const selectedAddressObj = availableAddresses.find(a => a.id === selectedAddressId);
 
   return (
     <div className="checkout-page">
       <div className="checkout-container">
         
-        {/* Passos do Checkout (Apenas passos 1, 2, 3 visíveis) */}
+        {/* Passos do Checkout (Passos 1, 2, 3 visíveis) */}
         {step < 4 && (
           <div className="checkout-wizard-header">
             <div className={`wizard-step ${step === 1 ? 'active' : ''} ${step > 1 ? 'completed' : ''}`}>
@@ -479,50 +892,60 @@ export default function Checkout() {
 
         {/* ================= STEP 1: ENDEREÇO ================= */}
         {step === 1 && (
-          <div className="checkout-step-content">
+          <div className="checkout-step-content" data-cy="checkout-step-1">
             <h3 className="step-title">Selecione o Endereço de Entrega</h3>
             
-            <div className="addresses-list">
-              {activeCustomer.addresses.map(addr => (
-                <label 
-                  key={addr.id} 
-                  className={`address-label-card ${selectedAddressId === addr.id ? 'selected' : ''}`}
-                >
-                  <input
-                    type="radio"
-                    name="checkout-address"
-                    value={addr.id}
-                    checked={selectedAddressId === addr.id}
-                    onChange={() => setSelectedAddressId(addr.id)}
-                    className="address-radio-input"
-                  />
-                  <div className="address-card-info" style={{ width: '100%' }}>
-                    <div className="addr-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <div className="addr-tag">{addr.label}</div>
-                        {addr.isDelivery && (
-                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success)', padding: '0.05rem 0.3rem', borderRadius: '3px', border: '1px solid var(--color-success)' }}>
-                            Entrega
-                          </span>
-                        )}
+            <div className="addresses-list" data-cy="checkout-addresses-list">
+              {availableAddresses.map(addr => {
+                const isTemp = addr.id === 'temp-checkout-address';
+
+                return (
+                  <label 
+                    key={addr.id} 
+                    className={`address-label-card ${selectedAddressId === addr.id ? 'selected' : ''}`}
+                    data-cy={`address-label-card-${addr.id}`}
+                  >
+                    <input
+                      type="radio"
+                      name="checkout-address"
+                      value={addr.id}
+                      checked={selectedAddressId === addr.id}
+                      onChange={() => setSelectedAddressId(addr.id)}
+                      className="address-radio-input"
+                      data-cy={`select-address-${addr.id}`}
+                    />
+                    <div className="address-card-info" style={{ width: '100%' }}>
+                      <div className="addr-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <div className="addr-tag">{addr.label}</div>
+                          {isTemp ? (
+                            <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(234, 179, 8, 0.15)', color: '#eab308', padding: '0.05rem 0.35rem', borderRadius: '3px', border: '1px solid #eab308' }}>
+                              Apenas nesta compra
+                            </span>
+                          ) : addr.isDelivery ? (
+                            <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(67, 185, 86, 0.15)', color: 'var(--color-success)', padding: '0.05rem 0.3rem', borderRadius: '3px', border: '1px solid var(--color-success)' }}>
+                              Entrega
+                            </span>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenEditAddress(addr, e)}
+                          className="btn-edit-link"
+                          style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: '0.78rem', textDecoration: 'underline', padding: '0 0.25rem' }}
+                        >
+                          Editar
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => handleOpenEditAddress(addr, e)}
-                        className="btn-edit-link"
-                        style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: '0.78rem', textDecoration: 'underline', padding: '0 0.25rem' }}
-                      >
-                        Editar
-                      </button>
+                      <p className="addr-street">
+                        {addr.streetType ? `${addr.streetType} ` : ''}{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`} ({addr.residenceType || 'Residencial'})
+                      </p>
+                      <p className="addr-loc">{addr.neighborhood} - {addr.city} / {addr.state}</p>
+                      <p className="addr-cep">CEP {addr.zipCode}</p>
                     </div>
-                    <p className="addr-street">
-                      {addr.streetType ? `${addr.streetType} ` : ''}{addr.street}, {addr.number} {addr.complement && `- ${addr.complement}`} ({addr.residenceType || 'Residencial'})
-                    </p>
-                    <p className="addr-loc">{addr.neighborhood} - {addr.city} / {addr.state}</p>
-                    <p className="addr-cep">CEP {addr.zipCode}</p>
-                  </div>
-                </label>
-              ))}
+                  </label>
+                );
+              })}
             </div>
 
             <div className="address-actions">
@@ -530,6 +953,7 @@ export default function Checkout() {
                 onClick={handleOpenAddAddress} 
                 className="btn btn-secondary add-addr-btn"
                 type="button"
+                data-cy="btn-add-new-address"
               >
                 + ADICIONAR NOVO ENDEREÇO
               </button>
@@ -546,16 +970,28 @@ export default function Checkout() {
                 <span className={!hasSelectedAddress ? 'text-muted-italic' : ''}>
                   {!hasSelectedAddress
                     ? 'Selecione um endereço'
-                    : isFreeShipping
-                      ? 'Grátis'
-                      : shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                    : isCalculatingFrete
+                      ? 'Calculando frete...'
+                      : freteError
+                        ? 'Erro no cálculo'
+                        : shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                   }
                 </span>
               </div>
+              {freteError && (
+                <div style={{ color: '#ef4444', fontSize: '0.82rem', marginTop: '0.25rem', textAlign: 'right' }}>
+                  {freteError}
+                </div>
+              )}
+              {freteDetalhes && !freteError && !isCalculatingFrete && (
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.78rem', marginTop: '0.15rem', textAlign: 'right' }}>
+                  Região {freteDetalhes.regiao} ({freteDetalhes.estado}) • {freteDetalhes.quantidadeItens} {freteDetalhes.quantidadeItens === 1 ? 'par' : 'pares'}
+                </div>
+              )}
               <div className="calc-divider"></div>
               <div className="calc-row total-row">
                 <span>Total Provisório</span>
-                <span>{(hasSelectedAddress ? subtotal + shippingCost : subtotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                <span>{(hasSelectedAddress && !freteError && !isCalculatingFrete ? subtotal + shippingCost : subtotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
               </div>
             </div>
 
@@ -563,11 +999,12 @@ export default function Checkout() {
               <Link to="/carrinho" className="btn btn-secondary">Voltar ao Carrinho</Link>
               <button 
                 onClick={() => setStep(2)} 
-                disabled={!selectedAddressId}
+                disabled={!selectedAddressId || isCalculatingFrete || !!freteError || shippingCost <= 0}
                 className="btn btn-primary"
                 type="button"
+                data-cy="btn-go-to-payment"
               >
-                Ir para o Pagamento
+                {isCalculatingFrete ? 'Calculando...' : 'Ir para o Pagamento'}
               </button>
             </div>
           </div>
@@ -575,7 +1012,7 @@ export default function Checkout() {
 
         {/* ================= STEP 2: PAGAMENTO ================= */}
         {step === 2 && (
-          <div className="checkout-step-content">
+          <div className="checkout-step-content" data-cy="checkout-step-2">
             <h3 className="step-title">Forma de Pagamento e Cupons</h3>
 
             <div className="payment-layout">
@@ -585,40 +1022,86 @@ export default function Checkout() {
                 <div className="payment-section">
                   <h4 className="section-subtitle">Cupons Disponíveis</h4>
                   
-                  {customerCoupons.length > 0 ? (
-                    <div className="coupons-checkout-list">
-                      {/* Promocionais */}
-                      {promoCoupons.map(c => (
-                        <label key={c.id} className="coupon-checkout-row">
-                          <input
-                            type="checkbox"
-                            checked={selectedPromoCouponId === c.id}
-                            onChange={() => setSelectedPromoCouponId(prev => prev === c.id ? '' : c.id)}
-                          />
-                          <div className="coupon-checkout-details">
-                            <span className="cp-code">{c.code}</span>
-                            <span className="cp-desc">{c.description}</span>
-                          </div>
-                        </label>
-                      ))}
-
-                      {/* De Troca */}
-                      {exchangeCoupons.map(c => (
-                        <label key={c.id} className="coupon-checkout-row">
-                          <input
-                            type="checkbox"
-                            checked={selectedExchangeCouponId === c.id}
-                            onChange={() => setSelectedExchangeCouponId(prev => prev === c.id ? '' : c.id)}
-                          />
-                          <div className="coupon-checkout-details">
-                            <span className="cp-code">{c.code}</span>
-                            <span className="cp-desc">{c.description} (Valor: {c.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</span>
-                          </div>
-                        </label>
-                      ))}
+                  {allAvailableCoupons.length > 0 ? (
+                    <div className="coupons-checkout-list" data-cy="coupons-checkout-list">
+                      {allAvailableCoupons.map(c => {
+                        const isSelected = selectedCouponCodes.includes(c.codigo);
+                        const isPromo = c.tipo === 'PROMOCIONAL';
+                        return (
+                          <label key={c.codigo} className={`coupon-checkout-row ${isSelected ? 'selected' : ''}`} data-cy={`coupon-row-${c.codigo}`}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleCouponToggle(c.codigo)}
+                              data-cy={`chk-coupon-${c.codigo}`}
+                            />
+                            <div className="coupon-checkout-details" style={{ width: '100%' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                  <span className="cp-code">{c.codigo}</span>
+                                  <span style={{
+                                    fontSize: '0.65rem',
+                                    padding: '0.1rem 0.35rem',
+                                    borderRadius: '3px',
+                                    backgroundColor: isPromo ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                                    color: isPromo ? '#60a5fa' : '#34d399',
+                                    border: `1px solid ${isPromo ? '#3b82f6' : '#10b981'}`
+                                  }}>
+                                    {isPromo ? 'Promocional' : 'Troca'}
+                                  </span>
+                                </div>
+                                <strong style={{ color: '#fff', fontSize: '0.85rem' }}>
+                                  {c.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </strong>
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
                     </div>
                   ) : (
-                    <p className="no-coupons-text">Você não possui cupons disponíveis.</p>
+                    <p className="no-coupons-text">Nenhum cupom disponível no momento.</p>
+                  )}
+
+                  {/* Adicionar cupom por código */}
+                  <form onSubmit={handleApplyManualCoupon} style={{ marginTop: '0.85rem', display: 'flex', gap: '0.5rem' }}>
+                    <input
+                      type="text"
+                      placeholder="CÓDIGO DO CUPOM"
+                      value={manualCouponCode}
+                      onChange={e => setManualCouponCode(e.target.value.toUpperCase())}
+                      data-cy="input-coupon-code"
+                      style={{
+                        flex: 1,
+                        padding: '0.45rem 0.75rem',
+                        backgroundColor: '#111',
+                        border: '1px solid #333',
+                        color: '#fff',
+                        borderRadius: '4px',
+                        fontSize: '0.82rem',
+                        textTransform: 'uppercase'
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!manualCouponCode.trim() || isCheckingCoupon}
+                      className="btn btn-secondary btn-small"
+                      data-cy="btn-apply-coupon"
+                      style={{ fontSize: '0.78rem', padding: '0.45rem 0.9rem', whiteSpace: 'nowrap' }}
+                    >
+                      {isCheckingCoupon ? 'Verificando...' : 'APLICAR'}
+                    </button>
+                  </form>
+
+                  {couponError && (
+                    <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '0.4rem' }} data-cy="coupon-error-message">
+                      ⚠️ {couponError}
+                    </div>
+                  )}
+                  {couponSuccess && (
+                    <div style={{ color: '#10b981', fontSize: '0.8rem', marginTop: '0.4rem' }} data-cy="coupon-success-message">
+                      ✓ {couponSuccess}
+                    </div>
                   )}
                 </div>
 
@@ -630,6 +1113,7 @@ export default function Checkout() {
                       type="button" 
                       onClick={() => {
                         setCardModalError(null);
+                        setSaveCardToProfile(true);
                         setNewCard({
                           bandeiraId: bandeiras.length > 0 ? bandeiras[0].id : 1,
                           cardNumber: '',
@@ -641,96 +1125,120 @@ export default function Checkout() {
                         setIsCardModalOpen(true);
                       }}
                       className="btn btn-secondary btn-small"
+                      data-cy="btn-add-new-card"
                       style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem' }}
                     >
                       + ADICIONAR NOVO CARTÃO
                     </button>
                   </div>
-                  <p className="card-instructions">Selecione um ou mais cartões para realizar o pagamento.</p>
 
-                  <div className="cards-checkout-list">
-                    {activeCustomer.cards.map(card => {
-                      const isSelected = selectedCardIds.includes(card.id);
-                      const cardAmountVal = parseFloat(cardAmounts[card.id]) || (selectedCardIds.length === 1 ? remainingToPay : 0);
-                      const installmentOptions = getInstallmentOptions(cardAmountVal);
-                      const currentInstallment = Math.min(cardInstallments[card.id] || 1, getMaxInstallments(cardAmountVal));
+                  {saldoRestante === 0 ? (
+                    <div style={{ padding: '0.75rem 1rem', backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981', borderRadius: '6px', color: '#34d399', fontSize: '0.85rem' }} data-cy="zero-cards-needed-msg">
+                      ✓ Compra 100% coberta pelos cupons aplicados. Não é necessário cartão de crédito.
+                    </div>
+                  ) : (
+                    <>
+                      <p className="card-instructions">
+                        Selecione um ou mais cartões para cobrir o saldo restante de <strong>{saldoRestante.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>.
+                      </p>
 
-                      return (
-                        <div key={card.id} className={`card-checkout-row ${isSelected ? 'selected' : ''}`}>
-                          <label className="card-selector-label">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleCardToggle(card.id)}
-                            />
-                            <div className="card-icon-info">
-                              <span className="card-brand-tag">{card.brand}</span>
-                              <span className="card-number-tag">final {card.lastFour}</span>
-                              {card.isPreferred && <span className="pref-badge">Pref</span>}
-                            </div>
-                          </label>
+                      <div className="cards-checkout-list" data-cy="checkout-cards-list">
+                        {availableCards.map(card => {
+                          const isSelected = selectedCardIds.includes(card.id);
+                          const cardAmountVal = parseFloat(cardAmounts[card.id]) || (selectedCardIds.length === 1 ? saldoRestante : 0);
+                          const installmentOptions = getInstallmentOptions(cardAmountVal);
+                          const currentInstallment = Math.min(cardInstallments[card.id] || 1, getMaxInstallments(cardAmountVal));
+                          const isTemp = card.isTemporary || card.id.startsWith('temp-');
 
-                          {isSelected && (
-                            <div className="card-controls-wrapper">
-                              {selectedCardIds.length > 1 && (
-                                <div className="card-split-input">
-                                  <span className="currency-prefix">R$</span>
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    placeholder="0,00"
-                                    value={cardAmounts[card.id] || ''}
-                                    onChange={(e) => handleCardAmountChange(card.id, e.target.value)}
-                                    className="card-amount-field"
-                                  />
-                                  <button 
-                                    type="button" 
-                                    onClick={() => autofillRemaining(card.id)}
-                                    className="btn-use-rest"
-                                  >
-                                    Usar Restante
-                                  </button>
+                          return (
+                            <div key={card.id} className={`card-checkout-row ${isSelected ? 'selected' : ''}`} data-cy={`card-checkout-row-${card.id}`}>
+                              <label className="card-selector-label">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleCardToggle(card.id)}
+                                  data-cy={`chk-card-${card.id}`}
+                                />
+                                <div className="card-icon-info">
+                                  <span className="card-brand-tag">{card.brand}</span>
+                                  <span className="card-number-tag">final {card.lastFour}</span>
+                                  {isTemp ? (
+                                    <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(234, 179, 8, 0.15)', color: '#eab308', padding: '0.05rem 0.35rem', borderRadius: '3px', border: '1px solid #eab308' }}>
+                                      Apenas nesta compra
+                                    </span>
+                                  ) : card.isPreferred ? (
+                                    <span className="pref-badge">Pref</span>
+                                  ) : null}
+                                </div>
+                              </label>
+
+                              {isSelected && (
+                                <div className="card-controls-wrapper">
+                                  {selectedCardIds.length > 1 && (
+                                    <div className="card-split-input">
+                                      <span className="currency-prefix">R$</span>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder="0,00"
+                                        value={cardAmounts[card.id] || ''}
+                                        onChange={(e) => handleCardAmountChange(card.id, e.target.value)}
+                                        className="card-amount-field"
+                                        data-cy={`input-card-amount-${card.id}`}
+                                      />
+                                      <button 
+                                        type="button" 
+                                        onClick={() => autofillRemaining(card.id)}
+                                        className="btn-use-rest"
+                                        data-cy={`btn-use-rest-${card.id}`}
+                                      >
+                                        Usar Restante
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  <div className="card-installments-row">
+                                    <label className="installments-label" htmlFor={`installments-${card.id}`}>Parcelas:</label>
+                                    <select
+                                      id={`installments-${card.id}`}
+                                      value={currentInstallment}
+                                      onChange={(e) => handleCardInstallmentsChange(card.id, parseInt(e.target.value, 10))}
+                                      className="card-installments-select"
+                                      disabled={cardAmountVal <= 0}
+                                      data-cy={`select-installments-${card.id}`}
+                                    >
+                                      {installmentOptions.map(opt => (
+                                        <option key={opt.count} value={opt.count}>
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
                                 </div>
                               )}
-
-                              <div className="card-installments-row">
-                                <label className="installments-label" htmlFor={`installments-${card.id}`}>Parcelas:</label>
-                                <select
-                                  id={`installments-${card.id}`}
-                                  value={currentInstallment}
-                                  onChange={(e) => handleCardInstallmentsChange(card.id, parseInt(e.target.value, 10))}
-                                  className="card-installments-select"
-                                  disabled={cardAmountVal <= 0}
-                                >
-                                  {installmentOptions.map(opt => (
-                                    <option key={opt.count} value={opt.count}>
-                                      {opt.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                          );
+                        })}
+                      </div>
 
-                  {selectedCardIds.length > 1 && (
-                    <div className="split-actions-bar">
-                      <button 
-                        type="button" 
-                        onClick={distributeEqually} 
-                        className="btn btn-secondary btn-small"
-                      >
-                        DISTRIBUIR IGUALMENTE
-                      </button>
-                    </div>
+                      {selectedCardIds.length > 1 && (
+                        <div className="split-actions-bar">
+                          <button 
+                            type="button" 
+                            onClick={distributeEqually} 
+                            className="btn btn-secondary btn-small"
+                            data-cy="btn-distribute-equally"
+                          >
+                            DISTRIBUIR IGUALMENTE
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
 
-              {/* Box de Cálculo da Compra */}
+              {/* Sidebar de Resumo Financeiro */}
               <div className="payment-calc-sidebar">
                 <div className="calc-card">
                   <h4 className="calc-title">Resumo Financeiro</h4>
@@ -742,50 +1250,50 @@ export default function Checkout() {
                   
                   <div className="calc-row">
                     <span>Frete</span>
-                    <span>{shippingCost === 0 ? 'Grátis' : shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    <span>{officialFrete.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                   </div>
 
-                  {discountPromo > 0 && (
+                  <div className="calc-divider"></div>
+
+                  <div className="calc-row total-row">
+                    <span>Valor Total</span>
+                    <span>{valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+
+                  {totalPagoCupons > 0 && (
                     <div className="calc-row discount-row">
-                      <span>Desconto Promocional</span>
-                      <span>-{discountPromo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                      <span>Cupons Utilizados</span>
+                      <span>-{totalPagoCupons.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                     </div>
                   )}
 
-                  {discountExchangeApplied > 0 && (
-                    <div className="calc-row discount-row">
-                      <span>Cupom de Troca</span>
-                      <span>-{discountExchangeApplied.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                    </div>
-                  )}
-
-                  {surplusExchangeCoupon > 0 && (
+                  {valorExcedenteCupons > 0 && (
                     <div className="calc-row discount-row" style={{ color: 'var(--color-primary)', fontSize: '0.78rem' }}>
-                      <span>Saldo Excedente a Gerar</span>
-                      <span>+{surplusExchangeCoupon.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                      <span>Prévia Novo Cupom</span>
+                      <span>+{valorExcedenteCupons.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                     </div>
                   )}
 
                   <div className="calc-divider"></div>
 
                   <div className="calc-row total-row">
-                    <span>Total a Pagar</span>
-                    <span>{remainingToPay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    <span>Saldo a Pagar</span>
+                    <span data-cy="checkout-remaining-balance">{saldoRestante.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                   </div>
 
                   <div className="calc-divider"></div>
 
-                  {/* Detalhamento de Distribuição */}
-                  {remainingToPay === 0 ? (
+                  {/* Informações de Distribuição */}
+                  {saldoRestante === 0 && !paymentValidationError ? (
                     <div className="payment-distribution-info">
                       <div className="dist-row">
                         <span>Forma de Pagamento:</span>
-                        <span className="text-success">Cupom de Troca (100%)</span>
+                        <span className="text-success">Cupons (100%)</span>
                       </div>
-                      {surplusExchangeCoupon > 0 && (
+                      {valorExcedenteCupons > 0 && (
                         <div className="dist-row" style={{ marginTop: '0.25rem', fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
                           <span>Novo cupom gerado após compra:</span>
-                          <strong style={{ color: 'var(--color-primary)' }}>{surplusExchangeCoupon.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                          <strong style={{ color: 'var(--color-primary)' }}>{valorExcedenteCupons.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                         </div>
                       )}
                     </div>
@@ -793,24 +1301,20 @@ export default function Checkout() {
                     <div className="payment-distribution-info">
                       <div className="dist-row">
                         <span>Valor Pago nos Cartões:</span>
-                        <span className={isPaymentValid ? 'text-success' : 'text-danger'}>
+                        <span className={paymentValidation?.valido ? 'text-success' : 'text-danger'}>
                           {cardAmountsSum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </span>
                       </div>
-                      {!isPaymentValid && (
-                        <div className="dist-warning">
-                          {selectedCardIds.length === 0 ? (
+                      {(!paymentValidation?.valido || paymentValidationError) && (
+                        <div className="dist-warning" data-cy="payment-validation-warning">
+                          {paymentValidationError ? (
+                            <span>{paymentValidationError}</span>
+                          ) : selectedCardIds.length === 0 ? (
                             <span>Selecione ao menos um cartão para pagar o restante.</span>
-                          ) : !isMinAmountPerCardValid ? (
-                            <span>
-                              {remainingToPay < 10 
-                                ? 'Para valores inferiores a R$ 10,00, utilize apenas um cartão.' 
-                                : 'Cada cartão selecionado deve pagar no mínimo R$ 10,00 (sem valores zerados).'}
-                            </span>
-                          ) : cardAmountsSum < remainingToPay ? (
-                            <span>Falta distribuir: <strong>{(remainingToPay - cardAmountsSum).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                          ) : cardAmountsSum < saldoRestante ? (
+                            <span>Falta distribuir: <strong>{(saldoRestante - cardAmountsSum).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
                           ) : (
-                            <span>Excedeu: <strong>{(cardAmountsSum - remainingToPay).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                            <span>Excedeu: <strong>{(cardAmountsSum - saldoRestante).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
                           )}
                         </div>
                       )}
@@ -823,20 +1327,21 @@ export default function Checkout() {
             <div className="step-footer">
               <button onClick={() => setStep(1)} className="btn btn-secondary" type="button">Voltar</button>
               <button 
-                onClick={() => setStep(3)} 
-                disabled={!isPaymentValid}
+                onClick={handleGoToReview} 
+                disabled={isValidatingPayment || !paymentValidation?.valido}
                 className="btn btn-primary"
                 type="button"
+                data-cy="btn-go-to-review"
               >
-                Revisar Pedido
+                {isValidatingPayment ? 'Validando...' : 'Revisar Pedido'}
               </button>
             </div>
           </div>
         )}
 
         {/* ================= STEP 3: REVISÃO ================= */}
-        {step === 3 && (
-          <div className="checkout-step-content">
+        {step === 3 && paymentValidation && (
+          <div className="checkout-step-content" data-cy="checkout-step-3">
             <h3 className="step-title">Revisão do seu Pedido</h3>
 
             <div className="review-layout">
@@ -857,43 +1362,61 @@ export default function Checkout() {
                 <div className="review-section">
                   <h4 className="review-subtitle">Forma de Pagamento</h4>
                   <div className="review-payments-list">
-                    {promoCoupon && (
-                      <div className="review-pay-item">
-                        <span>Cupom Promocional <strong>{promoCoupon.code}</strong> ({promoCoupon.value}% OFF)</span>
-                        <span><strong>-{discountPromo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                    {paymentValidation.cuponsUtilizados.map(cupom => (
+                      <div key={cupom.codigo} className="review-pay-item">
+                        <span>
+                          Cupom {cupom.tipo === 'PROMOCIONAL' ? 'Promocional' : 'de Troca'} <strong>{cupom.codigo}</strong>
+                        </span>
+                        <span><strong>-{cupom.valorUtilizado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
                       </div>
-                    )}
-                    {exchangeCoupon && (
-                      <div className="review-pay-item">
-                        <span>Cupom de Troca <strong>{exchangeCoupon.code}</strong></span>
-                        <span><strong>-{discountExchangeApplied.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
-                      </div>
-                    )}
-                    {remainingToPay === 0 ? (
+                    ))}
+
+                    {paymentValidation.saldoRestante === 0 && paymentValidation.cartoesUtilizados.length === 0 ? (
                       <div className="review-pay-item">
                         <span>Cobrança em Cartão de Crédito</span>
                         <span className="text-success"><strong>R$ 0,00 (Pago integralmente por cupom)</strong></span>
                       </div>
                     ) : (
-                      selectedCardIds.map(id => {
-                        const c = activeCustomer.cards.find(x => x.id === id);
-                        const amt = parseFloat(cardAmounts[id] || '0');
-                        const maxInst = getMaxInstallments(amt);
-                        const inst = Math.min(cardInstallments[id] || 1, maxInst);
-                        return c && amt > 0 ? (
-                          <div key={c.id} className="review-pay-item">
+                      paymentValidation.cartoesUtilizados.map((c, idx) => {
+                        const localCard = availableCards.find(x => x.id === (c.cartaoId ? String(c.cartaoId) : undefined)) 
+                          || availableCards.find(x => x.lastFour === c.ultimosDigitos);
+                        const cardIdKey = localCard?.id || String(idx);
+                        const maxInst = getMaxInstallments(c.valor);
+                        const inst = Math.min(cardInstallments[cardIdKey] || 1, maxInst);
+
+                        return (
+                          <div key={cardIdKey} className="review-pay-item">
                             <div>
-                              <span>Cartão <strong>{c.brand}</strong> (final {c.lastFour})</span>
+                              <span>Cartão <strong>{c.bandeira}</strong> (final {c.ultimosDigitos})</span>
+                              {c.salvarNoPerfil === false && !c.cartaoId && (
+                                <span style={{ marginLeft: '0.4rem', fontSize: '0.65rem', backgroundColor: 'rgba(234, 179, 8, 0.15)', color: '#eab308', padding: '0.05rem 0.35rem', borderRadius: '3px', border: '1px solid #eab308' }}>
+                                  Apenas nesta compra
+                                </span>
+                              )}
                               <div className="review-pay-subtext">
                                 {inst === 1
                                   ? '1x à vista'
-                                  : `${inst}x de ${(amt / inst).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} sem juros`}
+                                  : `${inst}x de ${(c.valor / inst).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} sem juros`}
                               </div>
                             </div>
-                            <span><strong>{amt.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
+                            <span><strong>{c.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></span>
                           </div>
-                        ) : null;
+                        );
                       })
+                    )}
+
+                    {paymentValidation.novoCupomTroca && (
+                      <div className="review-pay-item" style={{ backgroundColor: 'rgba(59, 130, 246, 0.08)', borderRadius: '6px', padding: '0.6rem 0.75rem', marginTop: '0.5rem' }}>
+                        <div>
+                          <span style={{ color: '#60a5fa', fontWeight: 600 }}>Prévia de Novo Cupom de Troca a Gerar</span>
+                          <div style={{ fontSize: '0.75rem', color: '#ccc', marginTop: '0.15rem' }}>
+                            {paymentValidation.novoCupomTroca.mensagem}
+                          </div>
+                        </div>
+                        <strong style={{ color: '#60a5fa' }}>
+                          +{paymentValidation.novoCupomTroca.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </strong>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -923,35 +1446,77 @@ export default function Checkout() {
                   <h4 className="calc-title">Resumo do Pedido</h4>
                   <div className="calc-row">
                     <span>Subtotal</span>
-                    <span>{subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    <span>{paymentValidation.subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                   </div>
                   <div className="calc-row">
                     <span>Frete</span>
-                    <span>{shippingCost === 0 ? 'Grátis' : shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    <span>{paymentValidation.valorFrete.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                   </div>
-                  {totalDiscount > 0 && (
+                  <div className="calc-divider"></div>
+                  <div className="calc-row total-row">
+                    <span>Valor Total</span>
+                    <span data-cy="review-total-value">{paymentValidation.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  </div>
+                  {paymentValidation.totalPagoCupons > 0 && (
                     <div className="calc-row discount-row">
-                      <span>Descontos</span>
-                      <span>-{totalDiscount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                      <span>Cupons Utilizados</span>
+                      <span>-{paymentValidation.totalPagoCupons.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  )}
+                  {paymentValidation.totalPagoCartoes > 0 && (
+                    <div className="calc-row">
+                      <span>Cartão de Crédito</span>
+                      <span>{paymentValidation.totalPagoCartoes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  )}
+                  {paymentValidation.valorExcedenteCupons > 0 && (
+                    <div className="calc-row discount-row" style={{ color: 'var(--color-primary)', fontSize: '0.78rem' }}>
+                      <span>Saldo Excedente de Troca</span>
+                      <span>+{paymentValidation.valorExcedenteCupons.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                     </div>
                   )}
                   <div className="calc-divider"></div>
                   <div className="calc-row total-row">
-                    <span>Total Final</span>
-                    <span>{remainingToPay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    <span>Total Quitado</span>
+                    <span>{(paymentValidation.totalPagoCupons + paymentValidation.totalPagoCartoes).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                   </div>
                 </div>
               </div>
             </div>
 
+            {orderPlacementError && (
+              <div style={{
+                margin: '1.25rem 0 0.5rem 0',
+                padding: '0.8rem 1rem',
+                backgroundColor: 'rgba(255, 69, 69, 0.12)',
+                border: '1px solid var(--color-danger)',
+                color: 'var(--color-danger)',
+                borderRadius: '8px',
+                fontSize: '0.88rem',
+                fontWeight: 600,
+                textAlign: 'left'
+              }}>
+                ⚠️ {orderPlacementError}
+              </div>
+            )}
+
             <div className="step-footer">
-              <button onClick={() => setStep(2)} className="btn btn-secondary" type="button">Voltar</button>
+              <button 
+                onClick={() => setStep(2)} 
+                className="btn btn-secondary" 
+                type="button" 
+                disabled={isPlacingOrder}
+              >
+                Voltar
+              </button>
               <button 
                 onClick={handleConfirmOrder} 
                 className="btn btn-primary btn-confirm-order"
                 type="button"
+                disabled={isPlacingOrder}
+                data-cy="btn-confirm-order"
               >
-                CONFIRMAR PEDIDO
+                {isPlacingOrder ? 'PROCESSANDO PEDIDO...' : 'CONFIRMAR PEDIDO'}
               </button>
             </div>
           </div>
@@ -959,36 +1524,54 @@ export default function Checkout() {
 
         {/* ================= STEP 4: CONFIRMADO ================= */}
         {step === 4 && createdOrder && (
-          <div className="order-confirmed-screen">
+          <div className="order-confirmed-screen" data-cy="order-confirmed-screen">
             <div className="success-icon-wrapper">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary)' }}>
                 <polyline points="20 6 9 17 4 12"></polyline>
               </svg>
             </div>
             
-            <h2 className="confirmed-title">PEDIDO REALIZADO!</h2>
-            <p className="confirmed-desc">Seu pedido foi confirmado e está sendo processado.</p>
+            <h2 className="confirmed-title">PEDIDO CONFIRMADO!</h2>
+            <p className="confirmed-desc">Seu pedido foi registrado no sistema e está em processamento.</p>
 
             <div className="confirmed-details-card">
               <div className="conf-detail-row">
                 <span>Número do Pedido</span>
-                <strong className="neon-text">{createdOrder.id}</strong>
+                <strong className="neon-text" data-cy="confirmed-order-code">{createdOrder.id}</strong>
               </div>
               <div className="conf-detail-row">
                 <span>Status</span>
-                <span className="status-badge-open">{createdOrder.status}</span>
+                <span className="status-badge-open" style={{ backgroundColor: 'rgba(57, 255, 20, 0.15)', color: 'var(--color-primary)' }} data-cy="confirmed-order-status">{createdOrder.status}</span>
               </div>
               <div className="conf-detail-row">
                 <span>Total Pago</span>
-                <strong>{createdOrder.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                <strong data-cy="confirmed-order-total">{createdOrder.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
               </div>
+
+              {/* Endereço de Entrega Snapshot */}
+              {createdPedidoResponse?.enderecoEntrega && (
+                <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #222', textAlign: 'left', fontSize: '0.82rem', color: '#ccc' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginBottom: '0.35rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Endereço de Entrega
+                  </div>
+                  <div>
+                    {createdPedidoResponse.enderecoEntrega.tipoLogradouro} {createdPedidoResponse.enderecoEntrega.logradouro}, {createdPedidoResponse.enderecoEntrega.numero}
+                    {createdPedidoResponse.enderecoEntrega.complemento ? ` - ${createdPedidoResponse.enderecoEntrega.complemento}` : ''}
+                  </div>
+                  <div>
+                    {createdPedidoResponse.enderecoEntrega.bairro} - {createdPedidoResponse.enderecoEntrega.cidade}/{createdPedidoResponse.enderecoEntrega.estado} - CEP {createdPedidoResponse.enderecoEntrega.cep}
+                  </div>
+                </div>
+              )}
+
+              {/* Pagamento em Cartões */}
               {createdOrder.paymentMethods.length > 0 && (
                 <div className="conf-detail-payments" style={{ marginTop: '0.6rem', paddingTop: '0.6rem', borderTop: '1px solid #222' }}>
                   <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginBottom: '0.35rem', fontWeight: 700, textTransform: 'uppercase', textAlign: 'left' }}>
                     Pagamento nos Cartões
                   </div>
                   {createdOrder.paymentMethods.map(pm => {
-                    const card = activeCustomer.cards.find(c => c.id === pm.cardId);
+                    const card = availableCards.find(c => c.id === pm.cardId);
                     const inst = pm.installments ?? 1;
                     return (
                       <div key={pm.cardId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginTop: '0.25rem', color: '#ccc' }}>
@@ -997,6 +1580,31 @@ export default function Checkout() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Banner de Cupom de Troca Gerado por Excedente */}
+              {createdPedidoResponse?.novoCupomTroca && (
+                <div style={{
+                  marginTop: '0.85rem',
+                  padding: '0.85rem 1rem',
+                  backgroundColor: 'rgba(57, 255, 20, 0.08)',
+                  border: '1px solid var(--color-primary)',
+                  borderRadius: '8px',
+                  textAlign: 'left'
+                }} data-cy="surplus-coupon-banner">
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    🎁 Novo Cupom de Troca Gerado
+                  </div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginTop: '0.2rem', fontFamily: 'monospace' }} data-cy="surplus-coupon-code">
+                    {createdPedidoResponse.novoCupomTroca.codigo}
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: '#ccc', marginTop: '0.2rem' }}>
+                    Crédito disponível: <strong style={{ color: 'var(--color-primary)' }} data-cy="surplus-coupon-value">{createdPedidoResponse.novoCupomTroca.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#888', marginTop: '0.25rem' }}>
+                    {createdPedidoResponse.novoCupomTroca.mensagem}
+                  </div>
                 </div>
               )}
             </div>
@@ -1058,6 +1666,7 @@ export default function Checkout() {
                 value={addressForm.label}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, label: e.target.value }))}
                 placeholder="ex: Minha Casa"
+                data-cy="input-addr-label"
                 required
               />
             </div>
@@ -1067,6 +1676,7 @@ export default function Checkout() {
                 id="addr-res-type"
                 value={addressForm.residenceType}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, residenceType: e.target.value }))}
+                data-cy="select-addr-residence-type"
                 required
               >
                 <option value="Casa">Casa</option>
@@ -1082,6 +1692,7 @@ export default function Checkout() {
                 id="addr-street-type"
                 value={addressForm.streetType}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, streetType: e.target.value }))}
+                data-cy="select-addr-street-type"
                 required
               >
                 <option value="Rua">Rua</option>
@@ -1104,6 +1715,7 @@ export default function Checkout() {
                 value={addressForm.street}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, street: e.target.value }))}
                 placeholder="Rua, Avenida..."
+                data-cy="input-addr-street"
                 required
               />
             </div>
@@ -1115,6 +1727,7 @@ export default function Checkout() {
                 value={addressForm.number}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, number: e.target.value }))}
                 placeholder="123"
+                data-cy="input-addr-number"
                 required
               />
             </div>
@@ -1129,6 +1742,7 @@ export default function Checkout() {
                 value={addressForm.complement}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, complement: e.target.value }))}
                 placeholder="Apto, Bloco..."
+                data-cy="input-addr-complement"
               />
             </div>
             <div className="form-group flex-1">
@@ -1139,6 +1753,7 @@ export default function Checkout() {
                 value={addressForm.neighborhood}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, neighborhood: e.target.value }))}
                 placeholder="Jardim..."
+                data-cy="input-addr-neighborhood"
                 required
               />
             </div>
@@ -1154,6 +1769,7 @@ export default function Checkout() {
                 onChange={(e) => setAddressForm(prev => ({ ...prev, zipCode: maskZipCode(e.target.value) }))}
                 placeholder="00000-000"
                 maxLength={9}
+                data-cy="input-addr-zip"
                 required
               />
             </div>
@@ -1164,6 +1780,7 @@ export default function Checkout() {
                 id="addr-city"
                 value={addressForm.city}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, city: e.target.value }))}
+                data-cy="input-addr-city"
                 required
               />
             </div>
@@ -1173,6 +1790,7 @@ export default function Checkout() {
                 id="addr-state"
                 value={addressForm.state}
                 onChange={(e) => setAddressForm(prev => ({ ...prev, state: e.target.value }))}
+                data-cy="select-addr-state"
                 required
               >
                 <option value="">Selecione...</option>
@@ -1182,6 +1800,34 @@ export default function Checkout() {
                   </option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group flex-1">
+              <label htmlFor="addr-country">País *</label>
+              <input
+                type="text"
+                id="addr-country"
+                name="country"
+                value={addressForm.country || 'Brasil'}
+                readOnly
+                data-cy="input-addr-country"
+                title="Decisão de implementação RunWay: entregas restritas ao Brasil"
+                style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', cursor: 'not-allowed', color: 'var(--color-text-secondary)' }}
+                required
+              />
+            </div>
+            <div className="form-group flex-2">
+              <label htmlFor="addr-observations">Observações</label>
+              <input
+                type="text"
+                id="addr-observations"
+                value={addressForm.observations || ''}
+                onChange={(e) => setAddressForm(prev => ({ ...prev, observations: e.target.value }))}
+                placeholder="Ponto de referência, instruções de entrega..."
+                data-cy="input-addr-observations"
+              />
             </div>
           </div>
 
@@ -1205,6 +1851,25 @@ export default function Checkout() {
             </label>
           </div>
 
+          {!editingAddress && (
+            <div style={{ marginTop: '0.75rem', padding: '0.65rem 0.85rem', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#ffffff', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={saveAddressToProfile}
+                  onChange={e => setSaveAddressToProfile(e.target.checked)}
+                  data-cy="chk-save-address-to-profile"
+                />
+                Salvar este endereço no meu perfil para compras futuras
+              </label>
+              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginLeft: '1.45rem', marginTop: '0.2rem' }}>
+                {saveAddressToProfile
+                  ? 'O endereço será adicionado permanentemente à sua lista de endereços.'
+                  : 'O endereço será utilizado exclusivamente para a entrega desta compra.'}
+              </div>
+            </div>
+          )}
+
           <div className="modal-actions" style={{ marginTop: '1rem', border: 'none', padding: '0' }}>
             <button 
               type="button" 
@@ -1216,7 +1881,7 @@ export default function Checkout() {
             >
               CANCELAR
             </button>
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-primary" data-cy="btn-save-address">
               {editingAddress ? 'SALVAR ALTERAÇÕES' : 'SALVAR ENDEREÇO'}
             </button>
           </div>
@@ -1257,6 +1922,7 @@ export default function Checkout() {
               maxLength={19}
               value={newCard.cardNumber}
               onChange={e => setNewCard(prev => ({ ...prev, cardNumber: maskCardNumber(e.target.value) }))}
+              data-cy="input-card-number"
               required
             />
           </div>
@@ -1269,6 +1935,7 @@ export default function Checkout() {
               placeholder="NOME COMO NO CARTÃO"
               value={newCard.holderName}
               onChange={e => setNewCard(prev => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
+              data-cy="input-card-holder"
               required
             />
           </div>
@@ -1280,6 +1947,7 @@ export default function Checkout() {
                 id="chk-card-brand"
                 value={newCard.bandeiraId}
                 onChange={e => setNewCard(prev => ({ ...prev, bandeiraId: parseInt(e.target.value, 10) }))}
+                data-cy="select-card-brand"
                 required
               >
                 {bandeiras.length === 0 && <option value="">Carregando bandeiras...</option>}
@@ -1299,6 +1967,7 @@ export default function Checkout() {
                 maxLength={5}
                 value={newCard.expirationDate}
                 onChange={e => setNewCard(prev => ({ ...prev, expirationDate: maskCardExpiration(e.target.value) }))}
+                data-cy="input-card-exp"
                 required
               />
             </div>
@@ -1311,6 +1980,7 @@ export default function Checkout() {
                 maxLength={4}
                 value={newCard.cvv}
                 onChange={e => setNewCard(prev => ({ ...prev, cvv: maskCardCvv(e.target.value) }))}
+                data-cy="input-card-cvv"
                 required
               />
             </div>
@@ -1325,6 +1995,23 @@ export default function Checkout() {
             Definir como cartão preferencial
           </label>
 
+          <div style={{ marginTop: '0.75rem', padding: '0.65rem 0.85rem', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#ffffff', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={saveCardToProfile}
+                onChange={e => setSaveCardToProfile(e.target.checked)}
+                data-cy="chk-save-card-to-profile"
+              />
+              Salvar este cartão no meu perfil para compras futuras
+            </label>
+            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginLeft: '1.45rem', marginTop: '0.2rem' }}>
+              {saveCardToProfile
+                ? 'O cartão será adicionado permanentemente à sua carteira.'
+                : 'O cartão será utilizado exclusivamente para o pagamento desta compra.'}
+            </div>
+          </div>
+
           <div className="modal-actions" style={{ marginTop: '1rem', border: 'none', padding: '0' }}>
             <button 
               type="button" 
@@ -1333,7 +2020,7 @@ export default function Checkout() {
             >
               CANCELAR
             </button>
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-primary" data-cy="btn-save-card">
               SALVAR E USAR CARTÃO
             </button>
           </div>

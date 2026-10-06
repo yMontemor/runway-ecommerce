@@ -6,25 +6,61 @@ import './Cart.css';
 
 export default function Cart() {
   const navigate = useNavigate();
-  const { activeCustomer, cartsByCustomer, updateCartQuantity, removeFromCart } = useApp();
+  const { activeCustomer, cartsByCustomer, updateCartQuantity, removeFromCart, validarEstoqueCarrinho } = useApp();
   
   const [isInactiveModalOpen, setIsInactiveModalOpen] = useState(false);
+  const [quantityError, setQuantityError] = useState<{ [key: string]: string }>({});
+  const [updatingItemKeys, setUpdatingItemKeys] = useState<Record<string, boolean>>({});
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [isValidatingCheckout, setIsValidatingCheckout] = useState(false);
 
   const cartItems = cartsByCustomer[activeCustomer.id] || [];
   
   // Totais
   const subtotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-  const isFreeShipping = subtotal >= 500;
-  const shippingCost = cartItems.length > 0 && !isFreeShipping ? 30.00 : 0.00;
-  const total = subtotal + shippingCost;
+  const total = subtotal;
 
-  const handleCheckoutClick = () => {
+  const handleQuantityChange = async (productId: string, size: number, delta: number) => {
+    const key = `${productId}-${size}`;
+    if (updatingItemKeys[key]) return;
+
+    setUpdatingItemKeys(prev => ({ ...prev, [key]: true }));
+    setCheckoutError(null);
+    setQuantityError(prev => ({ ...prev, [key]: '' }));
+
+    try {
+      const result = await updateCartQuantity(productId, size, delta);
+      if (!result.success && result.message) {
+        setQuantityError(prev => ({ ...prev, [key]: result.message || '' }));
+        setTimeout(() => {
+          setQuantityError(prev => ({ ...prev, [key]: '' }));
+        }, 4000);
+      }
+    } finally {
+      setUpdatingItemKeys(prev => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const handleCheckoutClick = async () => {
     if (activeCustomer.status === 'INATIVO') {
       setIsInactiveModalOpen(true);
       return;
     }
     if (cartItems.length === 0) return;
-    navigate('/checkout');
+
+    setCheckoutError(null);
+    setIsValidatingCheckout(true);
+
+    try {
+      const validacao = await validarEstoqueCarrinho();
+      if (!validacao.valido) {
+        setCheckoutError(validacao.mensagem || 'Há itens com estoque insuficiente no carrinho.');
+        return;
+      }
+      navigate('/checkout');
+    } finally {
+      setIsValidatingCheckout(false);
+    }
   };
 
   return (
@@ -38,49 +74,65 @@ export default function Cart() {
           <div className="cart-layout">
             
             {/* Lista de Itens do Carrinho */}
-            <div className="cart-items-list">
-              {cartItems.map((item) => (
-                <div key={`${item.product.id}-${item.size}`} className="cart-item-row">
-                  <div className="cart-item-img-wrapper">
-                    <img src={item.product.image} alt={item.product.name} />
-                  </div>
-                  
-                  <div className="cart-item-details">
-                    <span className="cart-item-brand">{item.product.brand}</span>
-                    <h4 className="cart-item-name">{item.product.name}</h4>
-                    <div className="cart-item-meta">
-                      <span className="cart-meta-tag">Tam: <strong>{item.size}</strong></span>
-                      <span className="cart-meta-tag">Cat: <strong>{item.product.category}</strong></span>
-                    </div>
-                  </div>
+            <div className="cart-items-list" data-cy="cart-items-list">
+              {cartItems.map((item) => {
+                const itemKey = `${item.product.id}-${item.size}`;
+                const isUpdating = !!updatingItemKeys[itemKey];
 
-                  <div className="cart-item-price-quantity">
-                    <div className="price-unit">
-                      <span className="price-label">Unitário</span>
-                      <span className="price-val">
-                        {item.product.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </span>
+                return (
+                  <div key={itemKey} className="cart-item-row" data-cy="cart-item-row">
+                    <div className="cart-item-img-wrapper">
+                      <img src={item.product.image} alt={item.product.name} />
+                    </div>
+                    
+                    <div className="cart-item-details">
+                      <span className="cart-item-brand">{item.product.brand}</span>
+                      <h4 className="cart-item-name">{item.product.name}</h4>
+                      <div className="cart-item-meta">
+                        <span className="cart-meta-tag">Tam: <strong>{item.size}</strong></span>
+                        <span className="cart-meta-tag">Cat: <strong>{item.product.category}</strong></span>
+                      </div>
                     </div>
 
-                    <div className="quantity-adjuster">
-                      <button 
-                        type="button" 
-                        onClick={() => updateCartQuantity(item.product.id, item.size, -1)}
-                      >
-                        -
-                      </button>
-                      <span className="qty-value">{item.quantity}</span>
-                      <button 
-                        type="button" 
-                        onClick={() => updateCartQuantity(item.product.id, item.size, 1)}
-                      >
-                        +
-                      </button>
-                    </div>
+                    <div className="cart-item-price-quantity">
+                      <div className="price-unit">
+                        <span className="price-label">Unitário</span>
+                        <span className="price-val">
+                          {item.product.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </span>
+                      </div>
+
+                      <div className="quantity-adjuster">
+                        <button 
+                          type="button" 
+                          disabled={isUpdating}
+                          onClick={() => handleQuantityChange(item.product.id, item.size, -1)}
+                          aria-label="Diminuir quantidade"
+                          data-cy="btn-decrease-qty"
+                        >
+                          -
+                        </button>
+                        <span className="qty-value" data-cy="cart-item-qty">{item.quantity}</span>
+                        <button 
+                          type="button" 
+                          disabled={isUpdating}
+                          onClick={() => handleQuantityChange(item.product.id, item.size, 1)}
+                          aria-label="Aumentar quantidade"
+                          data-cy="btn-increase-qty"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {quantityError[itemKey] && (
+                        <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '0.25rem', width: '100%', textAlign: 'center' }} data-cy="cart-quantity-error">
+                          {quantityError[itemKey]}
+                        </div>
+                      )}
 
                     <div className="price-subtotal">
                       <span className="price-label">Subtotal</span>
-                      <span className="price-val bold-price">
+                      <span className="price-val bold-price" data-cy="cart-item-subtotal">
                         {(item.product.price * item.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </span>
                     </div>
@@ -91,6 +143,7 @@ export default function Cart() {
                       onClick={() => removeFromCart(item.product.id, item.size)}
                       title="Remover item"
                       aria-label="Remover item"
+                      data-cy="btn-remove-item"
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="3 6 5 6 21 6"></polyline>
@@ -101,7 +154,8 @@ export default function Cart() {
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Resumo da Compra */}
@@ -111,46 +165,37 @@ export default function Cart() {
                 
                 <div className="summary-row">
                   <span>Subtotal</span>
-                  <span>{subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  <span data-cy="cart-subtotal-value">{subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                 </div>
 
                 <div className="summary-row">
                   <span>Frete</span>
-                  <span>
-                    {shippingCost === 0 ? (
-                      <span className="free-shipping-text">Grátis</span>
-                    ) : (
-                      shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                    )}
+                  <span data-cy="cart-shipping-value" style={{ fontSize: '0.85rem', color: '#9ca3af' }}>
+                    Calculado no checkout
                   </span>
                 </div>
-
-                {/* Dica de Frete Grátis */}
-                {!isFreeShipping && (
-                  <div className="shipping-tip">
-                    Faltam <strong>{(500 - subtotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong> para ganhar frete grátis!
-                  </div>
-                )}
-                
-                {isFreeShipping && (
-                  <div className="shipping-tip-free">
-                    Parabéns! Sua compra atingiu o frete grátis.
-                  </div>
-                )}
 
                 <div className="summary-divider"></div>
 
                 <div className="summary-row total-row">
                   <span>Total</span>
-                  <span className="total-value">{total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                  <span className="total-value" data-cy="cart-total-value">{total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                 </div>
+
+                {checkoutError && (
+                  <div style={{ margin: '0.75rem 0', padding: '0.75rem', borderRadius: '6px', backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', color: '#fca5a5', fontSize: '0.85rem' }} data-cy="checkout-error-banner">
+                    {checkoutError}
+                  </div>
+                )}
 
                 <button 
                   type="button" 
                   className="btn btn-primary checkout-btn" 
+                  disabled={isValidatingCheckout}
                   onClick={handleCheckoutClick}
+                  data-cy="btn-cart-checkout"
                 >
-                  FINALIZAR COMPRA
+                  {isValidatingCheckout ? 'VERIFICANDO ESTOQUE...' : 'FINALIZAR COMPRA'}
                 </button>
                 
                 <Link to="/catalogo" className="continue-shopping">

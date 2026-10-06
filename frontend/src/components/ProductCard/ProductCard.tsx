@@ -17,7 +17,7 @@ export default function ProductCard({ product, onAddToCartClick }: ProductCardPr
   const remainingCategories = product.categories.length - visibleCategories.length;
 
   return (
-    <div className="product-card">
+    <div className="product-card" data-cy={`product-card-${product.id}`}>
       <Link to={`/produto/${product.id}`} className="product-image-wrapper">
         <img src={product.image} alt={product.name} className="product-card-image" />
       </Link>

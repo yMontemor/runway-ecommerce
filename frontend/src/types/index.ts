@@ -1,3 +1,11 @@
+export interface ProdutoVariacaoDto {
+  id: number;
+  produtoId: number;
+  tamanho: number;
+  quantidadeEstoque: number;
+  ativo: boolean;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -12,6 +20,7 @@ export interface Product {
   sizes: number[]; // e.g. [38, 39, 40, 41, 42, 43, 44]
   color: string;
   technologies: string[];
+  variacoes?: ProdutoVariacaoDto[];
 }
 
 export interface Address {
@@ -31,6 +40,7 @@ export interface Address {
   isDelivery?: boolean; // RN0022 - Endereço de entrega
   isBilling?: boolean;  // RN0021 - Endereço de cobrança
   isResidential?: boolean; // RN0026 - Endereço residencial
+  saveToProfile?: boolean;
 }
 
 export interface BandeiraDto {
@@ -52,8 +62,25 @@ export interface CreditCard {
 
 export interface CartItem {
   product: Product;
+  variacaoId: number;
   size: number;
   quantity: number;
+}
+
+export interface ItemValidacaoEstoqueResponse {
+  produtoVariacaoId: number;
+  nomeProduto: string;
+  tamanho: number;
+  quantidadeSolicitada: number;
+  quantidadeDisponivel: number;
+  disponivel: boolean;
+  mensagem: string;
+}
+
+export interface ValidacaoEstoqueResponse {
+  valido: boolean;
+  mensagem: string;
+  itens: ItemValidacaoEstoqueResponse[];
 }
 
 export interface Coupon {
@@ -159,3 +186,199 @@ export interface AnalyticsEntry {
   category: string;
   salesVolume: number;
 }
+
+export interface ItemFreteRequestDto {
+  produtoVariacaoId: number;
+  quantidade: number;
+}
+
+export interface CalcularFreteRequestDto {
+  codigoCliente?: string;
+  enderecoId?: number;
+  estado?: string;
+  cep?: string;
+  itens: ItemFreteRequestDto[];
+}
+
+export interface CalcularFreteResponseDto {
+  valorFrete: number;
+  estado: string;
+  regiao: string;
+  quantidadeItens: number;
+}
+
+export interface CupomResponseDto {
+  id: number;
+  codigo: string;
+  tipo: string;
+  valor: number;
+  clienteId?: number | null;
+}
+
+export interface ConsultarCupomRequestDto {
+  codigoCupom: string;
+  codigoCliente?: string;
+}
+
+export interface ItemPedidoValidacaoDto {
+  produtoVariacaoId: number;
+  quantidade: number;
+}
+
+export interface NovoCartaoPagamentoDto {
+  bandeiraId: number;
+  numeroCartao: string;
+  nomeImpresso: string;
+  dataValidade: string;
+  cvv: string;
+  salvarNoPerfil: boolean;
+}
+
+export interface ItemPagamentoCartaoDto {
+  cartaoId?: number;
+  cartaoNovo?: NovoCartaoPagamentoDto;
+  valor: number;
+}
+
+export interface ValidarPagamentoRequestDto {
+  codigoCliente: string;
+  itens: ItemPedidoValidacaoDto[];
+  enderecoId?: number;
+  estado?: string;
+  cep?: string;
+  cupons: string[];
+  cartoes: ItemPagamentoCartaoDto[];
+}
+
+export interface CupomUtilizadoDto {
+  codigo: string;
+  tipo: string;
+  formaPagamento: string;
+  valorOriginal: number;
+  valorUtilizado: number;
+}
+
+export interface CartaoUtilizadoDto {
+  cartaoId?: number;
+  formaPagamento: string;
+  bandeira: string;
+  ultimosDigitos: string;
+  valor: number;
+  salvarNoPerfil: boolean;
+}
+
+export interface NovoCupomTrocaPreviewDto {
+  valor: number;
+  mensagem: string;
+}
+
+export interface ValidarPagamentoResponseDto {
+  valido: boolean;
+  mensagem: string;
+  subtotal: number;
+  valorFrete: number;
+  valorTotal: number;
+  totalPagoCupons: number;
+  totalPagoCartoes: number;
+  saldoRestante: number;
+  valorExcedenteCupons: number;
+  novoCupomTroca?: NovoCupomTrocaPreviewDto | null;
+  cuponsUtilizados: CupomUtilizadoDto[];
+  cartoesUtilizados: CartaoUtilizadoDto[];
+}
+
+export interface ItemPedidoCriacaoDto {
+  produtoVariacaoId: number;
+  quantidade: number;
+}
+
+export interface EnderecoAvulsoPedidoDto {
+  tipoResidencia: string;
+  tipoLogradouro: string;
+  logradouro: string;
+  numero: string;
+  complemento?: string;
+  bairro: string;
+  cep: string;
+  cidade: string;
+  estado: string;
+  pais?: string;
+  observacoes?: string;
+  salvarNoPerfil: boolean;
+}
+
+export interface ItemPagamentoCartaoPedidoDto {
+  cartaoId?: number;
+  cartaoNovo?: NovoCartaoPagamentoDto;
+  valor: number;
+}
+
+export interface CriarPedidoRequestDto {
+  codigoCliente: string;
+  itens: ItemPedidoCriacaoDto[];
+  enderecoId?: number;
+  enderecoAvulso?: EnderecoAvulsoPedidoDto;
+  cupons: string[];
+  cartoes: ItemPagamentoCartaoPedidoDto[];
+}
+
+export interface EnderecoEntregaResponseDto {
+  enderecoId?: number | null;
+  tipoResidencia: string;
+  tipoLogradouro: string;
+  logradouro: string;
+  numero: string;
+  complemento?: string | null;
+  bairro: string;
+  cep: string;
+  cidade: string;
+  estado: string;
+  pais: string;
+  observacoes?: string | null;
+}
+
+export interface ItemPedidoResponseDto {
+  id: number;
+  produtoVariacaoId: number;
+  produtoNome: string;
+  marca: string;
+  tamanho: string;
+  quantidade: number;
+  precoUnitario: number;
+  totalItem: number;
+}
+
+export interface PagamentoPedidoResponseDto {
+  id: number;
+  formaPagamento: string;
+  valor: number;
+  cartaoId?: number | null;
+  bandeira?: string | null;
+  cartaoUltimosDigitos?: string | null;
+  cartaoNomeImpresso?: string | null;
+  cupomId?: number | null;
+  cupomCodigo?: string | null;
+}
+
+export interface NovoCupomTrocaResponseDto {
+  id: number;
+  codigo: string;
+  valor: number;
+  mensagem: string;
+}
+
+export interface PedidoResponseDto {
+  id: number;
+  codigo: string;
+  status: string;
+  dataPedido: string;
+  subtotal: number;
+  valorFrete: number;
+  valorTotal: number;
+  enderecoEntrega: EnderecoEntregaResponseDto;
+  itens: ItemPedidoResponseDto[];
+  pagamentos: PagamentoPedidoResponseDto[];
+  novoCupomTroca?: NovoCupomTrocaResponseDto | null;
+}
+
+

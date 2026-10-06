@@ -186,6 +186,7 @@ export function validateCardNumber(value: string): { isValid: boolean; error?: s
 
 /**
  * Validação da validade do cartão de crédito (MM/AA ou MM/AAAA):
+ * - Decisão adicional de implementação do RunWay (não é requisito do DRS - a RN0024 exige apenas número, nome impresso, bandeira e CVV).
  * - Mês entre 01 e 12
  * - Cartão não pode estar vencido em relação ao mês e ano correntes
  */

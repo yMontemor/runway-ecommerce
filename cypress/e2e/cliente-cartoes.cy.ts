@@ -306,7 +306,7 @@ describe('Suíte E2E: Cartões de Crédito do Cliente — RunWay (RF0027 / RN002
       cy.get('[data-cy="novo-cartao-btn"]').click();
       cy.get('[data-cy="cartao-form"]').should('be.visible');
 
-      // 3. Preenche os campos obrigatórios (RN0024, RN0025 e validade)
+      // 3. Preenche os campos obrigatórios (RN0024 para número, nome e CVV, RN0025 para bandeira, e validade como decisão adicional do RunWay)
       cy.get('[data-cy="cartao-input-numero"]').type('4111 1111 1111 1111');
       cy.get('[data-cy="cartao-input-nome"]').type('CYPRESS PRIMEIRO CARTAO');
       cy.get('[data-cy="cartao-select-bandeira"]').select('Visa');

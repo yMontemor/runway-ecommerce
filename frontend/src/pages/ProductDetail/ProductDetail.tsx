@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../../store/AppContext';
-import { products } from '../../data/products';
 import Modal from '../../components/Modal/Modal';
 import './ProductDetail.css';
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { addToCart, activeCustomer } = useApp();
+  const { addToCart, activeCustomer, products, isLoadingProducts } = useApp();
 
   const product = products.find(p => p.id === id) || null;
 
@@ -16,12 +15,15 @@ export default function ProductDetail() {
   const [selectedSize, setSelectedSize] = useState<number | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [stockErrorMessage, setStockErrorMessage] = useState<string | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
 
   if (id !== prevId) {
     setPrevId(id);
     setSelectedSize(null);
     setQuantity(1);
     setSuccessMessage(null);
+    setStockErrorMessage(null);
   }
 
   // Modais e feedbacks
@@ -32,9 +34,19 @@ export default function ProductDetail() {
   }, [id]);
 
   if (!product) {
+    if (isLoadingProducts) {
+      return (
+        <div className="product-detail-error" style={{ textAlign: 'center', padding: '4rem 1rem' }}>
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: '1.05rem' }}>
+            Carregando detalhes do produto...
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div className="product-detail-error">
-        <p>Produto não encontrado.</p>
+        <p>Produto não encontrado ou indisponível no momento.</p>
         <Link to="/catalogo" className="btn btn-primary">Voltar ao Catálogo</Link>
       </div>
     );
@@ -45,7 +57,10 @@ export default function ProductDetail() {
     .filter(p => p.category === product.category && p.id !== product.id)
     .slice(0, 3);
 
-  const handleAddToCart = () => {
+  const selectedVariacao = product.variacoes?.find(v => v.tamanho === selectedSize);
+  const selectedSizeStock = selectedVariacao ? selectedVariacao.quantidadeEstoque : undefined;
+
+  const handleAddToCart = async () => {
     if (activeCustomer.status === 'INATIVO') {
       setIsInactiveModalOpen(true);
       return;
@@ -53,15 +68,24 @@ export default function ProductDetail() {
 
     if (selectedSize === null) return;
 
-    const result = addToCart(product.id, selectedSize, quantity);
-    
-    if (result.success) {
-      setSuccessMessage(`Adicionado: ${quantity}x ${product.name} (Nº ${selectedSize}) no seu carrinho.`);
-      setTimeout(() => {
-        setSuccessMessage(null);
-      }, 3000);
-    } else if (result.isInactive) {
-      setIsInactiveModalOpen(true);
+    setStockErrorMessage(null);
+    setIsAdding(true);
+
+    try {
+      const result = await addToCart(product.id, selectedSize, quantity, selectedVariacao?.id);
+      
+      if (result.success) {
+        setSuccessMessage(`Adicionado: ${quantity}x ${product.name} (Nº ${selectedSize}) no seu carrinho.`);
+        setTimeout(() => {
+          setSuccessMessage(null);
+        }, 3000);
+      } else if (result.isInactive) {
+        setIsInactiveModalOpen(true);
+      } else if (result.message) {
+        setStockErrorMessage(result.message);
+      }
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -126,17 +150,32 @@ export default function ProductDetail() {
                 Selecione o tamanho: {selectedSize ? <strong>Nº {selectedSize}</strong> : <span className="warning-select">Selecione um tamanho</span>}
               </span>
               <div className="detail-sizes-grid">
-                {product.sizes.map(size => (
-                  <button
-                    key={size}
-                    type="button"
-                    className={`detail-size-btn ${selectedSize === size ? 'active' : ''}`}
-                    onClick={() => setSelectedSize(size)}
-                  >
-                    {size}
-                  </button>
-                ))}
+                {product.sizes.map(size => {
+                  const varInfo = product.variacoes?.find(v => v.tamanho === size);
+                  const isOutOfStock = varInfo ? varInfo.quantidadeEstoque <= 0 : false;
+                  return (
+                    <button
+                      key={size}
+                      type="button"
+                      disabled={isOutOfStock}
+                      title={isOutOfStock ? 'Tamanho esgotado' : `${varInfo?.quantidadeEstoque ?? ''} disponíveis`}
+                      className={`detail-size-btn ${selectedSize === size ? 'active' : ''} ${isOutOfStock ? 'disabled-size' : ''}`}
+                      onClick={() => setSelectedSize(size)}
+                      style={isOutOfStock ? { opacity: 0.45, cursor: 'not-allowed', textDecoration: 'line-through' } : undefined}
+                    >
+                      {size}
+                    </button>
+                  );
+                })}
               </div>
+
+              {selectedSize !== null && selectedSizeStock !== undefined && (
+                <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: selectedSizeStock > 0 ? '#4ade80' : '#ef4444' }}>
+                  {selectedSizeStock > 0
+                    ? `Disponível em estoque: ${selectedSizeStock} ${selectedSizeStock === 1 ? 'unidade' : 'unidades'}`
+                    : 'Este tamanho está indisponível no momento.'}
+                </div>
+              )}
             </div>
 
             {/* Quantidade e Ações */}
@@ -145,7 +184,7 @@ export default function ProductDetail() {
                 <button 
                   type="button" 
                   onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                  disabled={quantity <= 1}
+                  disabled={quantity <= 1 || isAdding}
                 >
                   -
                 </button>
@@ -153,6 +192,7 @@ export default function ProductDetail() {
                 <button 
                   type="button" 
                   onClick={() => setQuantity(q => q + 1)}
+                  disabled={isAdding || (selectedSizeStock !== undefined && quantity >= selectedSizeStock)}
                 >
                   +
                 </button>
@@ -162,10 +202,10 @@ export default function ProductDetail() {
                 <button
                   type="button"
                   className="btn btn-primary buy-add-btn"
-                  disabled={selectedSize === null}
+                  disabled={selectedSize === null || (selectedSizeStock !== undefined && selectedSizeStock <= 0) || isAdding}
                   onClick={handleAddToCart}
                 >
-                  ADICIONAR AO CARRINHO
+                  {isAdding ? 'VERIFICANDO ESTOQUE...' : (selectedSizeStock === 0 ? 'TAMANHO ESGOTADO' : 'ADICIONAR AO CARRINHO')}
                 </button>
                 
                 <Link to="/carrinho" className="btn btn-secondary buy-cart-btn">
@@ -174,7 +214,14 @@ export default function ProductDetail() {
               </div>
             </div>
 
-            {/* Feedback Mensagem */}
+            {/* Alerta de Erro de Estoque */}
+            {stockErrorMessage && (
+              <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', borderRadius: '6px', backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', color: '#fca5a5', fontSize: '0.9rem' }}>
+                {stockErrorMessage}
+              </div>
+            )}
+
+            {/* Feedback Mensagem de Sucesso */}
             {successMessage && (
               <div className="add-success-feedback">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
