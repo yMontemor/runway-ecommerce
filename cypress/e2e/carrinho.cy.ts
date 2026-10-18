@@ -18,7 +18,12 @@ describe('Cenário 1: Carrinho com múltiplos produtos, alteração de quantidad
       cy.get(`[data-cy="select-customer-${clienteCodigo}"]`).scrollIntoView().click();
       cy.get('[data-cy="user-dropdown"]').should('contain.text', cliente.nome.split(' ')[0]);
 
-      // Limpar carrinho prévio se houver
+      // Limpar carrinho prévio se houver (persistido e localStorage)
+      cy.request({
+        method: 'DELETE',
+        url: `http://localhost:5035/api/carrinho/${clienteCodigo}`,
+        failOnStatusCode: false
+      });
       cy.window().then((win) => {
         win.localStorage.removeItem(`runway_cart_${clienteCodigo}`);
       });
@@ -82,14 +87,14 @@ describe('Cenário 1: Carrinho com múltiplos produtos, alteração de quantidad
     cy.get('.products-grid').should('be.visible');
 
     // 2. Adicionar primeiro produto: Corre 4, Tamanho 41
-    cy.get('[data-cy="product-card-olympikus_corre_4"]').should('be.visible');
-    cy.get('[data-cy="product-card-olympikus_corre_4"]').find('[data-cy="btn-card-adicionar"]').scrollIntoView().click();
+    cy.get('[data-cy="product-card-olympikus_corre_4"]').should('be.visible').scrollIntoView();
+    cy.get('[data-cy="product-card-olympikus_corre_4"] [data-cy="btn-card-adicionar"]').click();
     cy.get('[data-cy="btn-tamanho-41"]').should('be.visible').click();
     cy.get('[data-cy="btn-confirmar-adicionar-carrinho"]').click();
 
     // 3. Adicionar segundo produto: Pegasus 41, Tamanho 40
-    cy.get('[data-cy="product-card-nike_pegasus_41"]').should('be.visible');
-    cy.get('[data-cy="product-card-nike_pegasus_41"]').find('[data-cy="btn-card-adicionar"]').scrollIntoView().click();
+    cy.get('[data-cy="product-card-nike_pegasus_41"]').should('be.visible').scrollIntoView();
+    cy.get('[data-cy="product-card-nike_pegasus_41"] [data-cy="btn-card-adicionar"]').click();
     cy.get('[data-cy="btn-tamanho-40"]').should('be.visible').click();
     cy.get('[data-cy="btn-confirmar-adicionar-carrinho"]').click();
 

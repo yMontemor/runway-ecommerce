@@ -26,6 +26,8 @@ namespace RunWay.Api.Migrations
 
             modelBuilder.HasSequence("pedido_codigo_seq");
 
+            modelBuilder.HasSequence("troca_codigo_seq");
+
             modelBuilder.Entity("RunWay.Api.Models.Bandeira", b =>
                 {
                     b.Property<int>("Id")
@@ -86,6 +88,44 @@ namespace RunWay.Api.Migrations
                             Id = 5,
                             Ativo = true,
                             Nome = "Hipercard"
+                        });
+                });
+
+            modelBuilder.Entity("RunWay.Api.Models.Carrinho", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ClienteId")
+                        .HasColumnType("integer")
+                        .HasColumnName("cliente_id");
+
+                    b.Property<DateTimeOffset>("DataAtualizacao")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dt_atualizacao");
+
+                    b.Property<DateTimeOffset>("DataCriacao")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dt_criacao");
+
+                    b.Property<DateTimeOffset>("DataExpiracao")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dt_expiracao");
+
+                    b.HasKey("Id")
+                        .HasName("pk_carrinho");
+
+                    b.HasIndex("ClienteId")
+                        .IsUnique()
+                        .HasDatabaseName("uq_carrinho_cliente");
+
+                    b.ToTable("CARRINHO", null, t =>
+                        {
+                            t.HasCheckConstraint("chk_carrinho_datas", "dt_expiracao >= dt_criacao");
                         });
                 });
 
@@ -401,7 +441,50 @@ namespace RunWay.Api.Migrations
                         .IsUnique()
                         .HasDatabaseName("uq_estoque_produto_variacao");
 
-                    b.ToTable("ESTOQUE", (string)null);
+                    b.ToTable("ESTOQUE", null, t =>
+                        {
+                            t.HasCheckConstraint("chk_estoque_quantidade_nao_negativa", "quantidade >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("RunWay.Api.Models.ItemCarrinho", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CarrinhoId")
+                        .HasColumnType("integer")
+                        .HasColumnName("carrinho_id");
+
+                    b.Property<DateTimeOffset>("DataAdicionado")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dt_adicionado");
+
+                    b.Property<int>("ProdutoVariacaoId")
+                        .HasColumnType("integer")
+                        .HasColumnName("produto_variacao_id");
+
+                    b.Property<int>("Quantidade")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantidade");
+
+                    b.HasKey("Id")
+                        .HasName("pk_item_carrinho");
+
+                    b.HasIndex("ProdutoVariacaoId");
+
+                    b.HasIndex("CarrinhoId", "ProdutoVariacaoId")
+                        .IsUnique()
+                        .HasDatabaseName("uq_item_carrinho_variacao");
+
+                    b.ToTable("ITEM_CARRINHO", null, t =>
+                        {
+                            t.HasCheckConstraint("chk_item_carrinho_quantidade", "quantidade > 0");
+                        });
                 });
 
             modelBuilder.Entity("RunWay.Api.Models.ItemPedido", b =>
@@ -437,6 +520,51 @@ namespace RunWay.Api.Migrations
                     b.HasIndex("ProdutoVariacaoId");
 
                     b.ToTable("ITEM_PEDIDO", (string)null);
+                });
+
+            modelBuilder.Entity("RunWay.Api.Models.ItemTroca", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ItemPedidoId")
+                        .HasColumnType("integer")
+                        .HasColumnName("item_pedido_id");
+
+                    b.Property<decimal>("PrecoUnitario")
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("preco_unitario");
+
+                    b.Property<int>("ProdutoVariacaoId")
+                        .HasColumnType("integer")
+                        .HasColumnName("produto_variacao_id");
+
+                    b.Property<int>("Quantidade")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantidade");
+
+                    b.Property<decimal>("Subtotal")
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("subtotal");
+
+                    b.Property<int>("TrocaId")
+                        .HasColumnType("integer")
+                        .HasColumnName("troca_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_item_troca");
+
+                    b.HasIndex("ItemPedidoId");
+
+                    b.HasIndex("ProdutoVariacaoId");
+
+                    b.HasIndex("TrocaId");
+
+                    b.ToTable("ITEM_TROCA", (string)null);
                 });
 
             modelBuilder.Entity("RunWay.Api.Models.LogAuditoria", b =>
@@ -819,6 +947,125 @@ namespace RunWay.Api.Migrations
                     b.ToTable("TELEFONE", (string)null);
                 });
 
+            modelBuilder.Entity("RunWay.Api.Models.Troca", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AdminAutorizacao")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("admin_autorizacao");
+
+                    b.Property<string>("AdminRecebimento")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("admin_recebimento");
+
+                    b.Property<int>("ClienteId")
+                        .HasColumnType("integer")
+                        .HasColumnName("cliente_id");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("codigo");
+
+                    b.Property<int?>("CupomId")
+                        .HasColumnType("integer")
+                        .HasColumnName("cupom_id");
+
+                    b.Property<DateTimeOffset?>("DataAutorizacao")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dt_autorizacao");
+
+                    b.Property<DateTimeOffset?>("DataNotificacao")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dt_notificacao");
+
+                    b.Property<DateTimeOffset?>("DataRecebimento")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dt_recebimento");
+
+                    b.Property<DateTimeOffset>("DataSolicitacao")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dt_solicitacao")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("motivo");
+
+                    b.Property<string>("NotificacaoCliente")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("notificacao_cliente");
+
+                    b.Property<int>("PedidoId")
+                        .HasColumnType("integer")
+                        .HasColumnName("pedido_id");
+
+                    b.Property<bool?>("RetornouAoEstoque")
+                        .HasColumnType("boolean")
+                        .HasColumnName("retornou_ao_estoque");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("EM TROCA")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("PARCIAL")
+                        .HasColumnName("tipo");
+
+                    b.Property<decimal>("ValorTotal")
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("valor_total");
+
+                    b.HasKey("Id")
+                        .HasName("pk_troca");
+
+                    b.HasIndex("ClienteId");
+
+                    b.HasIndex("Codigo")
+                        .IsUnique()
+                        .HasDatabaseName("uq_troca_codigo");
+
+                    b.HasIndex("CupomId")
+                        .IsUnique();
+
+                    b.HasIndex("PedidoId");
+
+                    b.ToTable("TROCA", (string)null);
+                });
+
+            modelBuilder.Entity("RunWay.Api.Models.Carrinho", b =>
+                {
+                    b.HasOne("RunWay.Api.Models.Cliente", "Cliente")
+                        .WithOne("Carrinho")
+                        .HasForeignKey("RunWay.Api.Models.Carrinho", "ClienteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_carrinho_cliente");
+
+                    b.Navigation("Cliente");
+                });
+
             modelBuilder.Entity("RunWay.Api.Models.Cartao", b =>
                 {
                     b.HasOne("RunWay.Api.Models.Bandeira", "Bandeira")
@@ -875,6 +1122,27 @@ namespace RunWay.Api.Migrations
                     b.Navigation("ProdutoVariacao");
                 });
 
+            modelBuilder.Entity("RunWay.Api.Models.ItemCarrinho", b =>
+                {
+                    b.HasOne("RunWay.Api.Models.Carrinho", "Carrinho")
+                        .WithMany("Itens")
+                        .HasForeignKey("CarrinhoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_item_carrinho_carrinho");
+
+                    b.HasOne("RunWay.Api.Models.ProdutoVariacao", "ProdutoVariacao")
+                        .WithMany("ItensCarrinho")
+                        .HasForeignKey("ProdutoVariacaoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_item_carrinho_produto_variacao");
+
+                    b.Navigation("Carrinho");
+
+                    b.Navigation("ProdutoVariacao");
+                });
+
             modelBuilder.Entity("RunWay.Api.Models.ItemPedido", b =>
                 {
                     b.HasOne("RunWay.Api.Models.Pedido", "Pedido")
@@ -894,6 +1162,36 @@ namespace RunWay.Api.Migrations
                     b.Navigation("Pedido");
 
                     b.Navigation("ProdutoVariacao");
+                });
+
+            modelBuilder.Entity("RunWay.Api.Models.ItemTroca", b =>
+                {
+                    b.HasOne("RunWay.Api.Models.ItemPedido", "ItemPedido")
+                        .WithMany("ItensTroca")
+                        .HasForeignKey("ItemPedidoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_item_troca_item_pedido");
+
+                    b.HasOne("RunWay.Api.Models.ProdutoVariacao", "ProdutoVariacao")
+                        .WithMany()
+                        .HasForeignKey("ProdutoVariacaoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_item_troca_produto_variacao");
+
+                    b.HasOne("RunWay.Api.Models.Troca", "Troca")
+                        .WithMany("Itens")
+                        .HasForeignKey("TrocaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_item_troca_troca");
+
+                    b.Navigation("ItemPedido");
+
+                    b.Navigation("ProdutoVariacao");
+
+                    b.Navigation("Troca");
                 });
 
             modelBuilder.Entity("RunWay.Api.Models.PagamentoPedido", b =>
@@ -976,23 +1274,68 @@ namespace RunWay.Api.Migrations
                     b.Navigation("Cliente");
                 });
 
+            modelBuilder.Entity("RunWay.Api.Models.Troca", b =>
+                {
+                    b.HasOne("RunWay.Api.Models.Cliente", "Cliente")
+                        .WithMany("Trocas")
+                        .HasForeignKey("ClienteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_troca_cliente");
+
+                    b.HasOne("RunWay.Api.Models.Cupom", "Cupom")
+                        .WithOne("Troca")
+                        .HasForeignKey("RunWay.Api.Models.Troca", "CupomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_troca_cupom");
+
+                    b.HasOne("RunWay.Api.Models.Pedido", "Pedido")
+                        .WithMany("Trocas")
+                        .HasForeignKey("PedidoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_troca_pedido");
+
+                    b.Navigation("Cliente");
+
+                    b.Navigation("Cupom");
+
+                    b.Navigation("Pedido");
+                });
+
             modelBuilder.Entity("RunWay.Api.Models.Bandeira", b =>
                 {
                     b.Navigation("Cartoes");
                 });
 
+            modelBuilder.Entity("RunWay.Api.Models.Carrinho", b =>
+                {
+                    b.Navigation("Itens");
+                });
+
             modelBuilder.Entity("RunWay.Api.Models.Cliente", b =>
                 {
+                    b.Navigation("Carrinho");
+
                     b.Navigation("Cartoes");
 
                     b.Navigation("Enderecos");
 
                     b.Navigation("Telefone");
+
+                    b.Navigation("Trocas");
                 });
 
             modelBuilder.Entity("RunWay.Api.Models.Cupom", b =>
                 {
                     b.Navigation("Pagamentos");
+
+                    b.Navigation("Troca");
+                });
+
+            modelBuilder.Entity("RunWay.Api.Models.ItemPedido", b =>
+                {
+                    b.Navigation("ItensTroca");
                 });
 
             modelBuilder.Entity("RunWay.Api.Models.Pedido", b =>
@@ -1000,6 +1343,8 @@ namespace RunWay.Api.Migrations
                     b.Navigation("Itens");
 
                     b.Navigation("Pagamentos");
+
+                    b.Navigation("Trocas");
                 });
 
             modelBuilder.Entity("RunWay.Api.Models.Produto", b =>
@@ -1011,7 +1356,14 @@ namespace RunWay.Api.Migrations
                 {
                     b.Navigation("Estoque");
 
+                    b.Navigation("ItensCarrinho");
+
                     b.Navigation("ItensPedido");
+                });
+
+            modelBuilder.Entity("RunWay.Api.Models.Troca", b =>
+                {
+                    b.Navigation("Itens");
                 });
 #pragma warning restore 612, 618
         }

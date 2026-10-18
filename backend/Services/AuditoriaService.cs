@@ -77,11 +77,17 @@ public class AuditoriaService : IAuditoriaService
 
         var json = JsonSerializer.Serialize(payload, JsonOptions);
 
+        string op = operacao.Trim().ToUpperInvariant();
+        if (op.Length > 20)
+        {
+            op = op[..20];
+        }
+
         return new LogAuditoria
         {
             Entidade = entidade.Trim().ToUpperInvariant(),
             RegistroId = registroId.Trim(),
-            Operacao = operacao.Trim().ToUpperInvariant(),
+            Operacao = op,
             DadosAlterados = json,
             DataHora = DateTimeOffset.UtcNow,
             UsuarioResponsavel = string.IsNullOrWhiteSpace(usuarioResponsavel) ? "ADMIN" : usuarioResponsavel.Trim()

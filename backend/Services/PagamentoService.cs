@@ -56,6 +56,7 @@ public class PagamentoService : IPagamentoService
         // 1. Validação de estoque e variações através do ProdutoService
         var validacaoEstoque = await _produtoService.ValidarEstoqueAsync(new ValidacaoEstoqueRequestDto
         {
+            CodigoCliente = request.CodigoCliente,
             Itens = request.Itens.Select(i => new ItemValidacaoEstoqueRequestDto
             {
                 ProdutoVariacaoId = i.ProdutoVariacaoId,
@@ -150,6 +151,23 @@ public class PagamentoService : IPagamentoService
                 if (!cupom.ClienteId.HasValue || cupom.ClienteId.Value != cliente.Id)
                 {
                     throw new ValidationException($"O cupom de troca '{cupom.Codigo}' pertence a outro cliente e não pode ser utilizado.");
+                }
+
+                // Se for cupom de excedente de compra, verificar se o pedido de origem já foi aprovado
+                if (cupom.Codigo.StartsWith("TROCA-CLI") && cupom.Codigo.Contains("-RW-"))
+                {
+                    var idx = cupom.Codigo.IndexOf("-RW-", StringComparison.OrdinalIgnoreCase);
+                    var pedidoCodigo = cupom.Codigo.Substring(idx + 1);
+
+                    var pedidoOrigem = await _context.Pedidos
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(p => p.Codigo == pedidoCodigo, cancellationToken);
+
+                    if (pedidoOrigem != null && pedidoOrigem.Status == Pedido.StatusEmProcessamento)
+                    {
+                        throw new ValidationException(
+                            $"O cupom de troca por excedente '{cupom.Codigo}' ainda não está disponível para uso, pois o pedido de origem '{pedidoCodigo}' está aguardando aprovação de pagamento.");
+                    }
                 }
 
                 bool jaUtilizado = await _context.PagamentosPedido

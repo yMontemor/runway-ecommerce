@@ -6,7 +6,15 @@ import './Cart.css';
 
 export default function Cart() {
   const navigate = useNavigate();
-  const { activeCustomer, cartsByCustomer, updateCartQuantity, removeFromCart, validarEstoqueCarrinho } = useApp();
+  const { 
+    activeCustomer, 
+    cartsByCustomer, 
+    cartExpiracao, 
+    limparAvisoExpiracao, 
+    updateCartQuantity, 
+    removeFromCart, 
+    validarEstoqueCarrinho 
+  } = useApp();
   
   const [isInactiveModalOpen, setIsInactiveModalOpen] = useState(false);
   const [quantityError, setQuantityError] = useState<{ [key: string]: string }>({});
@@ -16,6 +24,13 @@ export default function Cart() {
 
   const cartItems = cartsByCustomer[activeCustomer.id] || [];
   
+  // Formatar tempo MM:SS
+  const formatarTempo = (segundos: number): string => {
+    const min = Math.floor(segundos / 60);
+    const sec = segundos % 60;
+    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  };
+
   // Totais
   const subtotal = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const total = subtotal;
@@ -69,6 +84,109 @@ export default function Cart() {
         <h2 className="page-title">
           Seu Carrinho <span className="title-count">({cartItems.reduce((s, i) => s + i.quantity, 0)} itens)</span>
         </h2>
+
+        {/* Banner de itens expirados (RNF0042) */}
+        {cartExpiracao.itensExpirados && cartExpiracao.itensExpirados.length > 0 && (
+          <div 
+            className="cart-expired-notice" 
+            data-cy="cart-expired-notice"
+            style={{
+              padding: '1rem 1.25rem',
+              marginBottom: '1.25rem',
+              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid #ef4444',
+              borderRadius: '8px',
+              color: '#fca5a5'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h4 style={{ margin: 0, color: '#ef4444', fontSize: '1rem', fontWeight: 700 }}>
+                  ⏱️ Reserva Expirada por Inatividade
+                </h4>
+                <p style={{ margin: '0.35rem 0 0.75rem 0', fontSize: '0.88rem', color: '#e2e8f0' }}>
+                  {cartExpiracao.mensagemExpiracao || 'Seu carrinho excedeu o prazo de 20 minutos e as unidades reservadas foram liberadas para outros compradores.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={limparAvisoExpiracao}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  fontSize: '1.2rem',
+                  padding: '0 0.25rem'
+                }}
+                title="Fechar aviso"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#f87171', marginBottom: '0.35rem' }}>
+              Itens removidos do carrinho:
+            </div>
+            <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#cbd5e1' }}>
+              {cartExpiracao.itensExpirados.map((it, idx) => (
+                <li key={idx} style={{ marginBottom: '0.2rem' }}>
+                  <strong>{it.quantidade}x {it.nomeProduto}</strong> (Tamanho {it.tamanho}) — {it.motivo}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Alerta de expiração iminente 5 minutos antes (RN0044) */}
+        {cartItems.length > 0 && cartExpiracao.alertaExpirando && (
+          <div 
+            className="cart-expiration-warning-banner" 
+            data-cy="cart-expiration-warning-banner"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              padding: '0.85rem 1.25rem',
+              marginBottom: '1.25rem',
+              backgroundColor: 'rgba(234, 179, 8, 0.12)',
+              border: '1px solid #eab308',
+              borderRadius: '8px',
+              color: '#facc15'
+            }}
+          >
+            <span style={{ fontSize: '1.4rem' }}>⚠️</span>
+            <div>
+              <strong>Atenção! Sua reserva de estoque está prestes a expirar.</strong>
+              <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.88rem', color: '#e2e8f0' }}>
+                Restam apenas <strong style={{ color: '#facc15' }}>{formatarTempo(cartExpiracao.tempoRestanteSegundos)}</strong> para concluir seu pedido antes que os produtos voltem a ficar disponíveis para outros clientes.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Cronômetro discreto quando não estiver em alerta */}
+        {cartItems.length > 0 && cartExpiracao.tempoRestanteSegundos > 0 && !cartExpiracao.alertaExpirando && (
+          <div 
+            className="cart-timer-badge"
+            data-cy="cart-timer-badge"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              padding: '0.35rem 0.75rem',
+              marginBottom: '1rem',
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid #333',
+              borderRadius: '20px',
+              fontSize: '0.82rem',
+              color: '#94a3b8'
+            }}
+          >
+            <span>⏱️</span>
+            <span>Reserva garantida por: <strong style={{ color: '#fff' }}>{formatarTempo(cartExpiracao.tempoRestanteSegundos)}</strong></span>
+          </div>
+        )}
 
         {cartItems.length > 0 ? (
           <div className="cart-layout">

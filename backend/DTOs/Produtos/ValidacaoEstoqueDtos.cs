@@ -8,6 +8,7 @@ public class ItemValidacaoEstoqueRequestDto
 
 public class ValidacaoEstoqueRequestDto
 {
+    public string? CodigoCliente { get; set; }
     public List<ItemValidacaoEstoqueRequestDto> Itens { get; set; } = new();
 }
 

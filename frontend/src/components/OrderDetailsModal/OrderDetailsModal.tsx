@@ -1,5 +1,8 @@
+import { useState, useEffect } from 'react';
 import Modal from '../Modal/Modal';
 import { useApp } from '../../store/AppContext';
+import { pedidoService } from '../../services/pedidoService';
+import { mapPedidoDtoToOrder } from '../../utils/orderMapper';
 import type { Order } from '../../types';
 import './OrderDetailsModal.css';
 
@@ -9,8 +12,30 @@ interface OrderDetailsModalProps {
   order: Order | null;
 }
 
-export default function OrderDetailsModal({ isOpen, onClose, order }: OrderDetailsModalProps) {
-  const { customers } = useApp();
+export default function OrderDetailsModal({ isOpen, onClose, order: initialOrder }: OrderDetailsModalProps) {
+  const { customers, products } = useApp();
+  const [freshOrder, setFreshOrder] = useState<Order | null>(initialOrder);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && initialOrder?.id) {
+      setIsLoading(true);
+      pedidoService.obterPorCodigo(initialOrder.id)
+        .then(res => {
+          if (res.success && res.dados) {
+            setFreshOrder(mapPedidoDtoToOrder(res.dados, products));
+          } else {
+            setFreshOrder(initialOrder);
+          }
+        })
+        .catch(() => setFreshOrder(initialOrder))
+        .finally(() => setIsLoading(false));
+    } else {
+      setFreshOrder(initialOrder);
+    }
+  }, [isOpen, initialOrder?.id, products]);
+
+  const order = freshOrder || initialOrder;
 
   if (!order) return null;
 
@@ -23,6 +48,11 @@ export default function OrderDetailsModal({ isOpen, onClose, order }: OrderDetai
       title={`Detalhes do Pedido - ${order.id}`}
     >
       <div className="order-details-modal-content">
+        {isLoading && (
+          <div style={{ padding: '0.5rem', textAlign: 'center', color: 'var(--color-primary)', fontSize: '0.85rem' }}>
+            Atualizando dados do pedido...
+          </div>
+        )}
         
         {/* Informações Gerais */}
         <div className="order-details-section">

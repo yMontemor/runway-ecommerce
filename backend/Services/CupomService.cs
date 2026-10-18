@@ -46,7 +46,54 @@ public class CupomService : ICupomService
             })
             .ToListAsync(cancellationToken);
 
-        return cupons;
+        // Excluir cupons de excedente cujo pedido de origem ainda está EM PROCESSAMENTO
+        var cuponsDisponiveis = new List<CupomResponseDto>();
+        foreach (var c in cupons)
+        {
+            if (c.Codigo.StartsWith("TROCA-CLI") && c.Codigo.Contains("-RW-"))
+            {
+                var idx = c.Codigo.IndexOf("-RW-", StringComparison.OrdinalIgnoreCase);
+                var pedidoCodigo = c.Codigo.Substring(idx + 1);
+                var pedidoOrigem = await _context.Pedidos
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.Codigo == pedidoCodigo, cancellationToken);
+
+                if (pedidoOrigem != null && pedidoOrigem.Status == Pedido.StatusEmProcessamento)
+                {
+                    continue; // Não disponibiliza antes da aprovação do pedido
+                }
+            }
+            cuponsDisponiveis.Add(c);
+        }
+
+        return cuponsDisponiveis;
+    }
+
+    public async Task<List<CupomResponseDto>> ListarCuponsPromocionaisAsync(CancellationToken cancellationToken = default)
+    {
+        return await _context.Cupons
+            .AsNoTracking()
+            .Where(c => c.Tipo == Cupom.TipoPromocional)
+            .OrderBy(c => c.Id)
+            .Select(c => new CupomResponseDto
+            {
+                Id = c.Id,
+                Codigo = c.Codigo,
+                Tipo = c.Tipo,
+                Valor = c.Valor,
+                ClienteId = c.ClienteId
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<CupomResponseDto>> ListarTodosCuponsClienteAsync(string codigoCliente, CancellationToken cancellationToken = default)
+    {
+        var promocionais = await ListarCuponsPromocionaisAsync(cancellationToken);
+        var trocas = await ListarCuponsTrocaClienteAsync(codigoCliente, cancellationToken);
+
+        var todos = new List<CupomResponseDto>(promocionais);
+        todos.AddRange(trocas);
+        return todos;
     }
 
     public async Task<CupomResponseDto> ConsultarCupomAsync(ConsultarCupomRequestDto request, CancellationToken cancellationToken = default)
@@ -83,6 +130,23 @@ public class CupomService : ICupomService
                 if (cliente == null || cupom.ClienteId != cliente.Id)
                 {
                     throw new ValidationException($"O cupom de troca '{codigo}' pertence a outro cliente e não pode ser utilizado.");
+                }
+            }
+
+            // Se for cupom de excedente de compra, verificar se o pedido de origem já foi aprovado
+            if (cupom.Codigo.StartsWith("TROCA-CLI") && cupom.Codigo.Contains("-RW-"))
+            {
+                var idx = cupom.Codigo.IndexOf("-RW-", StringComparison.OrdinalIgnoreCase);
+                var pedidoCodigo = cupom.Codigo.Substring(idx + 1);
+
+                var pedidoOrigem = await _context.Pedidos
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.Codigo == pedidoCodigo, cancellationToken);
+
+                if (pedidoOrigem != null && pedidoOrigem.Status == Pedido.StatusEmProcessamento)
+                {
+                    throw new ValidationException(
+                        $"O cupom de troca por excedente '{codigo}' ainda não está disponível para uso, pois o pedido de origem '{pedidoCodigo}' está aguardando aprovação de pagamento.");
                 }
             }
 

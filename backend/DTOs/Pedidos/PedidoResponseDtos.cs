@@ -4,6 +4,8 @@ public class PedidoResponseDto
 {
     public int Id { get; set; }
     public string Codigo { get; set; } = string.Empty;
+    public string CodigoCliente { get; set; } = string.Empty;
+    public string NomeCliente { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public DateTimeOffset DataPedido { get; set; }
     public decimal Subtotal { get; set; }
@@ -36,8 +38,10 @@ public class ItemPedidoResponseDto
 {
     public int Id { get; set; }
     public int ProdutoVariacaoId { get; set; }
+    public string ProdutoCodigo { get; set; } = string.Empty;
     public string ProdutoNome { get; set; } = string.Empty;
     public string Marca { get; set; } = string.Empty;
+    public string ImagemUrl { get; set; } = string.Empty;
     public string Tamanho { get; set; } = string.Empty;
     public int Quantidade { get; set; }
     public decimal PrecoUnitario { get; set; }

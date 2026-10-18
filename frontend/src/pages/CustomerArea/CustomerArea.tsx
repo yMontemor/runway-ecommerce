@@ -5,7 +5,8 @@ import Modal from '../../components/Modal/Modal';
 import Toast from '../../components/Toast/Toast';
 import OrderDetailsModal from '../../components/OrderDetailsModal/OrderDetailsModal';
 import { BRAZILIAN_STATES } from '../../data/brazilianStates';
-import type { Address, Order, BandeiraDto } from '../../types';
+import type { Address, Order, BandeiraDto, ElegibilidadeTrocaResponseDto, ItemElegibilidadeTrocaDto } from '../../types';
+import { trocaService } from '../../services/trocaService';
 import {
   listarBandeiras,
   alterarSenhaCliente,
@@ -41,7 +42,10 @@ export default function CustomerArea() {
     cancelOrder,
     confirmOrderReceipt,
     requestExchange,
-    updateExchangeStatus,
+    updateOrderStatus,
+    refreshOrders,
+    refreshExchanges,
+    refreshCoupons,
     updateCustomerProfile,
     addCustomerAddress,
     updateCustomerAddress,
@@ -53,6 +57,14 @@ export default function CustomerArea() {
   } = useApp();
 
   const [addressToRemove, setAddressToRemove] = useState<Address | null>(null);
+
+  useEffect(() => {
+    if (activeCustomer?.id) {
+      refreshOrders();
+      refreshExchanges();
+      refreshCoupons(activeCustomer.id);
+    }
+  }, [activeCustomer?.id, refreshOrders, refreshExchanges, refreshCoupons]);
 
   const tabParamVal = tabParam === 'pedidos' ? 'pedidos' : tabParam === 'cupons' ? 'cupons' : 'perfil';
   const [prevTabParam, setPrevTabParam] = useState(tabParamVal);
@@ -478,51 +490,153 @@ export default function CustomerArea() {
 
   // --- CONTROLE DE TROCA ---
   interface SelectedExchangeItemState {
+    itemPedidoId: number;
     productId: string;
+    productName: string;
     size: number;
     quantity: number;
+    price: number;
   }
 
   const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
   const [selectedOrderForExc, setSelectedOrderForExc] = useState<Order | null>(null);
   const [selectedExcItems, setSelectedExcItems] = useState<SelectedExchangeItemState[]>([]);
   const [exchangeReason, setExchangeReason] = useState('');
+  const [isCheckingEligibility, setIsCheckingEligibility] = useState(false);
+  const [eligibilityData, setEligibilityData] = useState<ElegibilidadeTrocaResponseDto | null>(null);
+  const [exchangeModalError, setExchangeModalError] = useState<string | null>(null);
+  const [isSubmittingExchange, setIsSubmittingExchange] = useState(false);
+  const [actionLoadingOrderId, setActionLoadingOrderId] = useState<string | null>(null);
 
-  const handleOpenExchange = (order: Order) => {
+  const handleOpenExchange = async (order: Order) => {
     setSelectedOrderForExc(order);
     setSelectedExcItems([]);
     setExchangeReason('');
+    setExchangeModalError(null);
+    setEligibilityData(null);
+    setIsCheckingEligibility(true);
     setIsExchangeModalOpen(true);
+
+    try {
+      const res = await trocaService.consultarElegibilidade(order.id);
+      if (res.success && res.dados) {
+        setEligibilityData(res.dados);
+        if (!res.dados.podeSolicitarTroca) {
+          setExchangeModalError(res.dados.motivoBloqueio || 'Este pedido não está elegível para solicitação de troca.');
+        }
+      } else {
+        setExchangeModalError(res.error || 'Erro ao verificar elegibilidade da troca.');
+      }
+    } catch (err: any) {
+      setExchangeModalError(err.message || 'Falha ao consultar elegibilidade do pedido.');
+    } finally {
+      setIsCheckingEligibility(false);
+    }
   };
 
-  const handleToggleItemSelection = (productId: string, size: number, maxQty: number) => {
+  const handleToggleItemSelection = (item: ItemElegibilidadeTrocaDto) => {
     setSelectedExcItems(prev => {
-      const exists = prev.find(i => i.productId === productId && i.size === size);
+      const exists = prev.find(i => i.itemPedidoId === item.itemPedidoId);
       if (exists) {
-        return prev.filter(i => !(i.productId === productId && i.size === size));
+        return prev.filter(i => i.itemPedidoId !== item.itemPedidoId);
       } else {
-        return [...prev, { productId, size, quantity: Math.min(1, maxQty) }];
+        return [
+          ...prev,
+          {
+            itemPedidoId: item.itemPedidoId,
+            productId: String(item.produtoVariacaoId),
+            productName: item.nomeProduto,
+            size: item.tamanho,
+            quantity: 1,
+            price: item.precoUnitario
+          }
+        ];
       }
     });
   };
 
-  const handleUpdateItemQuantity = (productId: string, size: number, newQty: number, maxQty: number) => {
+  const handleUpdateItemQuantity = (itemPedidoId: number, newQty: number, maxQty: number) => {
     const clampedQty = Math.max(1, Math.min(newQty, maxQty));
     setSelectedExcItems(prev =>
       prev.map(item =>
-        item.productId === productId && item.size === size
+        item.itemPedidoId === itemPedidoId
           ? { ...item, quantity: clampedQty }
           : item
       )
     );
   };
 
-  const handleConfirmExchangeRequest = (e: React.FormEvent) => {
+  const handleConfirmExchangeRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrderForExc || selectedExcItems.length === 0 || !exchangeReason.trim()) return;
 
-    requestExchange(selectedOrderForExc.id, selectedExcItems, exchangeReason.trim());
-    setIsExchangeModalOpen(false);
+    setIsSubmittingExchange(true);
+    setExchangeModalError(null);
+
+    try {
+      const res = await requestExchange(
+        selectedOrderForExc.id,
+        selectedExcItems.map(i => ({
+          productId: i.productId,
+          size: i.size,
+          quantity: i.quantity,
+          itemPedidoId: i.itemPedidoId
+        })),
+        exchangeReason.trim()
+      );
+
+      if (res.success && res.troca) {
+        setIsExchangeModalOpen(false);
+        setToastMessage(`Solicitação de troca ${res.troca.id} realizada com sucesso!`);
+        setToastType('success');
+        await Promise.all([refreshOrders(), refreshExchanges()]);
+      } else {
+        setExchangeModalError(res.error || 'Erro ao solicitar troca.');
+      }
+    } catch (err: any) {
+      setExchangeModalError(err.message || 'Falha de comunicação ao solicitar troca.');
+    } finally {
+      setIsSubmittingExchange(false);
+    }
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+    setActionLoadingOrderId(orderId);
+    try {
+      const res = await cancelOrder(orderId);
+      if (res.success) {
+        setToastMessage('Pedido cancelado com sucesso.');
+        setToastType('success');
+      } else {
+        setToastMessage(res.error || 'Erro ao cancelar pedido.');
+        setToastType('error');
+      }
+    } catch (err: any) {
+      setToastMessage(err.message || 'Erro ao cancelar pedido.');
+      setToastType('error');
+    } finally {
+      setActionLoadingOrderId(null);
+    }
+  };
+
+  const handleConfirmOrderReceipt = async (orderId: string) => {
+    setActionLoadingOrderId(orderId);
+    try {
+      const res = await updateOrderStatus(orderId, 'ENTREGUE');
+      if (res.success) {
+        confirmOrderReceipt(orderId);
+        setToastMessage('Recebimento confirmado com sucesso!');
+        setToastType('success');
+      } else {
+        setToastMessage(res.error || 'Erro ao confirmar recebimento.');
+        setToastType('error');
+      }
+    } catch (err: any) {
+      setToastMessage(err.message || 'Erro ao confirmar recebimento.');
+      setToastType('error');
+    } finally {
+      setActionLoadingOrderId(null);
+    }
   };
 
   // --- CONTROLE DE DETALHES DE PEDIDO ---
@@ -535,8 +649,13 @@ export default function CustomerArea() {
   };
 
   // Filtrar dados do cliente atual
-  const customerOrders = orders.filter(o => o.customerId === activeCustomer.id);
-  const customerCoupons = coupons.filter(c => c.customerId === activeCustomer.id);
+  const customerOrders = orders.filter(
+    o => o.customerId === activeCustomer.id || o.customerId === String(activeCustomer.id)
+  );
+  const customerCoupons = coupons.filter(
+    c => c.customerId === activeCustomer.id || c.customerId === String(activeCustomer.id) || c.type === 'promo'
+  );
+
 
   return (
     <div className="customer-area-page">
@@ -922,136 +1041,150 @@ export default function CustomerArea() {
             {customerOrders.length > 0 ? (
               <div className="profile-orders-list">
                 {customerOrders.map(order => {
-                  const isAberto = order.status === 'EM ABERTO';
-                  const isEntregue = order.status === 'ENTREGUE';
-                  const hasExchange = !!order.exchangeStatus;
+                    const relatedExchanges = exchanges.filter(e => e.orderId === order.id);
 
-                  return (
-                    <div key={order.id} className="order-profile-card">
-                      <div className="order-profile-card-header">
-                        <div>
-                          <span className="order-id-label">Pedido {order.id}</span>
-                          <span className="order-date">{order.date}</span>
-                        </div>
-                        <span className={`order-status-tag ${order.status.replace(' ', '_').toLowerCase()}`}>
-                          {order.status}
-                        </span>
-                      </div>
-
-                      <div className="order-profile-card-body">
-                        {order.items.map(item => (
-                          <div key={`${item.product.id}-${item.size}`} className="order-item-mini-row">
-                            <span>{item.product.brand} - {item.product.name} (Tamanho {item.size})</span>
-                            <span>{item.quantity}x {item.product.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    return (
+                      <div key={order.id} className="order-profile-card" data-cy={`order-card-${order.id}`}>
+                        <div className="order-profile-card-header">
+                          <div>
+                            <span className="order-id-label">Pedido {order.id}</span>
+                            <span className="order-date">{order.date}</span>
                           </div>
-                        ))}
-                      </div>
-
-                      <div className="order-profile-card-footer">
-                        <div className="order-total-block">
-                          <span>Total Pago: </span>
-                          <strong>{order.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                          <span className={`order-status-tag ${order.status.replace(/\s+/g, '_').toLowerCase()}`} data-cy={`order-status-${order.id}`}>
+                            {order.status}
+                          </span>
                         </div>
 
-                        {/* Status da Troca se houver */}
-                        {hasExchange && (
-                          <div className="order-exchange-status-box">
-                            <span className="exc-tag-label">Troca:</span>
-                            <span className="exc-tag-val">{order.exchangeStatus}</span>
+                        <div className="order-profile-card-body">
+                          {order.items.map((item, idx) => (
+                            <div key={`${item.product.id}-${item.size}-${idx}`} className="order-item-mini-row">
+                              <span>{item.product.brand} - {item.product.name} (Tamanho {item.size})</span>
+                              <span>{item.quantity}x {item.product.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                            </div>
+                          ))}
 
-                            {/* Se aceita, cliente pode despachar */}
-                            {order.exchangeStatus === 'TROCA ACEITA' && (
+                          {order.shippingAddress && (
+                            <div className="order-shipping-hint" style={{ fontSize: '0.8rem', color: '#888', marginTop: '0.4rem', borderTop: '1px solid #1a1a1a', paddingTop: '0.4rem' }}>
+                              <strong style={{ color: '#aaa' }}>Entrega:</strong> {order.shippingAddress.street}, {order.shippingAddress.number} {order.shippingAddress.complement ? `- ${order.shippingAddress.complement}` : ''} - {order.shippingAddress.neighborhood}, {order.shippingAddress.city}/{order.shippingAddress.state} (CEP: {order.shippingAddress.zipCode})
+                            </div>
+                          )}
+
+                          {(order.paymentMethods.length > 0 || order.couponsUsed.length > 0) && (
+                            <div className="order-payment-hint" style={{ fontSize: '0.78rem', color: '#aaa', marginTop: '0.2rem' }}>
+                              <strong style={{ color: '#aaa' }}>Pagamento:</strong> {order.paymentMethods.length > 0 ? `${order.paymentMethods.length} cartão(ões) de crédito` : 'Integralmente por cupom'}
+                              {order.couponsUsed.length > 0 && ` | Cupons: ${order.couponsUsed.map(c => c.code).join(', ')}`}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="order-profile-card-footer">
+                          <div className="order-total-block">
+                            <span>Total Pago: </span>
+                            <strong>{order.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                          </div>
+
+                          {/* Trocas vinculadas a este pedido */}
+                          {relatedExchanges.length > 0 && (
+                            <div className="order-related-exchanges" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.35rem' }}>
+                              {relatedExchanges.map(exc => (
+                                <div key={exc.id} className="order-exchange-status-box" style={{ padding: '0.5rem 0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.02)', borderRadius: '6px', border: '1px solid #222' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                      <span className="exc-tag-label" style={{ fontWeight: 600, color: '#ccc' }}>Troca {exc.id}:</span>
+                                      <span className={`order-status-tag ${exc.status.replace(/\s+/g, '_').toLowerCase()}`} style={{ marginLeft: '0.4rem' }}>
+                                        {exc.status}
+                                      </span>
+                                    </div>
+                                    {exc.items && exc.items.length > 0 && (
+                                      <span style={{ fontSize: '0.75rem', color: '#888' }}>
+                                        {exc.items.reduce((s, it) => s + it.quantity, 0)} {exc.items.reduce((s, it) => s + it.quantity, 0) === 1 ? 'item' : 'itens'}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Notificação de autorização */}
+                                  {exc.notificacaoCliente && (
+                                    <div className="exchange-notif-box" style={{ marginTop: '0.35rem', fontSize: '0.8rem', padding: '0.35rem 0.5rem', borderRadius: '4px', background: 'rgba(57, 255, 20, 0.08)', border: '1px solid rgba(57, 255, 20, 0.2)', color: 'var(--color-primary)' }}>
+                                      📢 {exc.notificacaoCliente}
+                                    </div>
+                                  )}
+
+                                  {/* Cupom gerado */}
+                                  {(exc.status === 'TROCADO' || exc.status === 'TROCA PROCESSADA') && (
+                                    <div className="refund-coupon-hint" style={{ marginTop: '0.35rem' }}>
+                                      Cupom gerado: <strong>{exc.refundCouponCode || exc.codigoCupom || 'Gerado'}</strong>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Informações de Cancelamento / Ressarcimento */}
+                          {order.status === 'REPROVADA' && (
+                            <div className="order-cancellation-info" style={{ marginTop: '0.4rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                              <span style={{ color: 'var(--color-danger)', fontSize: '0.82rem' }}>Pedido cancelado/reprovado.</span>
+                            </div>
+                          )}
+
+                          <div className="order-card-actions">
+                            <button
+                              onClick={() => handleOpenOrderDetails(order)}
+                              className="btn btn-secondary btn-small"
+                              type="button"
+                              data-cy={`btn-detalhes-${order.id}`}
+                            >
+                              VER DETALHES
+                            </button>
+
+                            {/* Cancelar em Aberto ou Em Processamento */}
+                            {(order.status === 'EM PROCESSAMENTO' || order.status === 'EM ABERTO') && (
                               <button
-                                onClick={() => {
-                                  const exc = exchanges.find(e => e.orderId === order.id);
-                                  if (exc) {
-                                    updateExchangeStatus(exc.id, 'ITEM ENVIADO');
-                                  }
-                                }}
-                                className="btn btn-primary btn-mini"
+                                onClick={() => handleCancelOrder(order.id)}
+                                className="btn btn-secondary btn-danger-border btn-small"
                                 type="button"
+                                disabled={actionLoadingOrderId === order.id}
+                                data-cy={`btn-cancelar-${order.id}`}
                               >
-                                INFORMAR DESPACHO
+                                {actionLoadingOrderId === order.id ? 'CANCELANDO...' : 'CANCELAR PEDIDO'}
                               </button>
                             )}
 
-                            {/* Mostrar cupom de troca gerado se processada */}
-                            {order.exchangeStatus === 'TROCA PROCESSADA' && (
-                              <div className="refund-coupon-hint">
-                                Cupom gerado: <strong>{exchanges.find(e => e.orderId === order.id)?.refundCouponCode}</strong>
-                              </div>
+                            {/* Confirmação de Recebimento pelo Cliente */}
+                            {order.status === 'EM TRANSPORTE' && (
+                              <button
+                                onClick={() => handleConfirmOrderReceipt(order.id)}
+                                className="btn btn-primary btn-small"
+                                type="button"
+                                disabled={actionLoadingOrderId === order.id}
+                                data-cy={`btn-confirmar-recebimento-${order.id}`}
+                              >
+                                {actionLoadingOrderId === order.id ? 'CONFIRMANDO...' : 'CONFIRMAR RECEBIMENTO'}
+                              </button>
+                            )}
+
+                            {/* Solicitar Troca */}
+                            {(order.status === 'ENTREGUE' || order.status === 'EM TROCA' || order.status === 'TROCA AUTORIZADA') && (
+                              <button
+                                onClick={() => handleOpenExchange(order)}
+                                className="btn btn-primary btn-small"
+                                type="button"
+                                data-cy={`btn-solicitar-troca-${order.id}`}
+                              >
+                                {relatedExchanges.length > 0 ? 'SOLICITAR NOVA TROCA' : 'SOLICITAR TROCA'}
+                              </button>
                             )}
                           </div>
-                        )}
-
-                        {/* Informações de Cancelamento / Ressarcimento */}
-                        {order.status === 'CANCELADO' && (
-                          <div className="order-cancellation-info" style={{ marginTop: '0.4rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                            {order.cancellationRefundCouponCode && (
-                              <div className="refund-coupon-hint">
-                                Cupom de ressarcimento gerado: <strong>{order.cancellationRefundCouponCode}</strong>
-                              </div>
-                            )}
-                            {order.cardRefundedAmount && (
-                              <div className="refund-coupon-hint" style={{ borderColor: 'rgba(255, 255, 255, 0.2)', color: '#bbb' }}>
-                                Estorno no cartão: <strong>{order.cardRefundedAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="order-card-actions">
-                          <button
-                            onClick={() => handleOpenOrderDetails(order)}
-                            className="btn btn-secondary btn-small"
-                            type="button"
-                          >
-                            VER DETALHES
-                          </button>
-
-                          {/* Cancelar em Aberto */}
-                          {isAberto && (
-                            <button
-                              onClick={() => cancelOrder(order.id)}
-                              className="btn btn-secondary btn-danger-border btn-small"
-                              type="button"
-                            >
-                              CANCELAR PEDIDO
-                            </button>
-                          )}
-
-                          {/* Confirmação de Recebimento pelo Cliente */}
-                          {isEntregue && !order.clientConfirmedReceipt && (
-                            <button
-                              onClick={() => confirmOrderReceipt(order.id)}
-                              className="btn btn-primary btn-small"
-                              type="button"
-                            >
-                              CONFIRMAR RECEBIMENTO
-                            </button>
-                          )}
-
-                          {/* Solicitar Troca se entregue e com recebimento confirmado */}
-                          {isEntregue && order.clientConfirmedReceipt && !hasExchange && (
-                            <button
-                              onClick={() => handleOpenExchange(order)}
-                              className="btn btn-primary btn-small"
-                              type="button"
-                            >
-                              SOLICITAR TROCA
-                            </button>
-                          )}
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="no-orders-txt">Nenhum pedido realizado.</p>
-            )}
-          </div>
-        )}
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="no-orders-txt">Nenhum pedido realizado.</p>
+              )}
+            </div>
+          )}
 
         {/* ================= ABA 3: CUPONS ================= */}
         {activeTab === 'cupons' && (
@@ -1061,23 +1194,31 @@ export default function CustomerArea() {
             {customerCoupons.length > 0 ? (
               <div className="profile-coupons-grid">
                 {customerCoupons.map(coupon => (
-                  <div key={coupon.id} className="profile-coupon-card">
+                  <div key={coupon.id} className="profile-coupon-card" data-cy={`coupon-card-${coupon.code}`}>
                     <div className="coupon-code-badge">{coupon.code}</div>
                     <div className="coupon-card-body">
                       <h4 className="coupon-card-value">
                         {coupon.type === 'promo' ? `${coupon.value}% OFF` : coupon.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </h4>
                       <p className="coupon-card-desc">{coupon.description}</p>
-                      <p className="coupon-card-date">Válido até {coupon.expirationDate}</p>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.4rem' }}>
+                        <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.45rem', borderRadius: '4px', background: coupon.type === 'promo' ? 'rgba(0,191,255,0.12)' : 'rgba(57,255,20,0.12)', color: coupon.type === 'promo' ? '#00bfff' : 'var(--color-primary)', fontWeight: 600 }}>
+                          {coupon.type === 'promo' ? 'Promocional' : 'Troca / Devolução'}
+                        </span>
+                        <span className="coupon-card-date" style={{ fontSize: '0.75rem', color: '#888' }}>
+                          Disponível
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="no-coupons-txt">Você não possui cupons ativos.</p>
+              <p className="no-coupons-txt" data-cy="sem-cupons-txt">Você não possui cupons ativos.</p>
             )}
           </div>
         )}
+
 
       </div>
 
@@ -1623,30 +1764,56 @@ export default function CustomerArea() {
       {/* MODAL: Solicitar Troca */}
       <Modal
         isOpen={isExchangeModalOpen}
-        onClose={() => setIsExchangeModalOpen(false)}
+        onClose={() => !isSubmittingExchange && setIsExchangeModalOpen(false)}
         title="Solicitar Troca de Produto"
       >
-        <form onSubmit={handleConfirmExchangeRequest} className="address-modal-form">
-          {selectedOrderForExc && (
+        <form onSubmit={handleConfirmExchangeRequest} className="address-modal-form" data-cy="form-solicitar-troca">
+          {exchangeModalError && (
+            <div data-cy="exchange-error-banner" style={{
+              backgroundColor: 'rgba(255, 69, 69, 0.1)',
+              border: '1px solid var(--color-danger)',
+              color: 'var(--color-danger)',
+              padding: '0.65rem 0.9rem',
+              borderRadius: '6px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              marginBottom: '1rem'
+            }}>
+              ⚠️ {exchangeModalError}
+            </div>
+          )}
+
+          {isCheckingEligibility && (
+            <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--color-primary)' }}>
+              Consultando itens elegíveis para troca no servidor...
+            </div>
+          )}
+
+          {!isCheckingEligibility && selectedOrderForExc && eligibilityData && eligibilityData.podeSolicitarTroca && (
             <>
               <div className="form-group">
                 <label className="exchange-group-title">
                   Selecione os itens que deseja trocar:
                 </label>
                 <div className="exchange-items-selection-list">
-                  {selectedOrderForExc.items.map((item, idx) => {
+                  {eligibilityData.itens.filter(it => it.quantidadeElegivel > 0).map((item, idx) => {
                     const isChecked = selectedExcItems.some(
-                      x => x.productId === item.product.id && x.size === item.size
+                      x => x.itemPedidoId === item.itemPedidoId
                     );
                     const selectedItemState = selectedExcItems.find(
-                      x => x.productId === item.product.id && x.size === item.size
+                      x => x.itemPedidoId === item.itemPedidoId
                     );
                     const selectedQty = selectedItemState?.quantity || 1;
-                    const remainingQty = item.quantity - (isChecked ? selectedQty : 0);
+                    const remainingQty = item.quantidadeElegivel - (isChecked ? selectedQty : 0);
+
+                    const originalOrderItem = selectedOrderForExc.items.find(
+                      oi => oi.size === item.tamanho && oi.product.name.toLowerCase().includes(item.nomeProduto.toLowerCase())
+                    );
+                    const itemImage = originalOrderItem?.product.image || '';
 
                     return (
                       <div
-                        key={`${item.product.id}-${item.size}-${idx}`}
+                        key={`${item.itemPedidoId}-${idx}`}
                         className={`exchange-item-card ${isChecked ? 'selected' : ''}`}
                       >
                         <div className="exchange-item-main-row">
@@ -1654,28 +1821,33 @@ export default function CustomerArea() {
                             <input
                               type="checkbox"
                               checked={isChecked}
-                              onChange={() =>
-                                handleToggleItemSelection(item.product.id, item.size, item.quantity)
-                              }
+                              onChange={() => handleToggleItemSelection(item)}
                               className="exchange-checkbox"
+                              data-cy={`exchange-item-checkbox-${item.itemPedidoId}`}
                             />
-                            <div className="exchange-item-thumb">
-                              <img src={item.product.image} alt={item.product.name} />
-                            </div>
+                            {itemImage && (
+                              <div className="exchange-item-thumb">
+                                <img src={itemImage} alt={item.nomeProduto} />
+                              </div>
+                            )}
                             <div className="exchange-item-info">
                               <span className="exchange-item-name">
-                                {item.product.brand} {item.product.name}
+                                {item.nomeProduto}
                               </span>
                               <div className="exchange-item-meta-tags">
-                                <span className="exchange-tag">Tamanho {item.size}</span>
-                                <span className="exchange-tag">Comprado: {item.quantity} un.</span>
+                                <span className="exchange-tag">Tamanho {item.tamanho}</span>
+                                <span className="exchange-tag">Total comprado: {item.quantidadeComprada} un.</span>
+                                {item.quantidadeJaEmTroca > 0 && (
+                                  <span className="exchange-tag" style={{ color: '#aaa' }}>Já em processo de troca: {item.quantidadeJaEmTroca} un.</span>
+                                )}
+                                <span className="exchange-tag" style={{ color: 'var(--color-primary)', fontWeight: 600 }}>Elegível: {item.quantidadeElegivel} un.</span>
                               </div>
                             </div>
                           </label>
 
                           <div className="exchange-item-unit-price">
                             <span>
-                              {item.product.price.toLocaleString('pt-BR', {
+                              {item.precoUnitario.toLocaleString('pt-BR', {
                                 style: 'currency',
                                 currency: 'BRL'
                               })}
@@ -1689,7 +1861,7 @@ export default function CustomerArea() {
                           <div className="exchange-item-qty-row">
                             <div className="exchange-qty-selector-container">
                               <span className="exchange-qty-label">Quantidade para troca:</span>
-                              {item.quantity > 1 ? (
+                              {item.quantidadeElegivel > 1 ? (
                                 <div className="exchange-qty-stepper">
                                   <button
                                     type="button"
@@ -1697,10 +1869,9 @@ export default function CustomerArea() {
                                     disabled={selectedQty <= 1}
                                     onClick={() =>
                                       handleUpdateItemQuantity(
-                                        item.product.id,
-                                        item.size,
+                                        item.itemPedidoId,
                                         selectedQty - 1,
-                                        item.quantity
+                                        item.quantidadeElegivel
                                       )
                                     }
                                   >
@@ -1710,19 +1881,18 @@ export default function CustomerArea() {
                                   <button
                                     type="button"
                                     className="qty-btn"
-                                    disabled={selectedQty >= item.quantity}
+                                    disabled={selectedQty >= item.quantidadeElegivel}
                                     onClick={() =>
                                       handleUpdateItemQuantity(
-                                        item.product.id,
-                                        item.size,
+                                        item.itemPedidoId,
                                         selectedQty + 1,
-                                        item.quantity
+                                        item.quantidadeElegivel
                                       )
                                     }
                                   >
                                     +
                                   </button>
-                                  <span className="qty-max-hint">(Máx: {item.quantity})</span>
+                                  <span className="qty-max-hint">(Máx: {item.quantidadeElegivel})</span>
                                 </div>
                               ) : (
                                 <span className="qty-single-tag">1 unidade</span>
@@ -1732,7 +1902,7 @@ export default function CustomerArea() {
                             <div className="exchange-item-subtotal-box">
                               <span className="subtotal-label">Subtotal do item:</span>
                               <strong className="subtotal-val">
-                                {(item.product.price * selectedQty).toLocaleString('pt-BR', {
+                                {(item.precoUnitario * selectedQty).toLocaleString('pt-BR', {
                                   style: 'currency',
                                   currency: 'BRL'
                                 })}
@@ -1742,14 +1912,14 @@ export default function CustomerArea() {
                         )}
 
                         {/* Informação sobre quantidade restante que fica com o cliente */}
-                        {isChecked && item.quantity > 1 && (
+                        {isChecked && item.quantidadeElegivel > 1 && (
                           <div className="exchange-item-retention-hint">
                             {remainingQty > 0 ? (
                               <span>
-                                ℹ️ <strong>{remainingQty} {remainingQty === 1 ? 'unidade' : 'unidades'}</strong> deste item permanecerá(ão) normalmente com você.
+                                ℹ️ <strong>{remainingQty} {remainingQty === 1 ? 'unidade elegível' : 'unidades elegíveis'}</strong> deste item permanecerá(ão) normalmente com você.
                               </span>
                             ) : (
-                              <span>ℹ️ Todas as {item.quantity} unidades deste item serão trocadas.</span>
+                              <span>ℹ️ Todas as {item.quantidadeElegivel} unidades elegíveis deste item serão trocadas.</span>
                             )}
                           </div>
                         )}
@@ -1777,12 +1947,7 @@ export default function CustomerArea() {
                     <span className="total-label">Crédito Estimado:</span>
                     <strong className="total-val">
                       {selectedExcItems
-                        .reduce((sum, req) => {
-                          const it = selectedOrderForExc.items.find(
-                            i => i.product.id === req.productId && i.size === req.size
-                          );
-                          return sum + (it ? it.product.price * req.quantity : 0);
-                        }, 0)
+                        .reduce((sum, req) => sum + req.price * req.quantity, 0)
                         .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                     </strong>
                   </div>
@@ -1798,6 +1963,7 @@ export default function CustomerArea() {
                   onChange={e => setExchangeReason(e.target.value)}
                   placeholder="Por favor, descreva o motivo da troca (ex: ficou apertado, defeito...)"
                   required
+                  data-cy="exchange-reason-input"
                 />
               </div>
 
@@ -1806,21 +1972,36 @@ export default function CustomerArea() {
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => setIsExchangeModalOpen(false)}
+                  disabled={isSubmittingExchange}
                 >
                   CANCELAR
                 </button>
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={selectedExcItems.length === 0 || !exchangeReason.trim()}
+                  disabled={selectedExcItems.length === 0 || !exchangeReason.trim() || isSubmittingExchange}
+                  data-cy="btn-confirmar-solicitar-troca"
                 >
-                  SOLICITAR TROCA
+                  {isSubmittingExchange ? 'ENVIANDO...' : 'SOLICITAR TROCA'}
                 </button>
               </div>
             </>
           )}
+
+          {!isCheckingEligibility && (!eligibilityData || !eligibilityData.podeSolicitarTroca) && (
+            <div className="modal-actions" style={{ border: 'none', padding: '0', marginTop: '1rem' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setIsExchangeModalOpen(false)}
+              >
+                FECHAR
+              </button>
+            </div>
+          )}
         </form>
       </Modal>
+
 
       {/* MODAL: Detalhes do Pedido */}
       <OrderDetailsModal

@@ -1,11 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
-import type { Customer, CartItem, Order, Coupon, Exchange, ExchangeItem, Address, CreditCard, NewCustomerInput, Product, ValidacaoEstoqueResponse } from '../types';
-import { mockCustomers } from '../data/customers';
-import { mockCoupons } from '../data/coupons';
-import { products as mockProducts } from '../data/products';
+import type { Customer, CartItem, Order, Coupon, Exchange, Address, CreditCard, NewCustomerInput, Product, ValidacaoEstoqueResponse, ItemCarrinhoDto, ItemExpiradoDto } from '../types';
 import { produtoService } from '../services/produtoService';
+import { carrinhoService } from '../services/carrinhoService';
+import { pedidoService } from '../services/pedidoService';
+import { trocaService } from '../services/trocaService';
+import { cupomService } from '../services/cupomService';
+import { mapPedidoDtoToOrder, mapTrocaDtoToExchange, mapCupomDtoToCoupon } from '../utils/orderMapper';
 import {
   cadastrarCliente,
   cadastrarEnderecoCliente,
@@ -40,6 +42,14 @@ const emptyCustomer: Customer = {
   cards: []
 };
 
+export interface CartExpiracaoState {
+  tempoRestanteSegundos: number;
+  alertaExpirando: boolean;
+  expirado: boolean;
+  mensagemExpiracao: string | null;
+  itensExpirados: ItemExpiradoDto[];
+}
+
 interface AppContextType {
   customers: Customer[];
   activeCustomer: Customer;
@@ -47,13 +57,24 @@ interface AppContextType {
   customerLoadError: string | null;
   refreshCustomers: () => Promise<void>;
   cartsByCustomer: Record<string, CartItem[]>;
+  cartExpiracao: CartExpiracaoState;
+  limparAvisoExpiracao: () => void;
+  refreshCart: (customerId?: string) => Promise<void>;
   orders: Order[];
+  isLoadingOrders: boolean;
+  ordersLoadError: string | null;
+  refreshOrders: () => Promise<void>;
   products: Product[];
   isLoadingProducts: boolean;
   productsLoadError: string | null;
   refreshProducts: () => Promise<void>;
   coupons: Coupon[];
+  isLoadingCoupons: boolean;
+  refreshCoupons: (customerId?: string) => Promise<void>;
   exchanges: Exchange[];
+  isLoadingExchanges: boolean;
+  exchangesLoadError: string | null;
+  refreshExchanges: () => Promise<void>;
   setActiveCustomer: (id: string) => void;
   addCustomer: (data: NewCustomerInput) => Promise<{ success: boolean; error?: string; customer?: Customer }>;
   updateCustomerProfile: (codigo: string, payload: ClienteUpdateRequestDto) => Promise<{ success: boolean; error?: string }>;
@@ -77,15 +98,15 @@ interface AppContextType {
       discountExchange?: number;
     }
   ) => Order;
-  cancelOrder: (orderId: string) => void;
+  cancelOrder: (orderId: string) => Promise<{ success: boolean; error?: string }>;
   confirmOrderReceipt: (orderId: string) => void;
   requestExchange: (
     orderId: string,
-    itemsToExchange: { productId: string; size: number; quantity: number }[],
+    itemsToExchange: { productId: string; size: number; quantity: number; itemPedidoId?: number }[],
     reason: string
-  ) => void;
-  updateExchangeStatus: (exchangeId: string, status: Exchange['status'], returnToStockSimulated?: boolean) => void;
-  updateOrderStatus: (orderId: string, status: Order['status']) => void;
+  ) => Promise<{ success: boolean; error?: string; troca?: Exchange }>;
+  updateExchangeStatus: (exchangeId: string, status: Exchange['status'], returnToStockSimulated?: boolean) => Promise<{ success: boolean; error?: string }>;
+  updateOrderStatus: (orderId: string, status: Order['status']) => Promise<{ success: boolean; error?: string }>;
   addCustomerAddress: (customerId: string, address: Omit<Address, 'id'>) => Promise<{ success: boolean; error?: string; address?: Address }>;
   updateCustomerAddress: (customerId: string, address: Address) => Promise<{ success: boolean; error?: string; address?: Address }>;
   refreshCustomerAddresses: (customerId: string) => Promise<void>;
@@ -110,9 +131,30 @@ export function useApp() {
   return context;
 }
 
+const ACTIVE_CUSTOMER_STORAGE_KEY = 'runway_active_customer_id';
+
+function getSavedCustomerId(): string | null {
+  try {
+    const saved = localStorage.getItem(ACTIVE_CUSTOMER_STORAGE_KEY);
+    return saved && saved.trim() ? saved.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCustomerIdToStorage(id: string): void {
+  try {
+    localStorage.setItem(ACTIVE_CUSTOMER_STORAGE_KEY, id);
+  } catch (err) {
+    console.error('Falha ao salvar identificador do cliente ativo no armazenamento local:', err);
+  }
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [activeCustomerId, setActiveCustomerId] = useState<string>('CLI-0001');
+  const [activeCustomerId, setActiveCustomerId] = useState<string>(() => {
+    return getSavedCustomerId() || 'CLI-0001';
+  });
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
   const [customerLoadError, setCustomerLoadError] = useState<string | null>(null);
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
@@ -157,122 +199,96 @@ export function AppProvider({ children }: { children: ReactNode }) {
     'CLI-0003': [],
   });
 
-  // Cupons iniciais
-  const [coupons, setCoupons] = useState<Coupon[]>(mockCoupons);
+  const [cartExpiracao, setCartExpiracao] = useState<CartExpiracaoState>({
+    tempoRestanteSegundos: 0,
+    alertaExpirando: false,
+    expirado: false,
+    mensagemExpiracao: null,
+    itensExpirados: []
+  });
 
-  // Pedidos iniciais mockados (com datas coerentes e produtos existentes)
-  const [orders, setOrders] = useState<Order[]>([
-    {
-      id: 'RW-2026-001',
-      date: '10/05/2026',
-      customerId: 'CLI-0001',
-      status: 'ENTREGUE',
-      clientConfirmedReceipt: true,
-      items: [
-        {
-          product: mockProducts.find(p => p.id === 'nike_pegasus_41') || mockProducts[0],
-          variacaoId: 8,
-          size: 39,
-          quantity: 1
-        }
-      ],
-      shippingAddress: mockCustomers[0].addresses[0],
-      paymentMethods: [{ cardId: 'ana_card_1', amount: 899.90, installments: 1 }],
-      couponsUsed: [],
-      subtotal: 899.90,
-      shippingCost: 0,
-      discountPromo: 0,
-      discountExchange: 0,
-      discount: 0,
-      total: 899.90
-    },
-    {
-      id: 'RW-2026-002',
-      date: '15/06/2026',
-      customerId: 'CLI-0002',
-      status: 'ENTREGUE',
-      clientConfirmedReceipt: true,
-      items: [
-        {
-          product: mockProducts.find(p => p.id === 'adidas_terrex_agravic') || mockProducts[2],
-          variacaoId: 0,
-          size: 42,
-          quantity: 1
-        }
-      ],
-      shippingAddress: mockCustomers[1].addresses[0],
-      paymentMethods: [{ cardId: 'carlos_card_1', amount: 999.90, installments: 1 }],
-      couponsUsed: [],
-      subtotal: 999.90,
-      shippingCost: 0,
-      discountPromo: 0,
-      discountExchange: 0,
-      discount: 0,
-      total: 999.90
-    },
-    {
-      id: 'RW-2026-003',
-      date: '20/08/2026',
-      customerId: 'CLI-0001',
-      status: 'EM ABERTO',
-      items: [
-        {
-          product: mockProducts.find(p => p.id === 'saucony_triumph_23') || mockProducts[1],
-          variacaoId: 0,
-          size: 39,
-          quantity: 1
-        }
-      ],
-      shippingAddress: mockCustomers[0].addresses[1],
-      paymentMethods: [{ cardId: 'ana_card_2', amount: 1049.90, installments: 1 }],
-      couponsUsed: [],
-      subtotal: 1049.90,
-      shippingCost: 0,
-      discountPromo: 0,
-      discountExchange: 0,
-      discount: 0,
-      total: 1049.90
-    },
-    {
-      id: 'RW-2026-004',
-      date: '22/08/2026',
-      customerId: 'CLI-0001',
-      status: 'ENTREGUE',
-      clientConfirmedReceipt: true,
-      items: [
-        {
-          product: mockProducts.find(p => p.id === 'olympikus_corre_turbo') || mockProducts[0],
-          variacaoId: 0,
-          size: 39,
-          quantity: 2
-        },
-        {
-          product: mockProducts.find(p => p.id === 'saucony_triumph_23') || mockProducts[1],
-          variacaoId: 0,
-          size: 40,
-          quantity: 1
-        },
-        {
-          product: mockProducts.find(p => p.id === 'fila_float_maxxi_2') || mockProducts[0],
-          variacaoId: 0,
-          size: 39,
-          quantity: 1
-        }
-      ],
-      shippingAddress: mockCustomers[0].addresses[0],
-      paymentMethods: [{ cardId: 'ana_card_1', amount: 3949.87, installments: 1 }],
-      couponsUsed: [],
-      subtotal: 3949.87,
-      shippingCost: 0,
-      discountPromo: 0,
-      discountExchange: 0,
-      discount: 0,
-      total: 3949.87
-    }
-  ]);
+  // Cupons reais carregados do PostgreSQL
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [isLoadingCoupons, setIsLoadingCoupons] = useState(false);
 
-  // Lista de trocas
+  // Pedidos reais carregados do PostgreSQL
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+  const [ordersLoadError, setOrdersLoadError] = useState<string | null>(null);
+
+  // Trocas reais carregadas do PostgreSQL
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
+  const [isLoadingExchanges, setIsLoadingExchanges] = useState(false);
+  const [exchangesLoadError, setExchangesLoadError] = useState<string | null>(null);
+
+  // Carregar pedidos reais da API REST
+  const refreshOrders = useCallback(async () => {
+    setIsLoadingOrders(true);
+    try {
+      const res = await pedidoService.listarTodos();
+      if (res.success && res.dados) {
+        const mapped = res.dados.map(dto => mapPedidoDtoToOrder(dto, productsList));
+        setOrders(mapped);
+        setOrdersLoadError(null);
+      } else {
+        setOrdersLoadError(res.error || 'Não foi possível carregar os pedidos.');
+      }
+    } catch {
+      setOrdersLoadError('Falha ao conectar com o servidor para listar pedidos.');
+    } finally {
+      setIsLoadingOrders(false);
+    }
+  }, [productsList]);
+
+  // Carregar trocas reais da API REST
+  const refreshExchanges = useCallback(async () => {
+    setIsLoadingExchanges(true);
+    try {
+      const res = await trocaService.listarAdmin();
+      if (res.success && res.dados) {
+        const mapped = res.dados.map(mapTrocaDtoToExchange);
+        setExchanges(mapped);
+        setExchangesLoadError(null);
+      } else {
+        setExchangesLoadError(res.error || 'Não foi possível carregar as trocas.');
+      }
+    } catch {
+      setExchangesLoadError('Falha ao conectar com o servidor para listar trocas.');
+    } finally {
+      setIsLoadingExchanges(false);
+    }
+  }, []);
+
+  // Carregar cupons reais da API REST
+  const refreshCoupons = useCallback(async (customerId?: string) => {
+    const targetId = customerId || activeCustomerId;
+    if (!targetId) return;
+    setIsLoadingCoupons(true);
+    try {
+      const res = await cupomService.listarCuponsCliente(targetId);
+      if (res.success && res.cupons) {
+        const mapped = res.cupons.map(c => mapCupomDtoToCoupon(c, targetId));
+        setCoupons(mapped);
+      }
+    } catch (err) {
+      console.error('Falha ao carregar cupons do cliente:', err);
+    } finally {
+      setIsLoadingCoupons(false);
+    }
+  }, [activeCustomerId]);
+
+  // Sincronizar pedidos e trocas na inicialização e quando os produtos carregarem
+  useEffect(() => {
+    refreshOrders();
+    refreshExchanges();
+  }, [refreshOrders, refreshExchanges]);
+
+  // Sincronizar cupons do cliente ativo
+  useEffect(() => {
+    if (activeCustomerId) {
+      refreshCoupons(activeCustomerId);
+    }
+  }, [activeCustomerId, refreshCoupons]);
 
   // Determinar cliente ativo a partir da lista real persistida
   const activeCustomer = useMemo(() => {
@@ -281,8 +297,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setActiveCustomer = (id: string) => {
     setActiveCustomerId(id);
+    saveCustomerIdToStorage(id);
     refreshCustomerAddresses(id);
     refreshCustomerCards(id);
+    refreshCart(id);
+    refreshCoupons(id);
   };
 
   // Inativação lógica real no PostgreSQL via PATCH /api/clientes/{codigo}/inativar
@@ -343,14 +362,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCustomers(mapped);
         setCustomerLoadError(null);
         if (mapped.length > 0) {
-          const exists = mapped.some(c => c.id === activeCustomerId);
-          const targetId = exists ? activeCustomerId : mapped[0].id;
-          if (!exists) {
-            setActiveCustomerId(targetId);
-          }
+          const savedId = getSavedCustomerId() || activeCustomerId;
+          const activeCustomers = mapped.filter(c => c.status === 'ATIVO');
+          const validSaved = activeCustomers.find(c => c.id === savedId);
+
+          // Se o cliente salvo existir e estiver ativo, preserva-o;
+          // caso contrário, seleciona um cliente ativo válido retornado pela API.
+          const targetId = validSaved
+            ? validSaved.id
+            : (activeCustomers[0]?.id || mapped[0].id);
+
+          setActiveCustomerId(targetId);
+          saveCustomerIdToStorage(targetId);
+
           await Promise.all([
             refreshCustomerAddresses(targetId),
-            refreshCustomerCards(targetId)
+            refreshCustomerCards(targetId),
+            refreshCart(targetId),
+            refreshCoupons(targetId)
           ]);
         }
       } else {
@@ -361,13 +390,126 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoadingCustomers(false);
     }
-  }, [activeCustomerId, refreshCustomerAddresses, refreshCustomerCards]);
+  }, [activeCustomerId, refreshCustomerAddresses, refreshCustomerCards, refreshCoupons]);
 
   useEffect(() => {
     carregarClientesReais();
   }, []);
 
-  // Adicionar produto ao carrinho do cliente ativo com validação real de estoque
+  function mapItemCarrinhoDtoToCartItem(itemDto: ItemCarrinhoDto, products: Product[]): CartItem {
+    const existingProduct = products.find(
+      p => p.id === itemDto.codigoProduto || p.name.toLowerCase() === itemDto.nomeProduto.toLowerCase() || p.id === String(itemDto.produtoId)
+    );
+
+    const product: Product = existingProduct ? {
+      ...existingProduct,
+      price: Number(itemDto.precoUnitario),
+      image: itemDto.imagemUrl || existingProduct.image
+    } : {
+      id: itemDto.codigoProduto || String(itemDto.produtoId),
+      name: itemDto.nomeProduto,
+      price: Number(itemDto.precoUnitario),
+      description: '',
+      image: itemDto.imagemUrl || '',
+      brand: itemDto.marca,
+      category: itemDto.categoria,
+      categories: [itemDto.categoria],
+      weight: '250g',
+      drop: '8mm',
+      sizes: [itemDto.tamanho],
+      color: 'Padrão',
+      technologies: [],
+      variacoes: [{
+        id: itemDto.produtoVariacaoId,
+        produtoId: itemDto.produtoId,
+        tamanho: itemDto.tamanho,
+        quantidadeEstoque: itemDto.quantidade,
+        ativo: true
+      }]
+    };
+
+    return {
+      product,
+      variacaoId: itemDto.produtoVariacaoId,
+      size: itemDto.tamanho,
+      quantity: itemDto.quantidade
+    };
+  }
+
+  // Carregar carrinho persistido do backend para um cliente
+  const refreshCart = useCallback(async (customerId?: string) => {
+    const targetId = customerId || activeCustomer.id;
+    if (!targetId) return;
+
+    try {
+      const res = await carrinhoService.obterCarrinho(targetId);
+      if (res.success && res.carrinho) {
+        const mapped = res.carrinho.itens.map(it => mapItemCarrinhoDtoToCartItem(it, productsList));
+        setCartsByCustomer(prev => ({
+          ...prev,
+          [targetId]: mapped
+        }));
+
+        setCartExpiracao({
+          tempoRestanteSegundos: res.carrinho.tempoRestanteSegundos,
+          alertaExpirando: res.carrinho.alertaExpirando,
+          expirado: res.carrinho.expirado,
+          mensagemExpiracao: res.carrinho.mensagemExpiracao || null,
+          itensExpirados: res.carrinho.itensExpirados || []
+        });
+      }
+    } catch (err) {
+      console.error('Falha ao carregar carrinho do servidor:', err);
+    }
+  }, [activeCustomer.id, productsList]);
+
+  // Recarregar carrinho quando os produtos forem carregados
+  useEffect(() => {
+    if (productsList.length > 0 && activeCustomer.id) {
+      refreshCart(activeCustomer.id);
+    }
+  }, [productsList, activeCustomer.id]);
+
+  // Cronômetro local com alerta 5 minutos antes da expiração (RN0044)
+  useEffect(() => {
+    if (cartExpiracao.tempoRestanteSegundos <= 0 || cartExpiracao.expirado) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setCartExpiracao(prev => {
+        if (prev.tempoRestanteSegundos <= 1) {
+          refreshCart(activeCustomer.id);
+          return {
+            ...prev,
+            tempoRestanteSegundos: 0,
+            alertaExpirando: false,
+            expirado: true,
+            mensagemExpiracao: 'Seu carrinho expirou por inatividade após 20 minutos e as reservas de estoque foram liberadas.'
+          };
+        }
+
+        const novosSegundos = prev.tempoRestanteSegundos - 1;
+        return {
+          ...prev,
+          tempoRestanteSegundos: novosSegundos,
+          alertaExpirando: novosSegundos <= 300 // 5 minutos antes
+        };
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [cartExpiracao.tempoRestanteSegundos, cartExpiracao.expirado, activeCustomer.id, refreshCart]);
+
+  const limparAvisoExpiracao = () => {
+    setCartExpiracao(prev => ({
+      ...prev,
+      itensExpirados: [],
+      mensagemExpiracao: null
+    }));
+  };
+
+  // Adicionar produto ao carrinho do cliente ativo com reserva persistida no backend
   const addToCart = async (productId: string, size: number, quantity: number, variacaoId?: number) => {
     if (!activeCustomer.id || isLoadingCustomers) {
       return {
@@ -381,69 +523,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const product = productsList.find(p => p.id === productId);
-    if (!product) return { success: false, message: 'Produto não encontrado no catálogo.' };
+    const variacao = product?.variacoes?.find(v => v.tamanho === size)
+      || (variacaoId ? product?.variacoes?.find(v => v.id === variacaoId) : undefined);
 
-    // Identificar a variação selecionada (por tamanho ou ID)
-    const variacao = product.variacoes?.find(v => v.tamanho === size)
-      || (variacaoId ? product.variacoes?.find(v => v.id === variacaoId) : undefined);
-
-    const realVariacaoId = variacao?.id ?? 0;
-    const customerId = activeCustomer.id;
-    const customerCart = cartsByCustomer[customerId] || [];
-    const existingItemIndex = customerCart.findIndex(
-      item => item.product.id === productId && item.size === size
-    );
-
-    const currentQty = existingItemIndex > -1 ? customerCart[existingItemIndex].quantity : 0;
-    const proposedQty = currentQty + quantity;
-
-    // Validação real de estoque no backend se a variação for conhecida
-    if (realVariacaoId > 0) {
-      try {
-        const validacao = await produtoService.validarEstoque([
-          { produtoVariacaoId: realVariacaoId, quantidade: proposedQty }
-        ]);
-
-        if (!validacao.valido) {
-          const itemInvalido = validacao.itens.find(i => !i.disponivel);
-          const msg = itemInvalido?.mensagem || validacao.mensagem;
-          return { success: false, message: msg };
-        }
-      } catch (err) {
-        console.error('Erro ao validar estoque no backend ao adicionar:', err);
-        return { success: false, message: 'Não foi possível validar o estoque. Tente novamente.' };
-      }
-    } else if (variacao && proposedQty > variacao.quantidadeEstoque) {
-      const msg = variacao.quantidadeEstoque <= 0
-        ? 'Este tamanho está esgotado no momento.'
-        : `Há apenas ${variacao.quantidadeEstoque} unidades disponíveis deste produto.`;
-      return { success: false, message: msg };
+    const realVariacaoId = variacao?.id ?? variacaoId ?? 0;
+    if (realVariacaoId <= 0) {
+      return { success: false, message: 'Variação do produto não encontrada.' };
     }
 
-    setCartsByCustomer(prev => {
-      const cart = prev[customerId] || [];
-      let updatedCart: CartItem[];
-      if (existingItemIndex > -1) {
-        updatedCart = [...cart];
-        updatedCart[existingItemIndex] = {
-          ...updatedCart[existingItemIndex],
-          variacaoId: realVariacaoId,
-          quantity: proposedQty
-        };
-      } else {
-        updatedCart = [...cart, { product, variacaoId: realVariacaoId, size, quantity }];
+    try {
+      const res = await carrinhoService.adicionarItem(activeCustomer.id, realVariacaoId, quantity);
+      if (res.success && res.carrinho) {
+        const mapped = res.carrinho.itens.map(it => mapItemCarrinhoDtoToCartItem(it, productsList));
+        setCartsByCustomer(prev => ({
+          ...prev,
+          [activeCustomer.id]: mapped
+        }));
+
+        setCartExpiracao({
+          tempoRestanteSegundos: res.carrinho.tempoRestanteSegundos,
+          alertaExpirando: res.carrinho.alertaExpirando,
+          expirado: res.carrinho.expirado,
+          mensagemExpiracao: res.carrinho.mensagemExpiracao || null,
+          itensExpirados: res.carrinho.itensExpirados || []
+        });
+
+        carregarProdutos();
+        return { success: true };
       }
 
-      return {
-        ...prev,
-        [customerId]: updatedCart
-      };
-    });
-
-    return { success: true };
+      return { success: false, message: res.error || 'Erro ao adicionar item ao carrinho.' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Falha de conexão com a API do carrinho.' };
+    }
   };
 
-  // Atualizar quantidade no carrinho com validação real de estoque ao incrementar
+  // Atualizar quantidade no carrinho persistido
   const updateCartQuantity = async (productId: string, size: number, delta: number): Promise<{ success: boolean; message?: string }> => {
     const itemKey = `${productId}-${size}`;
     if (pendingItemUpdatesRef.current.has(itemKey)) {
@@ -452,7 +567,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     pendingItemUpdatesRef.current.add(itemKey);
     try {
-      const customerId = activeCustomer.id;
+      const customerId = activeCustomer.id || activeCustomerId || getSavedCustomerId() || '';
       if (!customerId) return { success: false, message: 'Cliente não selecionado.' };
 
       const customerCart = cartsByCustomer[customerId] || [];
@@ -460,47 +575,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!item) return { success: false, message: 'Item não encontrado no carrinho.' };
 
       const newQty = item.quantity + delta;
-      if (newQty <= 0) {
-        removeFromCart(productId, size);
-        return { success: true };
-      }
 
-      // Se está aumentando a quantidade, validar estoque real no backend
+      // Validação real de estoque no endpoint de catálogo ao incrementar (RF0032)
       if (delta > 0 && item.variacaoId > 0) {
         try {
           const validacao = await produtoService.validarEstoque([
             { produtoVariacaoId: item.variacaoId, quantidade: newQty }
-          ]);
-
+          ], customerId);
           if (!validacao.valido) {
-            const itemInvalido = validacao.itens.find(i => !i.disponivel);
-            const msg = itemInvalido?.mensagem || validacao.mensagem;
+            const itemInvalido = validacao.itens?.find(i => !i.disponivel);
+            const msg = itemInvalido?.mensagem || validacao.mensagem || 'Estoque insuficiente.';
             return { success: false, message: msg };
           }
         } catch (err) {
           console.error('Erro ao verificar estoque na alteração de quantidade:', err);
-          return { success: false, message: 'Não foi possível verificar o estoque no momento.' };
         }
       }
 
-      setCartsByCustomer(prev => {
-        const cart = prev[customerId] || [];
-        const updatedCart = cart
-          .map(i => {
-            if (i.product.id === productId && i.size === size) {
-              return { ...i, quantity: newQty };
-            }
-            return i;
-          })
-          .filter(i => i.quantity > 0);
+      let res;
+      if (newQty <= 0) {
+        res = await carrinhoService.removerItem(customerId, item.variacaoId);
+      } else {
+        res = await carrinhoService.atualizarQuantidade(customerId, item.variacaoId, newQty);
+      }
 
-        return {
+      if (res.success && res.carrinho) {
+        const mapped = res.carrinho.itens.map(it => mapItemCarrinhoDtoToCartItem(it, productsList));
+        setCartsByCustomer(prev => ({
           ...prev,
-          [customerId]: updatedCart
-        };
-      });
+          [customerId]: mapped
+        }));
 
-      return { success: true };
+        setCartExpiracao({
+          tempoRestanteSegundos: res.carrinho.tempoRestanteSegundos,
+          alertaExpirando: res.carrinho.alertaExpirando,
+          expirado: res.carrinho.expirado,
+          mensagemExpiracao: res.carrinho.mensagemExpiracao || null,
+          itensExpirados: res.carrinho.itensExpirados || []
+        });
+
+        carregarProdutos();
+        return { success: true };
+      }
+
+      return { success: false, message: res.error || 'Erro ao alterar quantidade no carrinho.' };
     } finally {
       pendingItemUpdatesRef.current.delete(itemKey);
     }
@@ -508,7 +626,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Validação de estoque de todos os itens do carrinho antes do checkout
   const validarEstoqueCarrinho = async (customerId?: string): Promise<ValidacaoEstoqueResponse> => {
-    const targetId = customerId || activeCustomer.id;
+    const targetId = customerId || activeCustomer.id || activeCustomerId || getSavedCustomerId() || '';
     const cart = cartsByCustomer[targetId] || [];
     if (cart.length === 0) {
       return { valido: true, mensagem: 'Carrinho vazio.', itens: [] };
@@ -521,7 +639,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     try {
       return await produtoService.validarEstoque(
-        itensComVariacao.map(i => ({ produtoVariacaoId: i.variacaoId, quantidade: i.quantity }))
+        itensComVariacao.map(i => ({ produtoVariacaoId: i.variacaoId, quantidade: i.quantity })),
+        targetId
       );
     } catch (err) {
       console.error('Erro na validação pré-checkout de estoque:', err);
@@ -533,30 +652,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Remover do carrinho
-  const removeFromCart = (productId: string, size: number) => {
+  // Remover do carrinho persistido
+  const removeFromCart = async (productId: string, size: number) => {
     const customerId = activeCustomer.id;
     if (!customerId) return;
 
-    setCartsByCustomer(prev => {
-      const customerCart = prev[customerId] || [];
-      const updatedCart = customerCart.filter(
-        item => !(item.product.id === productId && item.size === size)
-      );
+    const customerCart = cartsByCustomer[customerId] || [];
+    const item = customerCart.find(i => i.product.id === productId && i.size === size);
+    if (!item) return;
 
-      return {
-        ...prev,
-        [customerId]: updatedCart
-      };
-    });
+    try {
+      const res = await carrinhoService.removerItem(customerId, item.variacaoId);
+      if (res.success && res.carrinho) {
+        const mapped = res.carrinho.itens.map(it => mapItemCarrinhoDtoToCartItem(it, productsList));
+        setCartsByCustomer(prev => ({
+          ...prev,
+          [customerId]: mapped
+        }));
+
+        setCartExpiracao({
+          tempoRestanteSegundos: res.carrinho.tempoRestanteSegundos,
+          alertaExpirando: res.carrinho.alertaExpirando,
+          expirado: res.carrinho.expirado,
+          mensagemExpiracao: res.carrinho.mensagemExpiracao || null,
+          itensExpirados: res.carrinho.itensExpirados || []
+        });
+
+        carregarProdutos();
+      }
+    } catch (err) {
+      console.error('Erro ao remover item do carrinho:', err);
+    }
   };
 
-  const clearCart = (customerId: string) => {
-    if (!customerId) return;
-    setCartsByCustomer(prev => ({
-      ...prev,
-      [customerId]: []
-    }));
+  const clearCart = async (customerId: string) => {
+    const targetId = customerId || activeCustomer.id;
+    if (!targetId) return;
+
+    try {
+      const res = await carrinhoService.limparCarrinho(targetId);
+      if (res.success && res.carrinho) {
+        setCartsByCustomer(prev => ({
+          ...prev,
+          [targetId]: []
+        }));
+
+        setCartExpiracao({
+          tempoRestanteSegundos: 0,
+          alertaExpirando: false,
+          expirado: false,
+          mensagemExpiracao: null,
+          itensExpirados: []
+        });
+
+        carregarProdutos();
+      }
+    } catch (err) {
+      console.error('Erro ao limpar carrinho:', err);
+    }
   };
 
   // Finalizar Compra
@@ -631,191 +784,152 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Limpar o carrinho deste cliente
     clearCart(customerId);
+    refreshOrders();
+    refreshCoupons(customerId);
 
     return newOrder;
   };
 
-  // Cancelar Pedido
-  const cancelOrder = (orderId: string) => {
-    const targetOrder = orders.find(o => o.id === orderId);
-    if (!targetOrder || targetOrder.status !== 'EM ABERTO') return;
-
-    // 1. Calcular o valor efetivamente consumido do cupom de troca
-    const exchangeAmountUsed = targetOrder.discountExchange ?? 
-      (targetOrder.couponsUsed.find(c => c.type === 'exchange')?.value ?? 0);
-
-    let newRefundCouponCode: string | undefined;
-
-    // Se houve uso de cupom de troca, gerar um NOVO cupom de ressarcimento
-    if (exchangeAmountUsed > 0.005) {
-      newRefundCouponCode = `TROCA-REFUND-${Math.floor(1000 + Math.random() * 9000)}`;
-      const newRefundCoupon: Coupon = {
-        id: `coupon_${Math.random().toString(36).substr(2, 9)}`,
-        code: newRefundCouponCode,
-        type: 'exchange',
-        value: parseFloat(exchangeAmountUsed.toFixed(2)),
-        description: `Ressarcimento de cupom de troca do pedido cancelado ${targetOrder.id}`,
-        expirationDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
-        customerId: targetOrder.customerId
-      };
-      setCoupons(prev => [...prev, newRefundCoupon]);
+  // Cancelar Pedido via REST
+  const cancelOrder = async (orderId: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await pedidoService.atualizarStatus(orderId, { novoStatus: 'REPROVADA', motivo: 'Cancelado pelo cliente' });
+      if (res.success) {
+        await Promise.all([
+          refreshOrders(),
+          refreshCoupons(activeCustomer.id)
+        ]);
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'Erro ao cancelar pedido.' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Falha de comunicação ao cancelar pedido.' };
     }
-
-    // 2. Total pago em cartão para registrar estorno
-    const cardTotalPaid = targetOrder.paymentMethods.reduce((sum, p) => sum + p.amount, 0);
-
-    // 3. Atualizar status para CANCELADO
-    setOrders(prev =>
-      prev.map(o =>
-        o.id === orderId
-          ? {
-              ...o,
-              status: 'CANCELADO',
-              cancellationRefundCouponCode: newRefundCouponCode,
-              cardRefundedAmount: cardTotalPaid > 0 ? cardTotalPaid : undefined
-            }
-          : o
-      )
-    );
   };
 
   // Confirmar Recebimento pelo Cliente
   const confirmOrderReceipt = (orderId: string) => {
     setOrders(prev =>
       prev.map(o =>
-        o.id === orderId && o.status === 'ENTREGUE'
+        o.id === orderId
           ? { ...o, clientConfirmedReceipt: true }
           : o
       )
     );
   };
 
-  // Solicitar Troca
-  const requestExchange = (
+  // Solicitar Troca via REST
+  const requestExchange = async (
     orderId: string,
-    itemsToExchange: { productId: string; size: number; quantity: number }[],
+    itemsToExchange: { productId: string; size: number; quantity: number; itemPedidoId?: number }[],
     reason: string
-  ) => {
-    const order = orders.find(o => o.id === orderId);
-    if (!order || itemsToExchange.length === 0) return;
-
-    const matchedItems: ExchangeItem[] = [];
-    let totalExchangeValue = 0;
-
-    for (const req of itemsToExchange) {
-      const orderItem = order.items.find(i => i.product.id === req.productId && i.size === req.size);
-      if (orderItem) {
-        const validQty = Math.max(1, Math.min(req.quantity, orderItem.quantity));
-        matchedItems.push({
-          productId: orderItem.product.id,
-          productName: orderItem.product.name,
-          size: orderItem.size,
-          price: orderItem.product.price,
-          quantity: validQty
-        });
-        totalExchangeValue += orderItem.product.price * validQty;
+  ): Promise<{ success: boolean; error?: string; troca?: Exchange }> => {
+    try {
+      const eligRes = await trocaService.consultarElegibilidade(orderId);
+      if (!eligRes.success || !eligRes.dados) {
+        return { success: false, error: eligRes.error || 'Não foi possível verificar a elegibilidade deste pedido.' };
       }
-    }
 
-    if (matchedItems.length === 0) return;
+      const itensRequest: { itemPedidoId: number; quantidade: number }[] = [];
+      for (const reqItem of itemsToExchange) {
+        const matchedItem = eligRes.dados.itens.find(
+          it => (reqItem.itemPedidoId && it.itemPedidoId === reqItem.itemPedidoId) ||
+            (it.nomeProduto.toLowerCase().includes(reqItem.productId.toLowerCase()) && it.tamanho === reqItem.size)
+        );
 
-    const customerObj = customers.find(c => c.id === order.customerId);
-
-    const newExchangeId = `EXC-${Math.floor(100000 + Math.random() * 900000)}`;
-    const newExchange: Exchange = {
-      id: newExchangeId,
-      orderId,
-      customerId: order.customerId,
-      customerName: customerObj ? customerObj.name : activeCustomer.name,
-      items: matchedItems,
-      item: matchedItems[0], // retrocompatibilidade
-      totalValue: parseFloat(totalExchangeValue.toFixed(2)),
-      reason,
-      date: new Date().toLocaleDateString('pt-BR'),
-      status: 'TROCA SOLICITADA'
-    };
-
-    setExchanges(prev => [newExchange, ...prev]);
-    
-    // Atualizar o status e itens de troca no próprio pedido
-    setOrders(prev =>
-      prev.map(o =>
-        o.id === orderId
-          ? {
-              ...o,
-              exchangeStatus: 'TROCA SOLICITADA',
-              exchangeItems: matchedItems,
-              exchangeItemId: matchedItems[0]?.productId,
-              exchangeItemSize: matchedItems[0]?.size,
-              exchangeReason: reason
-            }
-          : o
-      )
-    );
-  };
-
-  // Fluxo de Troca (Administrador / Cliente)
-  const updateExchangeStatus = (exchangeId: string, status: Exchange['status'], returnToStockSimulated: boolean = false) => {
-    if (returnToStockSimulated) {
-      console.log(`[Reativo Simulação] Itens da troca ${exchangeId} retornados ao estoque.`);
-    }
-
-    const exchange = exchanges.find(exc => exc.id === exchangeId);
-
-    // Se for finalizado como TROCA PROCESSADA, gera cupom automaticamente correspondente ao valor total dos itens devolvidos
-    let couponCode: string | undefined;
-    if (exchange && status === 'TROCA PROCESSADA') {
-      couponCode = `TROCA-RW-${Math.floor(1000 + Math.random() * 9000)}`;
-
-      const totalAmount = exchange.totalValue ?? (
-        exchange.items && exchange.items.length > 0
-          ? exchange.items.reduce((sum, it) => sum + it.price * it.quantity, 0)
-          : (exchange.item ? exchange.item.price : 0)
-      );
-
-      const newCoupon: Coupon = {
-        id: `coupon_${Math.random().toString(36).substr(2, 9)}`,
-        code: couponCode,
-        type: 'exchange',
-        value: parseFloat(totalAmount.toFixed(2)),
-        description: `Crédito de troca do pedido ${exchange.orderId}`,
-        expirationDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'), // 3 meses
-        customerId: exchange.customerId
-      };
-
-      setCoupons(prev => [...prev, newCoupon]);
-    }
-
-    setExchanges(prev =>
-      prev.map(exc => {
-        if (exc.id === exchangeId) {
-          return {
-            ...exc,
-            status,
-            ...(couponCode ? { refundCouponCode: couponCode } : {})
-          };
+        if (!matchedItem) {
+          return { success: false, error: `Item ${reqItem.productId} (Tam: ${reqItem.size}) não é elegível para troca neste pedido.` };
         }
-        return exc;
-      })
-    );
 
-    // Sincronizar com o pedido
-    if (exchange) {
-      setOrders(prev =>
-        prev.map(o =>
-          o.id === exchange.orderId
-            ? { ...o, exchangeStatus: status }
-            : o
-        )
-      );
+        itensRequest.push({
+          itemPedidoId: matchedItem.itemPedidoId,
+          quantidade: reqItem.quantity
+        });
+      }
+
+      const res = await trocaService.solicitarTroca({
+        codigoCliente: activeCustomerId,
+        codigoPedido: orderId,
+        itens: itensRequest,
+        motivo: reason
+      });
+
+      if (res.success && res.dados) {
+        await Promise.all([refreshOrders(), refreshExchanges()]);
+        return { success: true, troca: mapTrocaDtoToExchange(res.dados) };
+      }
+
+      return { success: false, error: res.error || 'Erro ao registrar solicitação de troca.' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Falha de comunicação ao solicitar troca.' };
     }
   };
 
-  // Atualizar Status do Pedido (Avanço no Painel Admin)
-  const updateOrderStatus = (orderId: string, status: Order['status']) => {
-    setOrders(prev =>
-      prev.map(o => (o.id === orderId ? { ...o, status } : o))
-    );
+  // Fluxo de Troca via REST (Administrador / Cliente)
+  const updateExchangeStatus = async (
+    exchangeId: string,
+    status: Exchange['status'],
+    returnToStockSimulated: boolean = false
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (status === 'TROCA ACEITA' || status === 'TROCA AUTORIZADA') {
+        const res = await trocaService.autorizar(exchangeId, {
+          autorizado: true,
+          usuarioResponsavel: 'Administrador'
+        });
+        if (!res.success) return { success: false, error: res.error };
+      } else if (status === 'TROCA NEGADA' || status === 'TROCA RECUSADA') {
+        const res = await trocaService.autorizar(exchangeId, {
+          autorizado: false,
+          motivoRecusa: 'Solicitação de troca recusada pelo administrador.',
+          usuarioResponsavel: 'Administrador'
+        });
+        if (!res.success) return { success: false, error: res.error };
+      } else if (status === 'TROCA PROCESSADA' || status === 'TROCADO' || status === 'ITEM RECEBIDO') {
+        const res = await trocaService.confirmarRecebimento(exchangeId, {
+          retornarAoEstoque: returnToStockSimulated,
+          usuarioResponsavel: 'Administrador'
+        });
+        if (!res.success) return { success: false, error: res.error };
+      }
+
+      await Promise.all([
+        refreshOrders(),
+        refreshExchanges(),
+        refreshCoupons(activeCustomerId)
+      ]);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Falha ao processar status da troca.' };
+    }
+  };
+
+  // Atualizar Status do Pedido via REST (Avanço no Painel Admin)
+  const updateOrderStatus = async (
+    orderId: string,
+    status: Order['status']
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (status === 'APROVADA' || status === 'PAGAMENTO REALIZADO') {
+        const res = await pedidoService.processarPagamento(orderId);
+        if (!res.success) {
+          return { success: false, error: res.error };
+        }
+      } else {
+        let novoStatusOficial: string = status;
+        if (status === 'EM TRÂNSITO') novoStatusOficial = 'EM TRANSPORTE';
+        if (status === 'CANCELADO') novoStatusOficial = 'REPROVADA';
+
+        const res = await pedidoService.atualizarStatus(orderId, { novoStatus: novoStatusOficial });
+        if (!res.success) {
+          return { success: false, error: res.error };
+        }
+      }
+      await refreshOrders();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Falha ao atualizar status do pedido.' };
+    }
   };
 
   // Cadastrar Novo Cliente (RF0021, RN0021, RN0022, RN0023, RN0026, RNF0031, RNF0032, RNF0033, RNF0035)
@@ -827,6 +941,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Atualiza o estado da lista de clientes com o registro persistido
       setCustomers(prev => [...prev, result.customer!]);
       setActiveCustomerId(result.customer.id);
+      saveCustomerIdToStorage(result.customer.id);
 
       // Inicializa carrinho em memória para o novo código de cliente
       setCartsByCustomer(prev => ({
@@ -1055,9 +1170,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         customerLoadError,
         refreshCustomers: carregarClientesReais,
         cartsByCustomer,
+        cartExpiracao,
+        limparAvisoExpiracao,
+        refreshCart,
         orders,
+        isLoadingOrders,
+        ordersLoadError,
+        refreshOrders,
         coupons,
+        isLoadingCoupons,
+        refreshCoupons,
         exchanges,
+        isLoadingExchanges,
+        exchangesLoadError,
+        refreshExchanges,
         setActiveCustomer,
         addCustomer,
         updateCustomerProfile,

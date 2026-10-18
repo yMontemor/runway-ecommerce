@@ -7,38 +7,52 @@ export default function AdminExchanges() {
   const { exchanges, updateExchangeStatus } = useApp();
   const [selectedExchange, setSelectedExchange] = useState<Exchange | null>(null);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [isModalProcessing, setIsModalProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleAcceptExchange = (id: string) => {
-    updateExchangeStatus(id, 'TROCA ACEITA');
+  const handleAcceptExchange = async (id: string) => {
+    setActionLoadingId(id);
+    setErrorMessage(null);
+    try {
+      await updateExchangeStatus(id, 'TROCA AUTORIZADA');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Erro ao autorizar solicitação de troca');
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
-  const handleRejectExchange = (id: string) => {
-    updateExchangeStatus(id, 'TROCA NEGADA');
+  const handleRejectExchange = async (id: string) => {
+    setActionLoadingId(id);
+    setErrorMessage(null);
+    try {
+      await updateExchangeStatus(id, 'TROCA RECUSADA');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Erro ao recusar solicitação de troca');
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   const handleConfirmReceiptClick = (exc: Exchange) => {
-    // Transição explícita para ITEM RECEBIDO e abertura da decisão de retorno ao estoque
-    updateExchangeStatus(exc.id, 'ITEM RECEBIDO');
     setSelectedExchange(exc);
     setIsStockModalOpen(true);
   };
 
-  const handleOpenStockModalOnly = (exc: Exchange) => {
-    setSelectedExchange(exc);
-    setIsStockModalOpen(true);
-  };
-
-  const handleConfirmReceipt = (returnToStock: boolean) => {
+  const handleConfirmReceipt = async (returnToStock: boolean) => {
     if (!selectedExchange) return;
-    
-    // Simular decisão de retorno ao estoque no console/histórico
-    console.log(`[Troca ${selectedExchange.id}] Item retornado ao estoque: ${returnToStock ? 'SIM' : 'NÃO'}`);
-    
-    // Transição explícita para TROCA PROCESSADA e geração do cupom de troca
-    updateExchangeStatus(selectedExchange.id, 'TROCA PROCESSADA', returnToStock);
-
-    setIsStockModalOpen(false);
-    setSelectedExchange(null);
+    setIsModalProcessing(true);
+    setErrorMessage(null);
+    try {
+      await updateExchangeStatus(selectedExchange.id, 'TROCADO', returnToStock);
+      setIsStockModalOpen(false);
+      setSelectedExchange(null);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Erro ao confirmar recebimento e gerar cupom');
+    } finally {
+      setIsModalProcessing(false);
+    }
   };
 
   return (
@@ -46,6 +60,32 @@ export default function AdminExchanges() {
       <div className="admin-header-row">
         <h3 className="admin-tab-title">Solicitações de Trocas</h3>
       </div>
+
+      {errorMessage && (
+        <div 
+          className="admin-error-banner"
+          style={{
+            backgroundColor: 'rgba(255, 69, 69, 0.15)',
+            border: '1px solid var(--color-danger)',
+            color: '#ff6b6b',
+            padding: '0.75rem 1rem',
+            borderRadius: '6px',
+            marginBottom: '1rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
+          <span>{errorMessage}</span>
+          <button 
+            type="button" 
+            onClick={() => setErrorMessage(null)}
+            style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="admin-table-container">
         <table className="admin-table">
@@ -64,7 +104,7 @@ export default function AdminExchanges() {
           <tbody>
             {exchanges.map(exc => (
               <tr key={exc.id}>
-                <td><strong>{exc.id}</strong></td>
+                <td><strong data-cy={`exchange-code-${exc.id}`}>{exc.id}</strong></td>
                 <td>{exc.orderId}</td>
                 <td>{exc.customerName}</td>
                 <td>
@@ -74,7 +114,7 @@ export default function AdminExchanges() {
                         <div key={idx} className="admin-exchange-item-row" style={{ fontSize: '0.82rem' }}>
                           <strong style={{ color: '#fff' }}>{it.productName}</strong> <span style={{ color: '#aaa' }}>(Tam {it.size})</span>
                           <span style={{ color: 'var(--color-primary)', marginLeft: '0.35rem', fontWeight: 600 }}>
-                            • {it.quantity} {it.quantity === 1 ? 'un.' : 'un.'}
+                            • {it.quantity} un.
                           </span>
                         </div>
                       ))
@@ -92,60 +132,53 @@ export default function AdminExchanges() {
                 </td>
                 <td><span className="exc-reason-text">{exc.reason}</span></td>
                 <td>
-                  <span className={`status-badge ${exc.status.replace(' ', '_').toLowerCase()}`}>
+                  <span className={`order-status-tag ${exc.status.replace(/\s+/g, '_').toLowerCase()}`} data-cy={`exchange-status-${exc.id}`}>
                     {exc.status}
                   </span>
                 </td>
                 <td>
                   <div className="admin-exchange-actions">
-                    {exc.status === 'TROCA SOLICITADA' && (
+                    {(exc.status === 'EM TROCA' || exc.status === 'TROCA SOLICITADA') && (
                       <>
                         <button
                           onClick={() => handleAcceptExchange(exc.id)}
                           className="btn btn-primary btn-small btn-status-delivered"
                           type="button"
+                          disabled={actionLoadingId === exc.id}
+                          data-cy={`btn-aceitar-troca-${exc.id}`}
                         >
-                          ACEITAR
+                          {actionLoadingId === exc.id ? 'PROCESSANDO...' : 'ACEITAR'}
                         </button>
                         <button
                           onClick={() => handleRejectExchange(exc.id)}
                           className="btn btn-secondary btn-small btn-danger-border"
                           type="button"
+                          disabled={actionLoadingId === exc.id}
+                          data-cy={`btn-recusar-troca-${exc.id}`}
                         >
                           NEGAR
                         </button>
                       </>
                     )}
-                    {exc.status === 'TROCA ACEITA' && (
-                      <span className="admin-action-wait-text">Aguardando despacho do cliente</span>
-                    )}
-                    {exc.status === 'ITEM ENVIADO' && (
+                    {(exc.status === 'TROCA AUTORIZADA' || exc.status === 'TROCA ACEITA' || exc.status === 'ITEM ENVIADO' || exc.status === 'ITEM RECEBIDO') && (
                       <button
                         onClick={() => handleConfirmReceiptClick(exc)}
                         className="btn btn-primary btn-small"
                         type="button"
                         style={{ backgroundColor: 'var(--color-primary)', color: '#000' }}
+                        disabled={actionLoadingId === exc.id}
+                        data-cy={`btn-confirmar-recebimento-${exc.id}`}
                       >
                         CONFIRMAR RECEBIMENTO
                       </button>
                     )}
-                    {exc.status === 'ITEM RECEBIDO' && (
-                      <button
-                        onClick={() => handleOpenStockModalOnly(exc)}
-                        className="btn btn-primary btn-small"
-                        type="button"
-                        style={{ backgroundColor: 'var(--color-primary)', color: '#000' }}
-                      >
-                        DECIDIR RETORNO AO ESTOQUE
-                      </button>
-                    )}
-                    {exc.status === 'TROCA PROCESSADA' && (
-                      <div className="admin-coupon-code-hint">
-                        Cupom: <strong>{exc.refundCouponCode || 'Gerando...'}</strong>
+                    {(exc.status === 'TROCADO' || exc.status === 'TROCA PROCESSADA') && (
+                      <div className="admin-coupon-code-hint" data-cy={`exchange-coupon-${exc.id}`}>
+                        Cupom: <strong>{exc.refundCouponCode || exc.codigoCupom || 'Gerado'}</strong>
                       </div>
                     )}
-                    {exc.status === 'TROCA NEGADA' && (
-                      <span className="action-cancelled-text">Troca recusada</span>
+                    {(exc.status === 'TROCA RECUSADA' || exc.status === 'TROCA NEGADA') && (
+                      <span className="action-cancelled-text" data-cy={`exchange-recusada-${exc.id}`}>Troca recusada</span>
                     )}
                   </div>
                 </td>
@@ -165,7 +198,7 @@ export default function AdminExchanges() {
       {/* Modal Confirmar Recebimento / Retorno ao Estoque */}
       <Modal
         isOpen={isStockModalOpen}
-        onClose={() => setIsStockModalOpen(false)}
+        onClose={() => !isModalProcessing && setIsStockModalOpen(false)}
         title="Retornar ao Estoque?"
       >
         <div className="inactive-confirm-modal">
@@ -177,15 +210,19 @@ export default function AdminExchanges() {
               onClick={() => handleConfirmReceipt(false)} 
               className="btn btn-secondary"
               type="button"
+              disabled={isModalProcessing}
+              data-cy="btn-nao-retornar-estoque"
             >
-              NÃO RETORNAR AO ESTOQUE
+              {isModalProcessing ? 'PROCESSANDO...' : 'NÃO RETORNAR AO ESTOQUE'}
             </button>
             <button 
               onClick={() => handleConfirmReceipt(true)} 
               className="btn btn-primary"
               type="button"
+              disabled={isModalProcessing}
+              data-cy="btn-sim-retornar-estoque"
             >
-              SIM, RETORNAR AO ESTOQUE
+              {isModalProcessing ? 'PROCESSANDO...' : 'SIM, RETORNAR AO ESTOQUE'}
             </button>
           </div>
         </div>
@@ -193,3 +230,4 @@ export default function AdminExchanges() {
     </div>
   );
 }
+

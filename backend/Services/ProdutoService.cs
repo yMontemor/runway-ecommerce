@@ -7,10 +7,12 @@ namespace RunWay.Api.Services;
 public class ProdutoService : IProdutoService
 {
     private readonly RunWayDbContext _context;
+    private readonly ICarrinhoService _carrinhoService;
 
-    public ProdutoService(RunWayDbContext context)
+    public ProdutoService(RunWayDbContext context, ICarrinhoService carrinhoService)
     {
         _context = context;
+        _carrinhoService = carrinhoService;
     }
 
     public async Task<List<ProdutoResponseDto>> ListarAtivosAsync(CancellationToken cancellationToken = default)
@@ -23,7 +25,10 @@ public class ProdutoService : IProdutoService
             .OrderBy(p => p.Id)
             .ToListAsync(cancellationToken);
 
-        return produtos.Select(p => MapearParaDto(p)).ToList();
+        var variacaoIds = produtos.SelectMany(p => p.Variacoes).Select(v => v.Id).ToList();
+        var disponibilidades = await _carrinhoService.ObterEstoquesDisponiveisAsync(variacaoIds, null, cancellationToken);
+
+        return produtos.Select(p => MapearParaDto(p, disponibilidades)).ToList();
     }
 
     public async Task<ProdutoResponseDto?> ObterPorIdOuCodigoAsync(string idOuCodigo, CancellationToken cancellationToken = default)
@@ -37,7 +42,12 @@ public class ProdutoService : IProdutoService
                 .ThenInclude(v => v.Estoque)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return produto == null ? null : MapearParaDto(produto);
+        if (produto == null) return null;
+
+        var variacaoIds = produto.Variacoes.Select(v => v.Id).ToList();
+        var disponibilidades = await _carrinhoService.ObterEstoquesDisponiveisAsync(variacaoIds, null, cancellationToken);
+
+        return MapearParaDto(produto, disponibilidades);
     }
 
     public async Task<ValidacaoEstoqueResponseDto> ValidarEstoqueAsync(ValidacaoEstoqueRequestDto request, CancellationToken cancellationToken = default)
@@ -52,6 +62,7 @@ public class ProdutoService : IProdutoService
         }
 
         var variacaoIds = request.Itens.Select(i => i.ProdutoVariacaoId).Distinct().ToList();
+        var disponibilidades = await _carrinhoService.ObterEstoquesDisponiveisAsync(variacaoIds, request.CodigoCliente, cancellationToken);
 
         var variacoesDb = await _context.ProdutoVariacoes
             .AsNoTracking()
@@ -81,7 +92,7 @@ public class ProdutoService : IProdutoService
                 continue;
             }
 
-            int estoqueDisponivel = variacao.Estoque?.Quantidade ?? 0;
+            int estoqueDisponivel = disponibilidades.GetValueOrDefault(item.ProdutoVariacaoId, 0);
             string nomeProduto = variacao.Produto?.Nome ?? "Produto";
 
             if (item.Quantidade <= 0)
@@ -170,7 +181,7 @@ public class ProdutoService : IProdutoService
         };
     }
 
-    private static ProdutoResponseDto MapearParaDto(Models.Produto p)
+    private static ProdutoResponseDto MapearParaDto(Models.Produto p, Dictionary<int, int>? disponibilidades = null)
     {
         return new ProdutoResponseDto
         {
@@ -191,7 +202,9 @@ public class ProdutoService : IProdutoService
                     Id = v.Id,
                     ProdutoId = v.ProdutoId,
                     Tamanho = v.Tamanho,
-                    QuantidadeEstoque = v.Estoque?.Quantidade ?? 0,
+                    QuantidadeEstoque = disponibilidades != null && disponibilidades.TryGetValue(v.Id, out int disp)
+                        ? disp
+                        : (v.Estoque?.Quantidade ?? 0),
                     Ativo = v.Ativo
                 })
                 .ToList()

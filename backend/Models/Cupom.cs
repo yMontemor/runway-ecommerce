@@ -18,4 +18,6 @@ public class Cupom
     public Cliente? Cliente { get; set; }
 
     public ICollection<PagamentoPedido> Pagamentos { get; set; } = new List<PagamentoPedido>();
+
+    public Troca? Troca { get; set; }
 }

@@ -22,7 +22,12 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
       cy.get(`[data-cy="select-customer-${clienteCodigo}"]`).scrollIntoView().click();
       cy.get('[data-cy="user-dropdown"]').should('contain.text', cliente.nome.split(' ')[0]);
 
-      // Limpar carrinho prévio do cliente
+      // Limpar carrinho prévio do cliente (persistido e localStorage)
+      cy.request({
+        method: 'DELETE',
+        url: `http://localhost:5035/api/carrinho/${clienteCodigo}`,
+        failOnStatusCode: false
+      });
       cy.window().then((win) => {
         win.localStorage.removeItem(`runway_cart_${clienteCodigo}`);
       });

@@ -1,3 +1,4 @@
+import React from 'react';
 import { Link } from 'react-router-dom';
 import type { Product } from '../../types';
 import './ProductCard.css';
@@ -7,7 +8,7 @@ interface ProductCardProps {
   onAddToCartClick: (product: Product) => void;
 }
 
-export default function ProductCard({ product, onAddToCartClick }: ProductCardProps) {
+function ProductCard({ product, onAddToCartClick }: ProductCardProps) {
   // Mostrar apenas os 5 primeiros tamanhos e o contador restante (+N)
   const visibleSizes = product.sizes.slice(0, 5);
   const remainingCount = product.sizes.length - visibleSizes.length;
@@ -71,4 +72,6 @@ export default function ProductCard({ product, onAddToCartClick }: ProductCardPr
     </div>
   );
 }
+
+export default React.memo(ProductCard);
 

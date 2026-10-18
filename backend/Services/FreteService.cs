@@ -118,6 +118,7 @@ public class FreteService : IFreteService
         // Validação de produto/variação ativa e disponível reutilizando o serviço de produtos existente
         var validacaoEstoque = await _produtoService.ValidarEstoqueAsync(new ValidacaoEstoqueRequestDto
         {
+            CodigoCliente = request.CodigoCliente,
             Itens = request.Itens.Select(i => new ItemValidacaoEstoqueRequestDto
             {
                 ProdutoVariacaoId = i.ProdutoVariacaoId,

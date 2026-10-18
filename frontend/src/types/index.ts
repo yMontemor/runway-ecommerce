@@ -65,6 +65,7 @@ export interface CartItem {
   variacaoId: number;
   size: number;
   quantity: number;
+  itemPedidoId?: number;
 }
 
 export interface ItemValidacaoEstoqueResponse {
@@ -97,7 +98,7 @@ export interface Order {
   id: string; // e.g. "RW-2026-007"
   date: string;
   customerId: string; // bound to a specific customer
-  status: 'EM ABERTO' | 'EM PROCESSAMENTO' | 'PAGAMENTO REALIZADO' | 'EM TRÂNSITO' | 'ENTREGUE' | 'CANCELADO';
+  status: 'EM ABERTO' | 'EM PROCESSAMENTO' | 'PAGAMENTO REALIZADO' | 'EM TRÂNSITO' | 'ENTREGUE' | 'CANCELADO' | 'APROVADA' | 'REPROVADA' | 'EM TRANSPORTE' | 'EM TROCA' | 'TROCA AUTORIZADA' | 'TROCADO';
   items: CartItem[];
   shippingAddress: Address;
   paymentMethods: {
@@ -115,7 +116,7 @@ export interface Order {
   clientConfirmedReceipt?: boolean;
   cancellationRefundCouponCode?: string;
   cardRefundedAmount?: number;
-  exchangeStatus?: 'TROCA SOLICITADA' | 'TROCA ACEITA' | 'ITEM ENVIADO' | 'ITEM RECEBIDO' | 'TROCA PROCESSADA' | 'TROCA NEGADA';
+  exchangeStatus?: 'TROCA SOLICITADA' | 'TROCA ACEITA' | 'ITEM ENVIADO' | 'ITEM RECEBIDO' | 'TROCA PROCESSADA' | 'TROCA NEGADA' | 'EM TROCA' | 'TROCA AUTORIZADA' | 'TROCADO' | 'TROCA RECUSADA';
   exchangeReason?: string;
   exchangeItemId?: string; // product id being returned (retrocompatibilidade)
   exchangeItemSize?: number; // size of product being returned (retrocompatibilidade)
@@ -177,8 +178,10 @@ export interface Exchange {
   totalValue: number;
   reason: string;
   date: string;
-  status: 'TROCA SOLICITADA' | 'TROCA ACEITA' | 'ITEM ENVIADO' | 'ITEM RECEBIDO' | 'TROCA PROCESSADA' | 'TROCA NEGADA';
+  status: 'TROCA SOLICITADA' | 'TROCA ACEITA' | 'ITEM ENVIADO' | 'ITEM RECEBIDO' | 'TROCA PROCESSADA' | 'TROCA NEGADA' | 'EM TROCA' | 'TROCA AUTORIZADA' | 'TROCADO' | 'TROCA RECUSADA';
   refundCouponCode?: string;
+  codigoCupom?: string;
+  notificacaoCliente?: string;
 }
 
 export interface AnalyticsEntry {
@@ -340,8 +343,10 @@ export interface EnderecoEntregaResponseDto {
 export interface ItemPedidoResponseDto {
   id: number;
   produtoVariacaoId: number;
+  produtoCodigo?: string;
   produtoNome: string;
   marca: string;
+  imagemUrl?: string;
   tamanho: string;
   quantidade: number;
   precoUnitario: number;
@@ -370,6 +375,8 @@ export interface NovoCupomTrocaResponseDto {
 export interface PedidoResponseDto {
   id: number;
   codigo: string;
+  codigoCliente?: string;
+  nomeCliente?: string;
   status: string;
   dataPedido: string;
   subtotal: number;
@@ -381,4 +388,162 @@ export interface PedidoResponseDto {
   novoCupomTroca?: NovoCupomTrocaResponseDto | null;
 }
 
+export interface ItemCarrinhoDto {
+  id: number;
+  produtoVariacaoId: number;
+  produtoId: number;
+  codigoProduto: string;
+  nomeProduto: string;
+  marca: string;
+  categoria: string;
+  imagemUrl: string;
+  tamanho: number;
+  quantidade: number;
+  precoUnitario: number;
+  subtotal: number;
+  dataAdicionado: string;
+}
+
+export interface ItemExpiradoDto {
+  produtoVariacaoId: number;
+  nomeProduto: string;
+  tamanho: number;
+  quantidade: number;
+  precoUnitario: number;
+  imagemUrl: string;
+  motivo: string;
+}
+
+export interface CarrinhoResponseDto {
+  id: number;
+  codigoCliente: string;
+  dataCriacao: string;
+  dataAtualizacao: string;
+  dataExpiracao: string;
+  tempoRestanteSegundos: number;
+  alertaExpirando: boolean;
+  expirado: boolean;
+  mensagemExpiracao?: string | null;
+  quantidadeTotalItens: number;
+  subtotal: number;
+  itens: ItemCarrinhoDto[];
+  itensExpirados: ItemExpiradoDto[];
+}
+
+export interface ExpiracaoCarrinhoResponseDto {
+  dataExpiracao?: string | null;
+  tempoRestanteSegundos: number;
+  alertaExpirando: boolean;
+  expirado: boolean;
+  mensagem?: string | null;
+}
+
+// ==========================================
+// TROCAS E PROCESSAMENTO DE PEDIDOS (ETAPA D / E)
+// ==========================================
+export interface ItemTrocaResponseDto {
+  id: number;
+  trocaId: number;
+  itemPedidoId: number;
+  produtoVariacaoId: number;
+  produtoId: number;
+  codigoProduto: string;
+  nomeProduto: string;
+  marca: string;
+  categoria: string;
+  imagemUrl: string;
+  tamanho: number;
+  quantidade: number;
+  precoUnitario: number;
+  subtotal: number;
+}
+
+export interface TrocaResponseDto {
+  id: number;
+  codigo: string;
+  pedidoId: number;
+  codigoPedido: string;
+  clienteId: number;
+  codigoCliente: string;
+  nomeCliente: string;
+  status: string; // 'EM TROCA' | 'TROCA AUTORIZADA' | 'TROCADO' | 'TROCA RECUSADA'
+  tipo: string;   // 'PARCIAL' | 'TOTAL'
+  motivo: string;
+  valorTotal: number;
+  dataSolicitacao: string;
+  dataAutorizacao?: string | null;
+  adminAutorizacao?: string | null;
+  dataRecebimento?: string | null;
+  adminRecebimento?: string | null;
+  retornouAoEstoque?: boolean | null;
+  cupomId?: number | null;
+  codigoCupom?: string | null;
+  valorCupom?: number | null;
+  notificacaoCliente?: string | null;
+  dataNotificacao?: string | null;
+  itens: ItemTrocaResponseDto[];
+}
+
+export interface ItemSolicitacaoTrocaRequestDto {
+  itemPedidoId: number;
+  quantidade: number;
+}
+
+export interface SolicitarTrocaRequestDto {
+  codigoCliente: string;
+  codigoPedido: string;
+  motivo: string;
+  itens: ItemSolicitacaoTrocaRequestDto[];
+}
+
+export interface AutorizarTrocaRequestDto {
+  autorizado: boolean;
+  motivoRecusa?: string;
+  usuarioResponsavel?: string;
+}
+
+export interface ConfirmarRecebimentoTrocaRequestDto {
+  retornarAoEstoque: boolean;
+  usuarioResponsavel?: string;
+  observacoes?: string;
+}
+
+export interface NotificacaoTrocaResponseDto {
+  codigoTroca: string;
+  codigoPedido: string;
+  status: string;
+  mensagem: string;
+  dataNotificacao?: string | null;
+}
+
+export interface ItemElegibilidadeTrocaDto {
+  itemPedidoId: number;
+  produtoVariacaoId: number;
+  nomeProduto: string;
+  tamanho: number;
+  precoUnitario: number;
+  quantidadeComprada: number;
+  quantidadeJaEmTroca: number;
+  quantidadeElegivel: number;
+}
+
+export interface ElegibilidadeTrocaResponseDto {
+  codigoPedido: string;
+  statusPedido: string;
+  podeSolicitarTroca: boolean;
+  motivoBloqueio?: string | null;
+  itens: ItemElegibilidadeTrocaDto[];
+}
+
+export interface ProcessarPagamentoPedidoRequestDto {
+  forcarResultado?: string;
+  motivo?: string;
+  usuarioResponsavel?: string;
+}
+
+export interface AtualizarStatusPedidoRequestDto {
+  novoStatus: string;
+  usuarioResponsavel?: string;
+  motivo?: string;
+}
 

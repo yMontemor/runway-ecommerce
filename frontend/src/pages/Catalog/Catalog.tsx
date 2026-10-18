@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../store/AppContext';
 import ProductCard from '../../components/ProductCard/ProductCard';
@@ -52,26 +52,29 @@ export default function Catalog() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Marcas únicas
-  const uniqueBrands = Array.from(new Set(products.map(p => p.brand)));
+  const uniqueBrands = useMemo(() => Array.from(new Set(products.map(p => p.brand))), [products]);
 
   // Filtragem e ordenação
-  const filteredProducts = products.filter(p => {
-    const matchesCategory = selectedCategories.length === 0 || 
-      selectedCategories.some(cat => p.categories.includes(cat));
-    const matchesBrand = !selectedBrand || p.brand === selectedBrand;
-    const matchesSearch = !searchParam || 
-      p.name.toLowerCase().includes(searchParam.toLowerCase()) || 
-      p.brand.toLowerCase().includes(searchParam.toLowerCase());
-    return matchesCategory && matchesBrand && matchesSearch;
-  });
+  const filteredProducts = useMemo(() => {
+    const list = products.filter(p => {
+      const matchesCategory = selectedCategories.length === 0 || 
+        selectedCategories.some(cat => p.categories.includes(cat));
+      const matchesBrand = !selectedBrand || p.brand === selectedBrand;
+      const matchesSearch = !searchParam || 
+        p.name.toLowerCase().includes(searchParam.toLowerCase()) || 
+        p.brand.toLowerCase().includes(searchParam.toLowerCase());
+      return matchesCategory && matchesBrand && matchesSearch;
+    });
 
-  if (sortOption === 'price-asc') {
-    filteredProducts.sort((a, b) => a.price - b.price);
-  } else if (sortOption === 'price-desc') {
-    filteredProducts.sort((a, b) => b.price - a.price);
-  }
+    if (sortOption === 'price-asc') {
+      return [...list].sort((a, b) => a.price - b.price);
+    } else if (sortOption === 'price-desc') {
+      return [...list].sort((a, b) => b.price - a.price);
+    }
+    return list;
+  }, [products, selectedCategories, selectedBrand, searchParam, sortOption]);
 
-  const handleAddToCartClick = (product: Product) => {
+  const handleAddToCartClick = useCallback((product: Product) => {
     if (!activeCustomer.id) {
       setToastMessage('Aguarde o carregamento do cliente ou selecione um cliente válido.');
       setTimeout(() => {
@@ -87,7 +90,7 @@ export default function Catalog() {
     setSelectedProduct(product);
     setSelectedSize(null);
     setIsSizeModalOpen(true);
-  };
+  }, [activeCustomer.id, activeCustomer.status]);
 
   const [isAdding, setIsAdding] = useState(false);
 

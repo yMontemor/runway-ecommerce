@@ -41,6 +41,46 @@ public class CuponsController : ControllerBase
         }
     }
 
+    [HttpGet("cliente/{codigoCliente}")]
+    [ProducesResponseType(typeof(List<CupomResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListarCuponsCliente(string codigoCliente, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var cupons = await _cupomService.ListarTodosCuponsClienteAsync(codigoCliente, cancellationToken);
+            return Ok(cupons);
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { erro = ex.Message });
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new { erro = "Falha ao listar cupons do cliente.", detalhe = ex.Message });
+        }
+    }
+
+    [HttpGet("promocionais")]
+    [ProducesResponseType(typeof(List<CupomResponseDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListarCuponsPromocionais(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var cupons = await _cupomService.ListarCuponsPromocionaisAsync(cancellationToken);
+            return Ok(cupons);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new { erro = "Falha ao listar cupons promocionais.", detalhe = ex.Message });
+        }
+    }
+
     [HttpPost("consultar")]
     [ProducesResponseType(typeof(CupomResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -46,6 +46,68 @@ export const cupomService = {
     }
   },
 
+  async listarCuponsCliente(codigoCliente: string): Promise<ListarCuponsResult> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cupons/cliente/${encodeURIComponent(codigoCliente)}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.erro || 'Não foi possível carregar os cupons do cliente.'
+        };
+      }
+
+      return {
+        success: true,
+        cupons: data as CupomResponseDto[]
+      };
+    } catch (err) {
+      console.error('Falha ao listar cupons do cliente:', err);
+      return {
+        success: false,
+        error: 'Falha de comunicação com o servidor ao consultar cupons do cliente.'
+      };
+    }
+  },
+
+  async listarCuponsPromocionais(): Promise<ListarCuponsResult> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cupons/promocionais`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.erro || 'Não foi possível carregar os cupons promocionais.'
+        };
+      }
+
+      return {
+        success: true,
+        cupons: data as CupomResponseDto[]
+      };
+    } catch (err) {
+      console.error('Falha ao listar cupons promocionais:', err);
+      return {
+        success: false,
+        error: 'Falha de comunicação com o servidor ao consultar cupons promocionais.'
+      };
+    }
+  },
+
   async consultarCupom(codigoCupom: string, codigoCliente?: string): Promise<ConsultarCupomResult> {
     try {
       const request: ConsultarCupomRequestDto = {

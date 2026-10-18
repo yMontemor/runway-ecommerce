@@ -54,6 +54,8 @@ export default function Checkout() {
     activeCustomer, 
     cartsByCustomer, 
     clearCart,
+    refreshOrders,
+    refreshCoupons,
     addCustomerAddress,
     updateCustomerAddress,
     addCustomerCard
@@ -324,10 +326,10 @@ export default function Checkout() {
   const hasSelectedAddress = !!selectedAddressId;
 
   // --- STEP 2: CUPONS E FORMAS DE PAGAMENTO ---
-  const defaultPromoCoupons: CupomResponseDto[] = useMemo(() => [
+  const [promoCoupons, setPromoCoupons] = useState<CupomResponseDto[]>([
     { id: 1, codigo: 'PROMO20', tipo: 'PROMOCIONAL', valor: 20 },
     { id: 2, codigo: 'BEMVINDO50', tipo: 'PROMOCIONAL', valor: 50 }
-  ], []);
+  ]);
 
   const [exchangeCoupons, setExchangeCoupons] = useState<CupomResponseDto[]>([]);
   const [customCoupons, setCustomCoupons] = useState<CupomResponseDto[]>([]);
@@ -337,26 +339,34 @@ export default function Checkout() {
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
   const [isCheckingCoupon, setIsCheckingCoupon] = useState(false);
 
-  // Carregar cupons de troca reais do cliente
+  // Carregar cupons promocionais e de troca reais do cliente
   useEffect(() => {
     let isCancelled = false;
-    async function carregarCuponsTroca() {
-      const res = await cupomService.listarCuponsTrocaCliente(activeCustomer.id);
-      if (!isCancelled && res.success && res.cupons) {
-        setExchangeCoupons(res.cupons);
+    async function carregarCupons() {
+      const [resTroca, resPromo] = await Promise.all([
+        cupomService.listarCuponsTrocaCliente(activeCustomer.id),
+        cupomService.listarCuponsPromocionais()
+      ]);
+      if (!isCancelled) {
+        if (resTroca.success && resTroca.cupons) {
+          setExchangeCoupons(resTroca.cupons);
+        }
+        if (resPromo.success && resPromo.cupons && resPromo.cupons.length > 0) {
+          setPromoCoupons(resPromo.cupons);
+        }
       }
     }
-    carregarCuponsTroca();
+    carregarCupons();
     return () => { isCancelled = true; };
   }, [activeCustomer.id]);
 
   const allAvailableCoupons = useMemo(() => {
     const map = new Map<string, CupomResponseDto>();
-    defaultPromoCoupons.forEach(c => map.set(c.codigo, c));
+    promoCoupons.forEach(c => map.set(c.codigo, c));
     exchangeCoupons.forEach(c => map.set(c.codigo, c));
     customCoupons.forEach(c => map.set(c.codigo, c));
     return Array.from(map.values());
-  }, [defaultPromoCoupons, exchangeCoupons, customCoupons]);
+  }, [promoCoupons, exchangeCoupons, customCoupons]);
 
   // Cartões
   const [temporaryCards, setTemporaryCards] = useState<CustomCreditCard[]>([]);
@@ -827,6 +837,8 @@ export default function Checkout() {
 
       // Limpeza do carrinho SOMENTE após confirmação bem-sucedida do backend
       clearCart(activeCustomer.id);
+      refreshOrders();
+      refreshCoupons(activeCustomer.id);
 
       const order: Order = {
         id: res.dados.codigo,

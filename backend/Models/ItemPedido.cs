@@ -15,4 +15,6 @@ public class ItemPedido
     public Pedido Pedido { get; set; } = null!;
 
     public ProdutoVariacao ProdutoVariacao { get; set; } = null!;
+
+    public ICollection<ItemTroca> ItensTroca { get; set; } = new List<ItemTroca>();
 }

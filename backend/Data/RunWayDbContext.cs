@@ -23,6 +23,10 @@ public class RunWayDbContext : DbContext
     public DbSet<Pedido> Pedidos => Set<Pedido>();
     public DbSet<ItemPedido> ItensPedido => Set<ItemPedido>();
     public DbSet<PagamentoPedido> PagamentosPedido => Set<PagamentoPedido>();
+    public DbSet<Carrinho> Carrinhos => Set<Carrinho>();
+    public DbSet<ItemCarrinho> ItensCarrinho => Set<ItemCarrinho>();
+    public DbSet<Troca> Trocas => Set<Troca>();
+    public DbSet<ItemTroca> ItensTroca => Set<ItemTroca>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,6 +43,13 @@ public class RunWayDbContext : DbContext
         // SEQUÊNCIA PARA CÓDIGO ÚNICO DO PEDIDO
         // ==========================================
         modelBuilder.HasSequence<long>("pedido_codigo_seq")
+            .StartsAt(1)
+            .IncrementsBy(1);
+
+        // ==========================================
+        // SEQUÊNCIA PARA CÓDIGO ÚNICO DA TROCA
+        // ==========================================
+        modelBuilder.HasSequence<long>("troca_codigo_seq")
             .StartsAt(1)
             .IncrementsBy(1);
 
@@ -491,6 +502,12 @@ public class RunWayDbContext : DbContext
                 .HasForeignKey(i => i.ProdutoVariacaoId)
                 .HasConstraintName("fk_item_pedido_produto_variacao")
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(v => v.ItensCarrinho)
+                .WithOne(i => i.ProdutoVariacao)
+                .HasForeignKey(i => i.ProdutoVariacaoId)
+                .HasConstraintName("fk_item_carrinho_produto_variacao")
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ==========================================
@@ -498,7 +515,10 @@ public class RunWayDbContext : DbContext
         // ==========================================
         modelBuilder.Entity<Estoque>(entity =>
         {
-            entity.ToTable("ESTOQUE");
+            entity.ToTable("ESTOQUE", t =>
+            {
+                t.HasCheckConstraint("chk_estoque_quantidade_nao_negativa", "quantidade >= 0");
+            });
 
             entity.HasKey(e => e.Id).HasName("pk_estoque");
             entity.Property(e => e.Id)
@@ -807,6 +827,270 @@ public class RunWayDbContext : DbContext
                 .HasForeignKey(pg => pg.BandeiraId)
                 .HasConstraintName("fk_pagamento_pedido_bandeira")
                 .IsRequired(false)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ==========================================
+        // CARRINHO
+        // ==========================================
+        modelBuilder.Entity<Carrinho>(entity =>
+        {
+            entity.ToTable("CARRINHO", t =>
+            {
+                t.HasCheckConstraint("chk_carrinho_datas", "dt_expiracao >= dt_criacao");
+            });
+
+            entity.HasKey(c => c.Id).HasName("pk_carrinho");
+            entity.Property(c => c.Id)
+                .HasColumnName("id")
+                .UseIdentityAlwaysColumn();
+
+            entity.Property(c => c.ClienteId)
+                .HasColumnName("cliente_id")
+                .IsRequired();
+            entity.HasIndex(c => c.ClienteId)
+                .IsUnique()
+                .HasDatabaseName("uq_carrinho_cliente");
+
+            entity.Property(c => c.DataCriacao)
+                .HasColumnName("dt_criacao")
+                .HasColumnType("timestamp with time zone")
+                .IsRequired();
+
+            entity.Property(c => c.DataAtualizacao)
+                .HasColumnName("dt_atualizacao")
+                .HasColumnType("timestamp with time zone")
+                .IsRequired();
+
+            entity.Property(c => c.DataExpiracao)
+                .HasColumnName("dt_expiracao")
+                .HasColumnType("timestamp with time zone")
+                .IsRequired();
+
+            entity.HasOne(c => c.Cliente)
+                .WithOne(cl => cl.Carrinho)
+                .HasForeignKey<Carrinho>(c => c.ClienteId)
+                .HasConstraintName("fk_carrinho_cliente")
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(c => c.Itens)
+                .WithOne(i => i.Carrinho)
+                .HasForeignKey(i => i.CarrinhoId)
+                .HasConstraintName("fk_item_carrinho_carrinho")
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ==========================================
+        // ITEM_CARRINHO
+        // ==========================================
+        modelBuilder.Entity<ItemCarrinho>(entity =>
+        {
+            entity.ToTable("ITEM_CARRINHO", t =>
+            {
+                t.HasCheckConstraint("chk_item_carrinho_quantidade", "quantidade > 0");
+            });
+
+            entity.HasKey(i => i.Id).HasName("pk_item_carrinho");
+            entity.Property(i => i.Id)
+                .HasColumnName("id")
+                .UseIdentityAlwaysColumn();
+
+            entity.Property(i => i.CarrinhoId)
+                .HasColumnName("carrinho_id")
+                .IsRequired();
+
+            entity.Property(i => i.ProdutoVariacaoId)
+                .HasColumnName("produto_variacao_id")
+                .IsRequired();
+
+            entity.Property(i => i.Quantidade)
+                .HasColumnName("quantidade")
+                .IsRequired();
+
+            entity.Property(i => i.DataAdicionado)
+                .HasColumnName("dt_adicionado")
+                .HasColumnType("timestamp with time zone")
+                .IsRequired();
+
+            entity.HasIndex(i => new { i.CarrinhoId, i.ProdutoVariacaoId })
+                .IsUnique()
+                .HasDatabaseName("uq_item_carrinho_variacao");
+
+            entity.HasOne(i => i.ProdutoVariacao)
+                .WithMany(v => v.ItensCarrinho)
+                .HasForeignKey(i => i.ProdutoVariacaoId)
+                .HasConstraintName("fk_item_carrinho_produto_variacao")
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ==========================================
+        // TROCA (RF0041, RF0042, RF0044, RF0045, RN0041, RN0042, RN0046)
+        // ==========================================
+        modelBuilder.Entity<Troca>(entity =>
+        {
+            entity.ToTable("TROCA");
+
+            entity.HasKey(t => t.Id).HasName("pk_troca");
+            entity.Property(t => t.Id)
+                .HasColumnName("id")
+                .UseIdentityAlwaysColumn();
+
+            entity.Property(t => t.Codigo)
+                .HasColumnName("codigo")
+                .HasMaxLength(30)
+                .IsRequired();
+            entity.HasIndex(t => t.Codigo)
+                .IsUnique()
+                .HasDatabaseName("uq_troca_codigo");
+
+            entity.Property(t => t.PedidoId)
+                .HasColumnName("pedido_id")
+                .IsRequired();
+
+            entity.Property(t => t.ClienteId)
+                .HasColumnName("cliente_id")
+                .IsRequired();
+
+            entity.Property(t => t.Status)
+                .HasColumnName("status")
+                .HasMaxLength(30)
+                .HasDefaultValue(Troca.StatusEmTroca)
+                .IsRequired();
+
+            entity.Property(t => t.Tipo)
+                .HasColumnName("tipo")
+                .HasMaxLength(20)
+                .HasDefaultValue(Troca.TipoParcial)
+                .IsRequired();
+
+            entity.Property(t => t.Motivo)
+                .HasColumnName("motivo")
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(t => t.ValorTotal)
+                .HasColumnName("valor_total")
+                .HasColumnType("numeric(10,2)")
+                .IsRequired();
+
+            entity.Property(t => t.DataSolicitacao)
+                .HasColumnName("dt_solicitacao")
+                .HasColumnType("timestamp with time zone")
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .IsRequired();
+
+            entity.Property(t => t.DataAutorizacao)
+                .HasColumnName("dt_autorizacao")
+                .HasColumnType("timestamp with time zone")
+                .IsRequired(false);
+
+            entity.Property(t => t.AdminAutorizacao)
+                .HasColumnName("admin_autorizacao")
+                .HasMaxLength(100)
+                .IsRequired(false);
+
+            entity.Property(t => t.DataRecebimento)
+                .HasColumnName("dt_recebimento")
+                .HasColumnType("timestamp with time zone")
+                .IsRequired(false);
+
+            entity.Property(t => t.AdminRecebimento)
+                .HasColumnName("admin_recebimento")
+                .HasMaxLength(100)
+                .IsRequired(false);
+
+            entity.Property(t => t.RetornouAoEstoque)
+                .HasColumnName("retornou_ao_estoque")
+                .IsRequired(false);
+
+            entity.Property(t => t.CupomId)
+                .HasColumnName("cupom_id")
+                .IsRequired(false);
+
+            entity.Property(t => t.NotificacaoCliente)
+                .HasColumnName("notificacao_cliente")
+                .HasMaxLength(1000)
+                .IsRequired(false);
+
+            entity.Property(t => t.DataNotificacao)
+                .HasColumnName("dt_notificacao")
+                .HasColumnType("timestamp with time zone")
+                .IsRequired(false);
+
+            entity.HasOne(t => t.Pedido)
+                .WithMany(p => p.Trocas)
+                .HasForeignKey(t => t.PedidoId)
+                .HasConstraintName("fk_troca_pedido")
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(t => t.Cliente)
+                .WithMany(c => c.Trocas)
+                .HasForeignKey(t => t.ClienteId)
+                .HasConstraintName("fk_troca_cliente")
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(t => t.Cupom)
+                .WithOne(c => c.Troca)
+                .HasForeignKey<Troca>(t => t.CupomId)
+                .HasConstraintName("fk_troca_cupom")
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(t => t.Itens)
+                .WithOne(i => i.Troca)
+                .HasForeignKey(i => i.TrocaId)
+                .HasConstraintName("fk_item_troca_troca")
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ==========================================
+        // ITEM_TROCA
+        // ==========================================
+        modelBuilder.Entity<ItemTroca>(entity =>
+        {
+            entity.ToTable("ITEM_TROCA");
+
+            entity.HasKey(i => i.Id).HasName("pk_item_troca");
+            entity.Property(i => i.Id)
+                .HasColumnName("id")
+                .UseIdentityAlwaysColumn();
+
+            entity.Property(i => i.TrocaId)
+                .HasColumnName("troca_id")
+                .IsRequired();
+
+            entity.Property(i => i.ItemPedidoId)
+                .HasColumnName("item_pedido_id")
+                .IsRequired();
+
+            entity.Property(i => i.ProdutoVariacaoId)
+                .HasColumnName("produto_variacao_id")
+                .IsRequired();
+
+            entity.Property(i => i.Quantidade)
+                .HasColumnName("quantidade")
+                .IsRequired();
+
+            entity.Property(i => i.PrecoUnitario)
+                .HasColumnName("preco_unitario")
+                .HasColumnType("numeric(10,2)")
+                .IsRequired();
+
+            entity.Property(i => i.Subtotal)
+                .HasColumnName("subtotal")
+                .HasColumnType("numeric(10,2)")
+                .IsRequired();
+
+            entity.HasOne(i => i.ItemPedido)
+                .WithMany(ip => ip.ItensTroca)
+                .HasForeignKey(i => i.ItemPedidoId)
+                .HasConstraintName("fk_item_troca_item_pedido")
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(i => i.ProdutoVariacao)
+                .WithMany()
+                .HasForeignKey(i => i.ProdutoVariacaoId)
+                .HasConstraintName("fk_item_troca_produto_variacao")
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

@@ -27,4 +27,8 @@ public class Cliente
     public ICollection<Endereco> Enderecos { get; set; } = new List<Endereco>();
 
     public ICollection<Cartao> Cartoes { get; set; } = new List<Cartao>();
+
+    public Carrinho? Carrinho { get; set; }
+
+    public ICollection<Troca> Trocas { get; set; } = new List<Troca>();
 }

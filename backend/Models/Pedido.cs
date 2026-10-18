@@ -3,6 +3,13 @@ namespace RunWay.Api.Models;
 public class Pedido
 {
     public const string StatusEmProcessamento = "EM PROCESSAMENTO";
+    public const string StatusAprovada = "APROVADA";
+    public const string StatusReprovada = "REPROVADA";
+    public const string StatusEmTransporte = "EM TRANSPORTE";
+    public const string StatusEntregue = "ENTREGUE";
+    public const string StatusEmTroca = "EM TROCA";
+    public const string StatusTrocaAutorizada = "TROCA AUTORIZADA";
+    public const string StatusTrocado = "TROCADO";
 
     public int Id { get; set; }
 
@@ -52,4 +59,6 @@ public class Pedido
     public ICollection<ItemPedido> Itens { get; set; } = new List<ItemPedido>();
 
     public ICollection<PagamentoPedido> Pagamentos { get; set; } = new List<PagamentoPedido>();
+
+    public ICollection<Troca> Trocas { get; set; } = new List<Troca>();
 }

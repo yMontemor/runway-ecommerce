@@ -469,6 +469,41 @@
   color: var(--color-danger);
 }
 
+.order-status-tag.aprovada {
+  background-color: rgba(57, 255, 20, 0.12);
+  color: var(--color-primary);
+}
+
+.order-status-tag.reprovada {
+  background-color: rgba(255, 69, 69, 0.15);
+  color: var(--color-danger);
+}
+
+.order-status-tag.em_transporte {
+  background-color: rgba(147, 112, 219, 0.15);
+  color: #9370db;
+}
+
+.order-status-tag.em_troca {
+  background-color: rgba(255, 152, 0, 0.15);
+  color: var(--color-warning);
+}
+
+.order-status-tag.troca_autorizada {
+  background-color: rgba(0, 191, 255, 0.15);
+  color: #00bfff;
+}
+
+.order-status-tag.trocado {
+  background-color: rgba(67, 185, 86, 0.15);
+  color: var(--color-success);
+}
+
+.order-status-tag.troca_recusada {
+  background-color: rgba(255, 69, 69, 0.15);
+  color: var(--color-danger);
+}
+
 .order-profile-card-body {
   padding: 1rem 1.25rem;
   border-bottom: 1px solid #1a1a1a;

@@ -6,6 +6,9 @@ using RunWay.Api.DTOs.Pedidos;
 using RunWay.Api.Exceptions;
 using RunWay.Api.Models;
 
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+
 namespace RunWay.Api.Services;
 
 public class PedidoService : IPedidoService
@@ -13,15 +16,23 @@ public class PedidoService : IPedidoService
     private readonly RunWayDbContext _context;
     private readonly IPagamentoService _pagamentoService;
     private readonly IAuditoriaService _auditoriaService;
+    private readonly IWebHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
+    private readonly int _tempoExpiracaoProcessamentoMinutos;
 
     public PedidoService(
         RunWayDbContext context,
         IPagamentoService pagamentoService,
-        IAuditoriaService auditoriaService)
+        IAuditoriaService auditoriaService,
+        IWebHostEnvironment environment,
+        IConfiguration configuration)
     {
         _context = context;
         _pagamentoService = pagamentoService;
         _auditoriaService = auditoriaService;
+        _environment = environment;
+        _configuration = configuration;
+        _tempoExpiracaoProcessamentoMinutos = _configuration.GetValue<int>("Pedido:TempoExpiracaoProcessamentoMinutos", 30);
     }
 
     public async Task<PedidoResponseDto> CriarPedidoAsync(
@@ -153,6 +164,14 @@ public class PedidoService : IPedidoService
 
         try
         {
+            // 3.0. Concorrência: Bloqueio FOR UPDATE nas variações em estoque no PostgreSQL
+            foreach (var itemReq in request.Itens)
+            {
+                await _context.Estoques
+                    .FromSqlInterpolated($"SELECT * FROM \"ESTOQUE\" WHERE produto_variacao_id = {itemReq.ProdutoVariacaoId} FOR UPDATE")
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
             // 3.1. Obtenção thread-safe do próximo valor da sequence existente pedido_codigo_seq
             var seqVal = await _context.Database
                 .SqlQueryRaw<long>("SELECT nextval('pedido_codigo_seq') AS \"Value\"")
@@ -447,6 +466,26 @@ public class PedidoService : IPedidoService
                     cancellationToken: cancellationToken);
             }
 
+            // 3.6. Transferência atômica da reserva do carrinho para o pedido:
+            // Remove os itens correspondentes do carrinho persistido do cliente
+            var carrinhoCliente = await _context.Carrinhos
+                .Include(c => c.Itens)
+                .FirstOrDefaultAsync(c => c.ClienteId == cliente.Id, cancellationToken);
+
+            if (carrinhoCliente != null && carrinhoCliente.Itens.Count > 0)
+            {
+                var variacaoIdsPedidas = request.Itens.Select(i => i.ProdutoVariacaoId).ToHashSet();
+                var itensParaRemover = carrinhoCliente.Itens
+                    .Where(i => variacaoIdsPedidas.Contains(i.ProdutoVariacaoId))
+                    .ToList();
+
+                if (itensParaRemover.Count > 0)
+                {
+                    _context.ItensCarrinho.RemoveRange(itensParaRemover);
+                    carrinhoCliente.DataAtualizacao = DateTimeOffset.UtcNow;
+                }
+            }
+
             // 3.7. Persistência única e Commit
             _context.Pedidos.Add(pedido);
             await _context.SaveChangesAsync(cancellationToken);
@@ -459,6 +498,8 @@ public class PedidoService : IPedidoService
             {
                 Id = pedido.Id,
                 Codigo = pedido.Codigo,
+                CodigoCliente = cliente.Codigo,
+                NomeCliente = cliente.Nome,
                 Status = pedido.Status,
                 DataPedido = pedido.DataPedido,
                 Subtotal = pedido.Subtotal,
@@ -486,8 +527,10 @@ public class PedidoService : IPedidoService
                     {
                         Id = i.Id,
                         ProdutoVariacaoId = i.ProdutoVariacaoId,
+                        ProdutoCodigo = varDb.Produto.Codigo,
                         ProdutoNome = varDb.Produto.Nome,
                         Marca = varDb.Produto.Marca,
+                        ImagemUrl = varDb.Produto.ImagemUrl,
                         Tamanho = varDb.Tamanho.ToString(),
                         Quantidade = i.Quantidade,
                         PrecoUnitario = i.PrecoUnitario
@@ -555,6 +598,556 @@ public class PedidoService : IPedidoService
         }
     }
 
+    public async Task<List<PedidoResponseDto>> ListarTodosAsync(
+        string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = ObterQueryPedidosCompleta();
+
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("TODOS", StringComparison.OrdinalIgnoreCase))
+        {
+            query = query.Where(p => p.Status.ToUpper() == status.Trim().ToUpper());
+        }
+
+        var pedidos = await query
+            .OrderByDescending(p => p.DataPedido)
+            .ToListAsync(cancellationToken);
+
+        return pedidos.Select(p => MapearParaResponseDto(p)).ToList();
+    }
+
+    public async Task<List<PedidoResponseDto>> ListarPorClienteAsync(
+        string codigoCliente,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(codigoCliente))
+        {
+            throw new ValidationException("Código do cliente é obrigatório.");
+        }
+
+        var clienteExiste = await _context.Clientes
+            .AsNoTracking()
+            .AnyAsync(c => c.Codigo == codigoCliente.Trim(), cancellationToken);
+
+        if (!clienteExiste)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoCliente}' não foi encontrado.");
+        }
+
+        var pedidos = await ObterQueryPedidosCompleta()
+            .Where(p => p.Cliente.Codigo == codigoCliente.Trim())
+            .OrderByDescending(p => p.DataPedido)
+            .ToListAsync(cancellationToken);
+
+        foreach (var p in pedidos.Where(p => p.Status == Pedido.StatusEmProcessamento).ToList())
+        {
+            await VerificarEAtualizarExpiracaoPedidoAsync(p, cancellationToken);
+        }
+
+        return pedidos.Select(p => MapearParaResponseDto(p)).ToList();
+    }
+
+    public async Task<PedidoResponseDto> ObterPorCodigoAsync(
+        string codigo,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(codigo))
+        {
+            throw new ValidationException("Código do pedido é obrigatório.");
+        }
+
+        var pedido = await ObterQueryPedidosCompleta()
+            .FirstOrDefaultAsync(p => p.Codigo == codigo.Trim(), cancellationToken);
+
+        if (pedido == null)
+        {
+            throw new NotFoundException($"Pedido com código '{codigo}' não foi encontrado.");
+        }
+
+        if (pedido.Status == Pedido.StatusEmProcessamento)
+        {
+            await VerificarEAtualizarExpiracaoPedidoAsync(pedido, cancellationToken);
+        }
+
+        // Verificar se existe cupom de troca gerado por excedente vinculado a este pedido
+        NovoCupomTrocaResponseDto? novoCupomTroca = null;
+        var cupomExcedente = await _context.Cupons
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Codigo == $"TROCA-CLI{pedido.ClienteId}-{pedido.Codigo}", cancellationToken);
+
+        if (cupomExcedente != null)
+        {
+            novoCupomTroca = new NovoCupomTrocaResponseDto
+            {
+                Id = cupomExcedente.Id,
+                Codigo = cupomExcedente.Codigo,
+                Valor = cupomExcedente.Valor,
+                Mensagem = $"Cupom de troca gerado automaticamente pelo excedente de pagamento: R$ {cupomExcedente.Valor:N2}."
+            };
+        }
+
+        return MapearParaResponseDto(pedido, novoCupomTroca);
+    }
+
+    public async Task<PedidoResponseDto> ProcessarPagamentoAsync(
+        string codigo,
+        ProcessarPagamentoPedidoRequestDto? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(codigo))
+        {
+            throw new ValidationException("Código do pedido é obrigatório.");
+        }
+
+        var pedido = await _context.Pedidos
+            .Include(p => p.Cliente)
+            .Include(p => p.Itens)
+                .ThenInclude(i => i.ProdutoVariacao)
+                    .ThenInclude(pv => pv.Produto)
+            .Include(p => p.Pagamentos)
+                .ThenInclude(pg => pg.Cartao)
+            .Include(p => p.Pagamentos)
+                .ThenInclude(pg => pg.Cupom)
+            .FirstOrDefaultAsync(p => p.Codigo == codigo.Trim(), cancellationToken);
+
+        if (pedido == null)
+        {
+            throw new NotFoundException($"Pedido com código '{codigo}' não foi encontrado.");
+        }
+
+        if (pedido.Status != Pedido.StatusEmProcessamento)
+        {
+            throw new ValidationException(
+                $"O pagamento do pedido '{codigo}' já foi processado anteriormente com status '{pedido.Status}'. Não é permitido alterar uma transação já concluída.");
+        }
+
+        bool aprovado;
+        string motivoFinal;
+
+        if (!string.IsNullOrWhiteSpace(request?.ForcarResultado))
+        {
+            if (!_environment.IsDevelopment())
+            {
+                throw new ValidationException("A manipulação arbitrária do resultado de pagamento só é permitida em ambiente de desenvolvimento/testes.");
+            }
+
+            var forcar = NormalizarStatus(request.ForcarResultado);
+            if (forcar == Pedido.StatusAprovada)
+            {
+                aprovado = true;
+                motivoFinal = request.Motivo ?? "Pagamento aprovado via simulação de teste controlada";
+            }
+            else if (forcar == Pedido.StatusReprovada)
+            {
+                aprovado = false;
+                motivoFinal = request.Motivo ?? "Pagamento reprovado via simulação de teste controlada";
+            }
+            else
+            {
+                throw new ValidationException($"Resultado forçado '{request.ForcarResultado}' inválido. Utilize 'APROVADA' ou 'REPROVADA'.");
+            }
+        }
+        else
+        {
+            var pagamentosCartao = pedido.Pagamentos
+                .Where(p => p.FormaPagamento == PagamentoPedido.FormaCartaoCredito)
+                .ToList();
+
+            if (pagamentosCartao.Count == 0)
+            {
+                // Compra 100% coberta por cupons: aprovada sem necessidade de consulta à operadora de cartão
+                aprovado = true;
+                motivoFinal = "Pagamento integralmente coberto por cupons";
+            }
+            else
+            {
+                // Simulação determinística acadêmica para testes:
+                // Reprovação ocorre se:
+                // 1. O nome impresso contiver "REPROVAR", "RECUSAR" ou "REJEITAR"
+                // 2. Os últimos dígitos do cartão forem "9999"
+                // (NÃO reprova por "0000", preservando cartões de teste existentes)
+                bool temCartaoReprovado = false;
+                string detalheReprovacao = string.Empty;
+
+                foreach (var pg in pagamentosCartao)
+                {
+                    string nome = (pg.Cartao?.NomeImpresso ?? pg.CartaoNomeImpresso ?? string.Empty).ToUpperInvariant();
+                    string ultimos = pg.Cartao?.NumeroCartao != null && pg.Cartao.NumeroCartao.Length >= 4
+                        ? pg.Cartao.NumeroCartao[^4..]
+                        : (pg.CartaoUltimosDigitos ?? string.Empty);
+
+                    if (nome.Contains("REPROVAR") || nome.Contains("RECUSAR") || nome.Contains("REJEITAR"))
+                    {
+                        temCartaoReprovado = true;
+                        detalheReprovacao = "Operadora recusou a transação: titular do cartão instruído para reprovação de teste";
+                        break;
+                    }
+
+                    if (ultimos == "9999")
+                    {
+                        temCartaoReprovado = true;
+                        detalheReprovacao = "Operadora recusou a transação: cartão de teste com final 9999";
+                        break;
+                    }
+                }
+
+                if (temCartaoReprovado)
+                {
+                    aprovado = false;
+                    motivoFinal = detalheReprovacao;
+                }
+                else
+                {
+                    aprovado = true;
+                    motivoFinal = "Transação autorizada com sucesso pela operadora de cartão";
+                }
+            }
+        }
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var agora = DateTimeOffset.UtcNow;
+            var cutoffProcessamento = agora.AddMinutes(-_tempoExpiracaoProcessamentoMinutos);
+            bool reservaExpirada = pedido.DataPedido < cutoffProcessamento;
+
+            if (reservaExpirada)
+            {
+                aprovado = false;
+                motivoFinal = "Pagamento reprovado: O prazo de reserva e pagamento de 30 minutos expirou.";
+            }
+
+            if (aprovado)
+            {
+                // 1. Concorrência: Bloqueio FOR UPDATE nas variações em estoque no PostgreSQL e validação de disponibilidade real
+                foreach (var item in pedido.Itens)
+                {
+                    var estoque = await _context.Estoques
+                        .FromSqlInterpolated($"SELECT * FROM \"ESTOQUE\" WHERE produto_variacao_id = {item.ProdutoVariacaoId} FOR UPDATE")
+                        .FirstOrDefaultAsync(cancellationToken);
+
+                    // Se não há estoque físico suficiente:
+                    if (estoque == null || estoque.Quantidade < item.Quantidade)
+                    {
+                        aprovado = false;
+                        motivoFinal = $"Pagamento reprovado: Estoque insuficiente para o produto '{item.ProdutoVariacao?.Produto?.Nome}' (Tam: {item.ProdutoVariacao?.Tamanho}).";
+                        break;
+                    }
+                }
+            }
+
+            if (aprovado)
+            {
+                // 1. Baixa definitiva de estoque (RF0053 / RN0028)
+                foreach (var item in pedido.Itens)
+                {
+                    var estoque = await _context.Estoques
+                        .FirstAsync(e => e.ProdutoVariacaoId == item.ProdutoVariacaoId, cancellationToken);
+
+                    int qtdAnterior = estoque.Quantidade;
+                    estoque.Quantidade -= item.Quantidade;
+
+                    await _auditoriaService.RegistrarAsync(
+                        entidade: "ESTOQUE",
+                        registroId: estoque.Id.ToString(),
+                        operacao: "BAIXA_VENDA",
+                        dadosAnteriores: new { produtoVariacaoId = estoque.ProdutoVariacaoId, quantidade = qtdAnterior },
+                        dadosNovos: new { produtoVariacaoId = estoque.ProdutoVariacaoId, quantidade = estoque.Quantidade, pedidoCodigo = pedido.Codigo, quantidadeBaixada = item.Quantidade },
+                        usuarioResponsavel: "Sistema - Processamento de Pagamento",
+                        cancellationToken: cancellationToken);
+                }
+
+                // 2. Transição para APROVADA
+                string statusAnterior = pedido.Status;
+                pedido.Status = Pedido.StatusAprovada;
+
+                await _auditoriaService.RegistrarAsync(
+                    entidade: "PEDIDO",
+                    registroId: pedido.Codigo,
+                    operacao: "PAGAMENTO_APROVADO",
+                    dadosAnteriores: new { status = statusAnterior },
+                    dadosNovos: new { status = pedido.Status, motivo = motivoFinal },
+                    usuarioResponsavel: "Sistema - Operadora",
+                    cancellationToken: cancellationToken);
+            }
+            else
+            {
+                // 1. Reprovação (RN0038): NÃO baixa estoque
+                // 2. Liberar cupons reservados para reutilização (RN0036)
+                var pagamentosCupons = pedido.Pagamentos
+                    .Where(p => p.FormaPagamento == PagamentoPedido.FormaCupomPromocional || p.FormaPagamento == PagamentoPedido.FormaCupomTroca)
+                    .ToList();
+
+                foreach (var pgCupom in pagamentosCupons)
+                {
+                    await _auditoriaService.RegistrarAsync(
+                        entidade: "CUPOM",
+                        registroId: pgCupom.Cupom?.Codigo ?? pgCupom.CupomId?.ToString() ?? "CUPOM",
+                        operacao: "LIBERACAO_RESERVA",
+                        dadosAnteriores: new { pedidoCodigo = pedido.Codigo, formaPagamento = pgCupom.FormaPagamento, valor = pgCupom.Valor },
+                        dadosNovos: new { status = "LIBERADO_PARA_REUSO", motivo = "Pagamento do pedido reprovado" },
+                        usuarioResponsavel: "Sistema - Operadora",
+                        cancellationToken: cancellationToken);
+
+                    _context.PagamentosPedido.Remove(pgCupom);
+                }
+
+                // 3. Se foi gerado cupom de excedente para este pedido, exclui para impedir utilização indevida
+                var surplusCupom = await _context.Cupons
+                    .FirstOrDefaultAsync(c => c.Codigo == $"TROCA-CLI{pedido.ClienteId}-{pedido.Codigo}", cancellationToken);
+
+                if (surplusCupom != null)
+                {
+                    await _auditoriaService.RegistrarAsync(
+                        entidade: "CUPOM",
+                        registroId: surplusCupom.Codigo,
+                        operacao: "EXCLUSAO_EXCEDENTE",
+                        dadosAnteriores: new { codigo = surplusCupom.Codigo, valor = surplusCupom.Valor },
+                        dadosNovos: null,
+                        usuarioResponsavel: "Sistema - Operadora",
+                        cancellationToken: cancellationToken);
+
+                    _context.Cupons.Remove(surplusCupom);
+                }
+
+                // 4. Transição para REPROVADA
+                string statusAnterior = pedido.Status;
+                pedido.Status = Pedido.StatusReprovada;
+
+                await _auditoriaService.RegistrarAsync(
+                    entidade: "PEDIDO",
+                    registroId: pedido.Codigo,
+                    operacao: "PAGAMENTO_REPROVADO",
+                    dadosAnteriores: new { status = statusAnterior },
+                    dadosNovos: new { status = pedido.Status, motivo = motivoFinal },
+                    usuarioResponsavel: "Sistema - Operadora",
+                    cancellationToken: cancellationToken);
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return await ObterPorCodigoAsync(pedido.Codigo, cancellationToken);
+        }
+        catch (Exception)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    public async Task<PedidoResponseDto> AtualizarStatusAsync(
+        string codigo,
+        AtualizarStatusPedidoRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(codigo))
+        {
+            throw new ValidationException("Código do pedido é obrigatório.");
+        }
+
+        if (request == null || string.IsNullOrWhiteSpace(request.NovoStatus))
+        {
+            throw new ValidationException("Novo status é obrigatório.");
+        }
+
+        var pedido = await _context.Pedidos
+            .FirstOrDefaultAsync(p => p.Codigo == codigo.Trim(), cancellationToken);
+
+        if (pedido == null)
+        {
+            throw new NotFoundException($"Pedido com código '{codigo}' não foi encontrado.");
+        }
+
+        var novoStatusNorm = NormalizarStatus(request.NovoStatus);
+
+        // Se a solicitação for de APROVADA ou REPROVADA, redirecionar para ProcessarPagamentoAsync
+        if (novoStatusNorm == Pedido.StatusAprovada || novoStatusNorm == Pedido.StatusReprovada)
+        {
+            return await ProcessarPagamentoAsync(codigo, new ProcessarPagamentoPedidoRequestDto
+            {
+                ForcarResultado = novoStatusNorm,
+                Motivo = request.Motivo
+            }, cancellationToken);
+        }
+
+        if (pedido.Status == Pedido.StatusReprovada)
+        {
+            throw new ValidationException($"O pedido '{codigo}' foi REPROVADO e não pode avançar no fluxo de entrega.");
+        }
+
+        if (novoStatusNorm == Pedido.StatusEmTransporte)
+        {
+            // RF0039 / RN0039: Despacho de pedido aprovado
+            if (pedido.Status != Pedido.StatusAprovada)
+            {
+                throw new ValidationException(
+                    $"Transição inválida. O pedido deve estar '{Pedido.StatusAprovada}' para ser despachado ('{Pedido.StatusEmTransporte}'). Status atual: '{pedido.Status}'.");
+            }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            string statusAnterior = pedido.Status;
+            pedido.Status = Pedido.StatusEmTransporte;
+
+            await _auditoriaService.RegistrarAsync(
+                entidade: "PEDIDO",
+                registroId: pedido.Codigo,
+                operacao: "DESPACHO",
+                dadosAnteriores: new { status = statusAnterior },
+                dadosNovos: new { status = pedido.Status, motivo = request.Motivo ?? "Pedido despachado para entrega" },
+                usuarioResponsavel: request.UsuarioResponsavel ?? "Administrador",
+                cancellationToken: cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return await ObterPorCodigoAsync(pedido.Codigo, cancellationToken);
+        }
+
+        if (novoStatusNorm == Pedido.StatusEntregue)
+        {
+            // RF0040 / RN0040: Confirmação de entrega
+            if (pedido.Status != Pedido.StatusEmTransporte)
+            {
+                throw new ValidationException(
+                    $"Transição inválida. O pedido deve estar '{Pedido.StatusEmTransporte}' para ser confirmado como '{Pedido.StatusEntregue}'. Status atual: '{pedido.Status}'.");
+            }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            string statusAnterior = pedido.Status;
+            pedido.Status = Pedido.StatusEntregue;
+
+            await _auditoriaService.RegistrarAsync(
+                entidade: "PEDIDO",
+                registroId: pedido.Codigo,
+                operacao: "ENTREGA_CONFIRMADA",
+                dadosAnteriores: new { status = statusAnterior },
+                dadosNovos: new { status = pedido.Status, motivo = request.Motivo ?? "Entrega do pedido confirmada" },
+                usuarioResponsavel: request.UsuarioResponsavel ?? "Sistema / Transportadora",
+                cancellationToken: cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return await ObterPorCodigoAsync(pedido.Codigo, cancellationToken);
+        }
+
+        throw new ValidationException(
+            $"Transição de status de '{pedido.Status}' para '{request.NovoStatus}' não é permitida pelas regras de negócio do RunWay.");
+    }
+
+    private static string NormalizarStatus(string status)
+    {
+        var s = status.Trim().ToUpperInvariant();
+        return s switch
+        {
+            "APROVADO" or "APROVADA" or "PAGAMENTO REALIZADO" => Pedido.StatusAprovada,
+            "REPROVADO" or "REPROVADA" => Pedido.StatusReprovada,
+            "EM TRANSPORTE" or "EM TRANSITO" or "EM TRÂNSITO" => Pedido.StatusEmTransporte,
+            "ENTREGUE" => Pedido.StatusEntregue,
+            "EM PROCESSAMENTO" => Pedido.StatusEmProcessamento,
+            "EM TROCA" => Pedido.StatusEmTroca,
+            "TROCA AUTORIZADA" => Pedido.StatusTrocaAutorizada,
+            "TROCADO" => Pedido.StatusTrocado,
+            _ => s
+        };
+    }
+
+    private IQueryable<Pedido> ObterQueryPedidosCompleta()
+    {
+        return _context.Pedidos
+            .AsNoTracking()
+            .Include(p => p.Cliente)
+            .Include(p => p.Itens)
+                .ThenInclude(i => i.ProdutoVariacao)
+                    .ThenInclude(pv => pv.Produto)
+            .Include(p => p.Pagamentos)
+                .ThenInclude(pg => pg.Cartao)
+                    .ThenInclude(c => c!.Bandeira)
+            .Include(p => p.Pagamentos)
+                .ThenInclude(pg => pg.Bandeira)
+            .Include(p => p.Pagamentos)
+                .ThenInclude(pg => pg.Cupom);
+    }
+
+    private static PedidoResponseDto MapearParaResponseDto(Pedido p, NovoCupomTrocaResponseDto? novoCupomTroca = null)
+    {
+        return new PedidoResponseDto
+        {
+            Id = p.Id,
+            Codigo = p.Codigo,
+            CodigoCliente = p.Cliente?.Codigo ?? string.Empty,
+            NomeCliente = p.Cliente?.Nome ?? string.Empty,
+            Status = p.Status,
+            DataPedido = p.DataPedido,
+            Subtotal = p.Subtotal,
+            ValorFrete = p.ValorFrete,
+            ValorTotal = p.ValorTotal,
+            EnderecoEntrega = new EnderecoEntregaResponseDto
+            {
+                EnderecoId = p.EnderecoEntregaId,
+                TipoResidencia = p.EntregaTipoResidencia,
+                TipoLogradouro = p.EntregaTipoLogradouro,
+                Logradouro = p.EntregaLogradouro,
+                Numero = p.EntregaNumero,
+                Complemento = p.EntregaComplemento,
+                Bairro = p.EntregaBairro,
+                Cep = p.EntregaCep,
+                Cidade = p.EntregaCidade,
+                Estado = p.EntregaEstado,
+                Pais = p.EntregaPais,
+                Observacoes = p.EntregaObservacoes
+            },
+            Itens = p.Itens.Select(i => new ItemPedidoResponseDto
+            {
+                Id = i.Id,
+                ProdutoVariacaoId = i.ProdutoVariacaoId,
+                ProdutoCodigo = i.ProdutoVariacao?.Produto?.Codigo ?? string.Empty,
+                ProdutoNome = i.ProdutoVariacao?.Produto?.Nome ?? string.Empty,
+                Marca = i.ProdutoVariacao?.Produto?.Marca ?? string.Empty,
+                ImagemUrl = i.ProdutoVariacao?.Produto?.ImagemUrl ?? string.Empty,
+                Tamanho = i.ProdutoVariacao != null ? i.ProdutoVariacao.Tamanho.ToString() : string.Empty,
+                Quantidade = i.Quantidade,
+                PrecoUnitario = i.PrecoUnitario
+            }).ToList(),
+            Pagamentos = p.Pagamentos.Select(pg =>
+            {
+                string? nomeBandeira = null;
+                string? ultimosDigitos = null;
+                string? nomeImpresso = null;
+
+                if (pg.Cartao != null)
+                {
+                    nomeBandeira = pg.Cartao.Bandeira?.Nome;
+                    var numLimpo = pg.Cartao.NumeroCartao ?? string.Empty;
+                    ultimosDigitos = numLimpo.Length >= 4 ? numLimpo[^4..] : numLimpo;
+                    nomeImpresso = pg.Cartao.NomeImpresso;
+                }
+                else
+                {
+                    nomeBandeira = pg.Bandeira?.Nome;
+                    ultimosDigitos = pg.CartaoUltimosDigitos;
+                    nomeImpresso = pg.CartaoNomeImpresso;
+                }
+
+                return new PagamentoPedidoResponseDto
+                {
+                    Id = pg.Id,
+                    FormaPagamento = pg.FormaPagamento,
+                    Valor = pg.Valor,
+                    CartaoId = pg.CartaoId,
+                    Bandeira = nomeBandeira,
+                    CartaoUltimosDigitos = ultimosDigitos,
+                    CartaoNomeImpresso = nomeImpresso,
+                    CupomId = pg.CupomId,
+                    CupomCodigo = pg.Cupom?.Codigo
+                };
+            }).ToList(),
+            NovoCupomTroca = novoCupomTroca
+        };
+    }
+
     private static void ValidarEnderecoAvulso(EnderecoAvulsoPedidoDto avulso)
     {
         if (string.IsNullOrWhiteSpace(avulso.TipoResidencia))
@@ -614,6 +1207,77 @@ public class PedidoService : IPedidoService
         if (string.IsNullOrWhiteSpace(avulso.Pais))
         {
             throw new ValidationException("O país do endereço de entrega é obrigatório. (RN0023)");
+        }
+    }
+
+    private async Task VerificarEAtualizarExpiracaoPedidoAsync(Pedido pedido, CancellationToken cancellationToken)
+    {
+        if (pedido.Status != Pedido.StatusEmProcessamento) return;
+
+        var agora = DateTimeOffset.UtcNow;
+        var cutoff = agora.AddMinutes(-_tempoExpiracaoProcessamentoMinutos);
+        if (pedido.DataPedido >= cutoff) return;
+
+        // O prazo de reserva e pagamento de 30 minutos expirou: reprovar de forma consistente
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var pagamentosCupons = await _context.PagamentosPedido
+                .Include(p => p.Cupom)
+                .Where(p => p.PedidoId == pedido.Id && (p.FormaPagamento == PagamentoPedido.FormaCupomPromocional || p.FormaPagamento == PagamentoPedido.FormaCupomTroca))
+                .ToListAsync(cancellationToken);
+
+            foreach (var pgCupom in pagamentosCupons)
+            {
+                await _auditoriaService.RegistrarAsync(
+                    entidade: "CUPOM",
+                    registroId: pgCupom.Cupom?.Codigo ?? pgCupom.CupomId?.ToString() ?? "CUPOM",
+                    operacao: "LIBERACAO_RESERVA",
+                    dadosAnteriores: new { pedidoCodigo = pedido.Codigo, formaPagamento = pgCupom.FormaPagamento, valor = pgCupom.Valor },
+                    dadosNovos: new { status = "LIBERADO_PARA_REUSO", motivo = "Prazo de 30 minutos de reserva e pagamento expirou." },
+                    usuarioResponsavel: "Sistema - Expiracao de Reserva",
+                    cancellationToken: cancellationToken);
+
+                _context.PagamentosPedido.Remove(pgCupom);
+            }
+
+            var surplusCupom = await _context.Cupons
+                .FirstOrDefaultAsync(c => c.Codigo == $"TROCA-CLI{pedido.ClienteId}-{pedido.Codigo}", cancellationToken);
+
+            if (surplusCupom != null)
+            {
+                await _auditoriaService.RegistrarAsync(
+                    entidade: "CUPOM",
+                    registroId: surplusCupom.Codigo,
+                    operacao: "EXCLUSAO_EXCEDENTE",
+                    dadosAnteriores: new { codigo = surplusCupom.Codigo, valor = surplusCupom.Valor },
+                    dadosNovos: null,
+                    usuarioResponsavel: "Sistema - Expiracao de Reserva",
+                    cancellationToken: cancellationToken);
+
+                _context.Cupons.Remove(surplusCupom);
+            }
+
+            var pedidoDb = await _context.Pedidos.FirstAsync(p => p.Id == pedido.Id, cancellationToken);
+            string statusAnt = pedidoDb.Status;
+            pedidoDb.Status = Pedido.StatusReprovada;
+            pedido.Status = Pedido.StatusReprovada;
+
+            await _auditoriaService.RegistrarAsync(
+                entidade: "PEDIDO",
+                registroId: pedido.Codigo,
+                operacao: "PAGAMENTO_REPROVADO",
+                dadosAnteriores: new { status = statusAnt },
+                dadosNovos: new { status = pedido.Status, motivo = "Prazo de 30 minutos de reserva e pagamento expirou." },
+                usuarioResponsavel: "Sistema - Expiracao de Reserva",
+                cancellationToken: cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
         }
     }
 }

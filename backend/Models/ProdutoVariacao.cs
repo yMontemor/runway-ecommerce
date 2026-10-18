@@ -15,4 +15,5 @@ public class ProdutoVariacao
     public Estoque? Estoque { get; set; }
 
     public ICollection<ItemPedido> ItensPedido { get; set; } = new List<ItemPedido>();
+    public ICollection<ItemCarrinho> ItensCarrinho { get; set; } = new List<ItemCarrinho>();
 }

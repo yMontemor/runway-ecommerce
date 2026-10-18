@@ -15,11 +15,13 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<RunWay.Api.Services.IClienteService, RunWay.Api.Services.ClienteService>();
 builder.Services.AddScoped<RunWay.Api.Services.IBandeiraService, RunWay.Api.Services.BandeiraService>();
 builder.Services.AddScoped<RunWay.Api.Services.IAuditoriaService, RunWay.Api.Services.AuditoriaService>();
+builder.Services.AddScoped<RunWay.Api.Services.ICarrinhoService, RunWay.Api.Services.CarrinhoService>();
 builder.Services.AddScoped<RunWay.Api.Services.IProdutoService, RunWay.Api.Services.ProdutoService>();
 builder.Services.AddScoped<RunWay.Api.Services.IFreteService, RunWay.Api.Services.FreteService>();
 builder.Services.AddScoped<RunWay.Api.Services.ICupomService, RunWay.Api.Services.CupomService>();
 builder.Services.AddScoped<RunWay.Api.Services.IPagamentoService, RunWay.Api.Services.PagamentoService>();
 builder.Services.AddScoped<RunWay.Api.Services.IPedidoService, RunWay.Api.Services.PedidoService>();
+builder.Services.AddScoped<RunWay.Api.Services.ITrocaService, RunWay.Api.Services.TrocaService>();
 
 builder.Services.AddCors(options =>
 {

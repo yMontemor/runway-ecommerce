@@ -80,7 +80,8 @@ export const produtoService = {
   },
 
   async validarEstoque(
-    itens: { produtoVariacaoId: number; quantidade: number }[]
+    itens: { produtoVariacaoId: number; quantidade: number }[],
+    codigoCliente?: string
   ): Promise<ValidacaoEstoqueResponse> {
     const response = await fetch(`${API_BASE_URL}/api/produtos/validar-estoque`, {
       method: 'POST',
@@ -88,7 +89,7 @@ export const produtoService = {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      body: JSON.stringify({ itens })
+      body: JSON.stringify({ codigoCliente, itens })
     });
 
     if (!response.ok) {
