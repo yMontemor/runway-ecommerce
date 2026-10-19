@@ -57,6 +57,7 @@ export default function CustomerArea() {
   } = useApp();
 
   const [addressToRemove, setAddressToRemove] = useState<Address | null>(null);
+  const [isRemovingAddr, setIsRemovingAddr] = useState(false);
 
   useEffect(() => {
     if (activeCustomer?.id) {
@@ -485,6 +486,27 @@ export default function CustomerArea() {
       setAddrModalError('Erro inesperado ao salvar endereço.');
     } finally {
       setIsSavingAddr(false);
+    }
+  };
+
+  const handleConfirmRemoveAddress = async () => {
+    if (!addressToRemove) return;
+    setIsRemovingAddr(true);
+    try {
+      const res = await removeCustomerAddress(activeCustomer.id, addressToRemove.id);
+      if (res.success) {
+        setToastMessage('Endereço removido com sucesso!');
+        setToastType('success');
+        setAddressToRemove(null);
+      } else {
+        setToastMessage(res.error || 'Erro ao remover endereço.');
+        setToastType('error');
+      }
+    } catch (err: any) {
+      setToastMessage(err.message || 'Erro ao remover endereço.');
+      setToastType('error');
+    } finally {
+      setIsRemovingAddr(false);
     }
   };
 
@@ -973,6 +995,20 @@ export default function CustomerArea() {
                         >
                           Editar
                         </button>
+                        {activeCustomer.addresses.length > 1 && (
+                          <>
+                            <span style={{ color: 'var(--color-border)', fontSize: '0.75rem' }}>|</span>
+                            <button
+                              type="button"
+                              onClick={() => setAddressToRemove(addr)}
+                              className="btn-edit-link"
+                              style={{ color: 'var(--color-danger)' }}
+                              data-cy="endereco-remover-btn"
+                            >
+                              Remover
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                     <p className="addr-txt" data-cy="endereco-logradouro-txt">
@@ -1726,7 +1762,11 @@ export default function CustomerArea() {
       {/* MODAL: Confirmação de Remoção de Endereço */}
       <Modal
         isOpen={!!addressToRemove}
-        onClose={() => setAddressToRemove(null)}
+        onClose={() => {
+          if (!isRemovingAddr) {
+            setAddressToRemove(null);
+          }
+        }}
         title="Remover endereço?"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -1740,6 +1780,7 @@ export default function CustomerArea() {
             <button
               type="button"
               className="btn btn-secondary"
+              disabled={isRemovingAddr}
               onClick={() => setAddressToRemove(null)}
             >
               CANCELAR
@@ -1748,14 +1789,11 @@ export default function CustomerArea() {
               type="button"
               className="btn btn-primary"
               style={{ backgroundColor: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
-              onClick={() => {
-                if (addressToRemove) {
-                  removeCustomerAddress(activeCustomer.id, addressToRemove.id);
-                  setAddressToRemove(null);
-                }
-              }}
+              disabled={isRemovingAddr}
+              onClick={handleConfirmRemoveAddress}
+              data-cy="confirmar-remocao-endereco"
             >
-              REMOVER ENDEREÇO
+              {isRemovingAddr ? 'REMOVENDO...' : 'REMOVER ENDEREÇO'}
             </button>
           </div>
         </div>

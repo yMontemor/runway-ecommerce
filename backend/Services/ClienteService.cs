@@ -874,6 +874,103 @@ public class ClienteService : IClienteService
     }
 
     /// <summary>
+    /// RF0026 / RN0021 / RN0022 / RN0026: Exclui um endereço cadastrado do cliente,
+    /// garantindo que o cliente mantenha pelo menos um endereço residencial, um de entrega e um de cobrança.
+    /// </summary>
+    public async Task RemoverEnderecoAsync(
+        string codigoCliente,
+        int enderecoId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(codigoCliente))
+        {
+            throw new ValidationException("O código do cliente é obrigatório para exclusão de endereço.");
+        }
+
+        var cliente = await _context.Clientes
+            .Include(c => c.Enderecos)
+            .FirstOrDefaultAsync(c => c.Codigo == codigoCliente.Trim(), cancellationToken);
+
+        if (cliente is null)
+        {
+            throw new NotFoundException($"Cliente com código '{codigoCliente}' não foi encontrado.");
+        }
+
+        var endereco = cliente.Enderecos.FirstOrDefault(e => e.Id == enderecoId);
+        if (endereco is null)
+        {
+            throw new NotFoundException($"Endereço com identificador '{enderecoId}' não foi encontrado para o cliente informado.");
+        }
+
+        if (cliente.Enderecos.Count <= 1)
+        {
+            throw new ValidationException("O cliente deve manter pelo menos um endereço cadastrado.");
+        }
+
+        // Integridade RN0022: Cliente deve manter pelo menos um endereço de entrega
+        if (endereco.Entrega && !cliente.Enderecos.Any(e => e.Id != enderecoId && e.Entrega))
+        {
+            throw new ValidationException("O cliente deve possuir pelo menos um endereço de entrega cadastrado. (RN0022)");
+        }
+
+        // Integridade RN0021: Cliente deve manter pelo menos um endereço de cobrança
+        if (endereco.Cobranca && !cliente.Enderecos.Any(e => e.Id != enderecoId && e.Cobranca))
+        {
+            throw new ValidationException("O cliente deve possuir pelo menos um endereço de cobrança cadastrado. (RN0021)");
+        }
+
+        // Integridade RN0026: Cliente deve manter pelo menos um endereço residencial
+        if (endereco.Residencial && !cliente.Enderecos.Any(e => e.Id != enderecoId && e.Residencial))
+        {
+            throw new ValidationException("O cliente deve possuir pelo menos um endereço residencial cadastrado. (RN0026)");
+        }
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        // Desvincular de pedidos históricos para não violar a foreign key restritiva fk_pedido_endereco_entrega
+        // (os pedidos possuem snapshot imutável com todos os 11 campos de endereço da entrega preservados)
+        var pedidosComEndereco = await _context.Pedidos
+            .Where(p => p.EnderecoEntregaId == endereco.Id)
+            .ToListAsync(cancellationToken);
+
+        foreach (var pedido in pedidosComEndereco)
+        {
+            pedido.EnderecoEntregaId = null;
+        }
+
+        // RNF0012: Auditoria da exclusão do endereço
+        await _auditoriaService.RegistrarAsync(
+            entidade: "ENDERECO",
+            registroId: endereco.Id.ToString(),
+            operacao: "EXCLUSAO",
+            dadosAnteriores: new
+            {
+                clienteCodigo = cliente.Codigo,
+                nome = endereco.Nome,
+                tipoResidencia = endereco.TipoResidencia,
+                tipoLogradouro = endereco.TipoLogradouro,
+                logradouro = endereco.Logradouro,
+                numero = endereco.Numero,
+                complemento = endereco.Complemento,
+                bairro = endereco.Bairro,
+                cep = endereco.Cep,
+                cidade = endereco.Cidade,
+                estado = endereco.Estado,
+                pais = endereco.Pais,
+                residencial = endereco.Residencial,
+                entrega = endereco.Entrega,
+                cobranca = endereco.Cobranca
+            },
+            dadosNovos: null,
+            usuarioResponsavel: "ADMIN",
+            cancellationToken: cancellationToken);
+
+        _context.Enderecos.Remove(endereco);
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// RN0023: Validação de campos obrigatórios de endereço.
     /// </summary>
     private static void ValidarDadosEndereco(EnderecoRequestDto endDto, int? pos = null)

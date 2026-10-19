@@ -232,6 +232,33 @@ public class ClientesController : ControllerBase
     }
 
     /// <summary>
+    /// RF0026 / RN0021 / RN0022 / RN0026: Exclui um endereço cadastrado do cliente.
+    /// </summary>
+    [HttpDelete("{codigo}/enderecos/{enderecoId:int}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RemoverEndereco(
+        [FromRoute] string codigo,
+        [FromRoute] int enderecoId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _clienteService.RemoverEnderecoAsync(codigo, enderecoId, cancellationToken);
+            return Ok(new { mensagem = "Endereço removido com sucesso." });
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { erro = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { erro = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// RF0027: Lista os cartões de crédito cadastrados de um cliente pelo seu código único.
     /// </summary>
     [HttpGet("{codigo}/cartoes")]

@@ -12,6 +12,7 @@ import {
   cadastrarCliente,
   cadastrarEnderecoCliente,
   alterarEnderecoCliente,
+  removerEnderecoCliente,
   listarEnderecosCliente,
   listarCartoesCliente,
   cadastrarCartaoCliente,
@@ -110,7 +111,7 @@ interface AppContextType {
   addCustomerAddress: (customerId: string, address: Omit<Address, 'id'>) => Promise<{ success: boolean; error?: string; address?: Address }>;
   updateCustomerAddress: (customerId: string, address: Address) => Promise<{ success: boolean; error?: string; address?: Address }>;
   refreshCustomerAddresses: (customerId: string) => Promise<void>;
-  removeCustomerAddress: (customerId: string, addressId: string) => void;
+  removeCustomerAddress: (customerId: string, addressId: string) => Promise<{ success: boolean; error?: string }>;
   refreshCustomerCards: (customerId: string) => Promise<void>;
   addCustomerCard: (customerId: string, card: CartaoCreateRequestDto) => Promise<{ success: boolean; error?: string; card?: CreditCard }>;
   updateCustomerCard: (customerId: string, card: CreditCard) => void;
@@ -1042,20 +1043,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { success: false, error: result.error };
   };
 
-  const removeCustomerAddress = (customerId: string, addressId: string) => {
-    setCustomers(prev =>
-      prev.map(c => {
-        if (c.id === customerId) {
-          // Proteção do protótipo: impede remoção se restar apenas 1 endereço
-          if (c.addresses.length <= 1) return c;
-          return {
-            ...c,
-            addresses: c.addresses.filter(a => a.id !== addressId)
-          };
-        }
-        return c;
-      })
-    );
+  const removeCustomerAddress = async (
+    customerId: string,
+    addressId: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const result = await removerEnderecoCliente(customerId, addressId);
+      if (result.success) {
+        setCustomers(prev =>
+          prev.map(c => {
+            if (c.id === customerId) {
+              return {
+                ...c,
+                addresses: c.addresses.filter(a => a.id !== addressId)
+              };
+            }
+            return c;
+          })
+        );
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao remover endereço.' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Falha de comunicação ao remover endereço.' };
+    }
   };
 
   const addCustomerCard = async (

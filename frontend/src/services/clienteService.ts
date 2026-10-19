@@ -657,6 +657,55 @@ export async function alterarEnderecoCliente(
   }
 }
 
+/**
+ * RF0026: Exclui um endereço cadastrado do cliente.
+ */
+export async function removerEnderecoCliente(
+  codigoCliente: string,
+  enderecoId: string | number
+): Promise<{ success: boolean; error?: string; mensagem?: string }> {
+  try {
+    const rawId = typeof enderecoId === 'string' ? enderecoId.replace('addr_', '') : enderecoId.toString();
+    const numericId = parseInt(rawId, 10);
+
+    if (isNaN(numericId)) {
+      return {
+        success: false,
+        error: 'Identificador de endereço inválido.'
+      };
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/clientes/${encodeURIComponent(codigoCliente)}/enderecos/${numericId}`,
+      {
+        method: 'DELETE'
+      }
+    );
+
+    if (response.ok) {
+      return {
+        success: true,
+        mensagem: 'Endereço removido com sucesso.'
+      };
+    }
+
+    if (response.status === 400 || response.status === 404) {
+      const errorMsg = await extractErrorMessage(response, 'Não foi possível remover o endereço.');
+      return { success: false, error: errorMsg };
+    }
+
+    return {
+      success: false,
+      error: 'Não foi possível remover o endereço no momento.'
+    };
+  } catch {
+    return {
+      success: false,
+      error: 'Não foi possível conectar ao servidor para remover o endereço.'
+    };
+  }
+}
+
 export interface BandeiraResponseDto {
   id: number;
   nome: string;

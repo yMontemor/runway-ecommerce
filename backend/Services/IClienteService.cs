@@ -21,6 +21,8 @@ public interface IClienteService
 
     Task<EnderecoResponseDto> AlterarEnderecoAsync(string codigoCliente, int enderecoId, EnderecoRequestDto request, CancellationToken cancellationToken = default);
 
+    Task RemoverEnderecoAsync(string codigoCliente, int enderecoId, CancellationToken cancellationToken = default);
+
     Task<List<CartaoResponseDto>> ListarCartoesAsync(string codigoCliente, CancellationToken cancellationToken = default);
 
     Task<CartaoResponseDto> AdicionarCartaoAsync(string codigoCliente, CartaoCreateRequestDto request, CancellationToken cancellationToken = default);
