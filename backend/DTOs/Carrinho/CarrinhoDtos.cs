@@ -54,6 +54,7 @@ public class CarrinhoResponseDto
     public decimal Subtotal { get; set; }
     public List<ItemCarrinhoResponseDto> Itens { get; set; } = new();
     public List<ItemExpiradoResponseDto> ItensExpirados { get; set; } = new();
+    public List<string> AvisosEstoque { get; set; } = new();
 }
 
 public class ExpiracaoCarrinhoResponseDto

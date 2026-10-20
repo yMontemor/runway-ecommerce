@@ -49,6 +49,7 @@ export interface CartExpiracaoState {
   expirado: boolean;
   mensagemExpiracao: string | null;
   itensExpirados: ItemExpiradoDto[];
+  avisosEstoque?: string[];
 }
 
 interface AppContextType {
@@ -60,6 +61,7 @@ interface AppContextType {
   cartsByCustomer: Record<string, CartItem[]>;
   cartExpiracao: CartExpiracaoState;
   limparAvisoExpiracao: () => void;
+  limparAvisosEstoque: () => void;
   refreshCart: (customerId?: string) => Promise<void>;
   orders: Order[];
   isLoadingOrders: boolean;
@@ -205,7 +207,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     alertaExpirando: false,
     expirado: false,
     mensagemExpiracao: null,
-    itensExpirados: []
+    itensExpirados: [],
+    avisosEstoque: []
   });
 
   // Cupons reais carregados do PostgreSQL
@@ -451,12 +454,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
           [targetId]: mapped
         }));
 
-        setCartExpiracao({
-          tempoRestanteSegundos: res.carrinho.tempoRestanteSegundos,
-          alertaExpirando: res.carrinho.alertaExpirando,
-          expirado: res.carrinho.expirado,
-          mensagemExpiracao: res.carrinho.mensagemExpiracao || null,
-          itensExpirados: res.carrinho.itensExpirados || []
+        setCartExpiracao(prev => {
+          const isExpired = res.carrinho!.expirado || prev.expirado;
+          const itensExpirados = (res.carrinho!.itensExpirados && res.carrinho!.itensExpirados.length > 0)
+            ? res.carrinho!.itensExpirados
+            : prev.itensExpirados;
+          const avisosEstoque = (res.carrinho!.avisosEstoque && res.carrinho!.avisosEstoque.length > 0)
+            ? res.carrinho!.avisosEstoque
+            : prev.avisosEstoque;
+
+          return {
+            tempoRestanteSegundos: res.carrinho!.tempoRestanteSegundos,
+            alertaExpirando: res.carrinho!.alertaExpirando,
+            expirado: isExpired,
+            mensagemExpiracao: res.carrinho!.mensagemExpiracao || prev.mensagemExpiracao,
+            itensExpirados,
+            avisosEstoque
+          };
         });
       }
     } catch (err) {
@@ -510,6 +524,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const limparAvisosEstoque = () => {
+    setCartExpiracao(prev => ({
+      ...prev,
+      avisosEstoque: []
+    }));
+  };
+
   // Adicionar produto ao carrinho do cliente ativo com reserva persistida no backend
   const addToCart = async (productId: string, size: number, quantity: number, variacaoId?: number) => {
     if (!activeCustomer.id || isLoadingCustomers) {
@@ -546,7 +567,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           alertaExpirando: res.carrinho.alertaExpirando,
           expirado: res.carrinho.expirado,
           mensagemExpiracao: res.carrinho.mensagemExpiracao || null,
-          itensExpirados: res.carrinho.itensExpirados || []
+          itensExpirados: res.carrinho.itensExpirados || [],
+          avisosEstoque: res.carrinho.avisosEstoque || []
         });
 
         carregarProdutos();
@@ -612,7 +634,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           alertaExpirando: res.carrinho.alertaExpirando,
           expirado: res.carrinho.expirado,
           mensagemExpiracao: res.carrinho.mensagemExpiracao || null,
-          itensExpirados: res.carrinho.itensExpirados || []
+          itensExpirados: res.carrinho.itensExpirados || [],
+          avisosEstoque: res.carrinho.avisosEstoque || []
         });
 
         carregarProdutos();
@@ -676,7 +699,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           alertaExpirando: res.carrinho.alertaExpirando,
           expirado: res.carrinho.expirado,
           mensagemExpiracao: res.carrinho.mensagemExpiracao || null,
-          itensExpirados: res.carrinho.itensExpirados || []
+          itensExpirados: res.carrinho.itensExpirados || [],
+          avisosEstoque: res.carrinho.avisosEstoque || []
         });
 
         carregarProdutos();
@@ -703,7 +727,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           alertaExpirando: false,
           expirado: false,
           mensagemExpiracao: null,
-          itensExpirados: []
+          itensExpirados: [],
+          avisosEstoque: []
         });
 
         carregarProdutos();
@@ -1183,6 +1208,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         cartsByCustomer,
         cartExpiracao,
         limparAvisoExpiracao,
+        limparAvisosEstoque,
         refreshCart,
         orders,
         isLoadingOrders,

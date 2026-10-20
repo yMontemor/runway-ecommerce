@@ -23,6 +23,8 @@ public class CarrinhoService : ICarrinhoService
         _tempoExpiracaoProcessamentoMinutos = _configuration.GetValue<int>("Pedido:TempoExpiracaoProcessamentoMinutos", 30);
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, List<ItemExpiradoResponseDto>> _ultimosItensExpiradosPorCarrinho = new();
+
     public async Task<CarrinhoResponseDto> ObterCarrinhoAsync(string codigoCliente, CancellationToken cancellationToken = default)
     {
         var cliente = await ObterClienteValidoAsync(codigoCliente, cancellationToken);
@@ -35,24 +37,35 @@ public class CarrinhoService : ICarrinhoService
         }
 
         // Verificar expiração automática por timestamp (RN0044 / RN0045 / RNF0042)
-        if (carrinho.DataExpiracao <= DateTimeOffset.UtcNow && carrinho.Itens.Count > 0)
+        if (carrinho.DataExpiracao <= DateTimeOffset.UtcNow)
         {
-            var itensExpirados = carrinho.Itens.Select(i => new ItemExpiradoResponseDto
+            List<ItemExpiradoResponseDto> itensExpirados;
+            if (carrinho.Itens.Count > 0)
             {
-                ProdutoVariacaoId = i.ProdutoVariacaoId,
-                NomeProduto = i.ProdutoVariacao.Produto.Nome,
-                Tamanho = i.ProdutoVariacao.Tamanho,
-                Quantidade = i.Quantidade,
-                PrecoUnitario = i.ProdutoVariacao.Produto.Preco,
-                ImagemUrl = i.ProdutoVariacao.Produto.ImagemUrl,
-                Motivo = $"Reserva temporária expirada após {_tempoExpiracaoMinutos} minutos de inatividade."
-            }).ToList();
+                itensExpirados = carrinho.Itens.Select(i => new ItemExpiradoResponseDto
+                {
+                    ProdutoVariacaoId = i.ProdutoVariacaoId,
+                    NomeProduto = i.ProdutoVariacao.Produto.Nome,
+                    Tamanho = i.ProdutoVariacao.Tamanho,
+                    Quantidade = i.Quantidade,
+                    PrecoUnitario = i.ProdutoVariacao.Produto.Preco,
+                    ImagemUrl = i.ProdutoVariacao.Produto.ImagemUrl,
+                    Motivo = $"Reserva temporária expirada após {_tempoExpiracaoMinutos} minutos de inatividade."
+                }).ToList();
 
-            // Liberar itens do carrinho expirado
-            _context.ItensCarrinho.RemoveRange(carrinho.Itens);
-            carrinho.Itens.Clear();
-            carrinho.DataAtualizacao = DateTimeOffset.UtcNow;
-            await _context.SaveChangesAsync(cancellationToken);
+                _ultimosItensExpiradosPorCarrinho[carrinho.Id] = itensExpirados;
+
+                // Liberar itens do carrinho expirado
+                _context.ItensCarrinho.RemoveRange(carrinho.Itens);
+                carrinho.Itens.Clear();
+                carrinho.DataAtualizacao = DateTimeOffset.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            else
+            {
+                _ultimosItensExpiradosPorCarrinho.TryGetValue(carrinho.Id, out itensExpirados);
+                itensExpirados ??= new List<ItemExpiradoResponseDto>();
+            }
 
             var dtoExpirado = MapearParaDto(carrinho, codigoCliente);
             dtoExpirado.Expirado = true;
@@ -63,7 +76,55 @@ public class CarrinhoService : ICarrinhoService
             return dtoExpirado;
         }
 
-        return MapearParaDto(carrinho, codigoCliente);
+        // RN0032: Revalidação de estoque na consulta do carrinho.
+        // Se houver alteração real de estoque entre a montagem do carrinho e a finalização,
+        // o backend ajusta automaticamente as quantidades, remove itens indisponíveis
+        // e retorna avisos claros ao cliente.
+        var avisosEstoque = new List<string>();
+        bool houveAjusteEstoque = false;
+        var itensParaRemover = new List<ItemCarrinho>();
+
+        foreach (var item in carrinho.Itens.ToList())
+        {
+            int estoqueDisponivel = await CalcularDisponibilidadeInternalAsync(
+                item.ProdutoVariacaoId,
+                cliente.Id,
+                cancellationToken);
+
+            string nomeProd = item.ProdutoVariacao?.Produto?.Nome ?? "Produto";
+            int tam = item.ProdutoVariacao?.Tamanho ?? 0;
+
+            if (estoqueDisponivel <= 0)
+            {
+                itensParaRemover.Add(item);
+                avisosEstoque.Add($"O produto '{nomeProd}' (Tam: {tam}) foi removido do carrinho por estar esgotado no estoque.");
+                houveAjusteEstoque = true;
+            }
+            else if (item.Quantidade > estoqueDisponivel)
+            {
+                int qtdAnterior = item.Quantidade;
+                item.Quantidade = estoqueDisponivel;
+                avisosEstoque.Add($"A quantidade de '{nomeProd}' (Tam: {tam}) foi ajustada automaticamente de {qtdAnterior} para {estoqueDisponivel} un. devido à disponibilidade de estoque.");
+                houveAjusteEstoque = true;
+            }
+        }
+
+        if (itensParaRemover.Count > 0)
+        {
+            _context.ItensCarrinho.RemoveRange(itensParaRemover);
+            foreach (var rem in itensParaRemover)
+            {
+                carrinho.Itens.Remove(rem);
+            }
+        }
+
+        if (houveAjusteEstoque)
+        {
+            carrinho.DataAtualizacao = DateTimeOffset.UtcNow;
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        return MapearParaDto(carrinho, codigoCliente, avisosEstoque);
     }
 
     public async Task<CarrinhoResponseDto> AdicionarItemAsync(
@@ -185,6 +246,8 @@ public class CarrinhoService : ICarrinhoService
             // RN0044: O prazo deve considerar a inclusão do último item no carrinho
             carrinho.DataAtualizacao = agora;
             carrinho.DataExpiracao = agora.AddMinutes(_tempoExpiracaoMinutos);
+
+            _ultimosItensExpiradosPorCarrinho.TryRemove(carrinho.Id, out _);
 
             await _context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -324,12 +387,17 @@ public class CarrinhoService : ICarrinhoService
             .Include(c => c.Itens)
             .FirstOrDefaultAsync(c => c.ClienteId == cliente.Id, cancellationToken);
 
-        if (carrinho != null && carrinho.Itens.Count > 0)
+        if (carrinho != null)
         {
-            _context.ItensCarrinho.RemoveRange(carrinho.Itens);
-            carrinho.Itens.Clear();
-            carrinho.DataAtualizacao = DateTimeOffset.UtcNow;
-            await _context.SaveChangesAsync(cancellationToken);
+            _ultimosItensExpiradosPorCarrinho.TryRemove(carrinho.Id, out _);
+
+            if (carrinho.Itens.Count > 0)
+            {
+                _context.ItensCarrinho.RemoveRange(carrinho.Itens);
+                carrinho.Itens.Clear();
+                carrinho.DataAtualizacao = DateTimeOffset.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
         }
 
         return CriarCarrinhoVazioDto(codigoCliente);
@@ -474,10 +542,10 @@ public class CarrinhoService : ICarrinhoService
             .Include(c => c.Cliente);
     }
 
-    private CarrinhoResponseDto MapearParaDto(Carrinho carrinho, string codigoCliente)
+    private CarrinhoResponseDto MapearParaDto(Carrinho carrinho, string codigoCliente, List<string>? avisosEstoque = null)
     {
         var agora = DateTimeOffset.UtcNow;
-        bool expirado = carrinho.DataExpiracao <= agora && carrinho.Itens.Count > 0;
+        bool expirado = carrinho.DataExpiracao <= agora;
         int segundosRestantes = (carrinho.Itens.Count == 0 || expirado)
             ? 0
             : Math.Max(0, (int)(carrinho.DataExpiracao - agora).TotalSeconds);
@@ -510,9 +578,11 @@ public class CarrinhoService : ICarrinhoService
             TempoRestanteSegundos = segundosRestantes,
             AlertaExpirando = alertaExpirando,
             Expirado = expirado,
+            MensagemExpiracao = expirado ? $"Seu carrinho expirou por inatividade após {_tempoExpiracaoMinutos} minutos e as reservas de estoque foram liberadas." : null,
             QuantidadeTotalItens = itensDto.Sum(i => i.Quantidade),
             Subtotal = itensDto.Sum(i => i.Subtotal),
-            Itens = itensDto
+            Itens = itensDto,
+            AvisosEstoque = avisosEstoque ?? new List<string>()
         };
     }
 

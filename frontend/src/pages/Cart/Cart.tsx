@@ -11,6 +11,8 @@ export default function Cart() {
     cartsByCustomer, 
     cartExpiracao, 
     limparAvisoExpiracao, 
+    limparAvisosEstoque,
+    refreshCart,
     updateCartQuantity, 
     removeFromCart, 
     validarEstoqueCarrinho 
@@ -61,6 +63,10 @@ export default function Cart() {
       setIsInactiveModalOpen(true);
       return;
     }
+    if (cartExpiracao.expirado) {
+      setCheckoutError('A reserva do seu carrinho expirou por inatividade. Não é possível finalizar a compra com reserva expirada.');
+      return;
+    }
     if (cartItems.length === 0) return;
 
     setCheckoutError(null);
@@ -69,7 +75,10 @@ export default function Cart() {
     try {
       const validacao = await validarEstoqueCarrinho();
       if (!validacao.valido) {
-        setCheckoutError(validacao.mensagem || 'Há itens com estoque insuficiente no carrinho.');
+        // RN0032: quando houver mudança real de estoque entre a montagem do carrinho e a finalização da compra,
+        // o backend orienta o ajuste através do refreshCart (que chama ObterCarrinhoAsync e ajusta / remove itens indisponíveis).
+        await refreshCart(activeCustomer.id);
+        setCheckoutError(validacao.mensagem || 'Houve alteração no estoque disponível. Seu carrinho foi ajustado automaticamente.');
         return;
       }
       navigate('/checkout');
@@ -135,6 +144,54 @@ export default function Cart() {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Banner de ajuste de estoque (RN0032) */}
+        {cartExpiracao.avisosEstoque && cartExpiracao.avisosEstoque.length > 0 && (
+          <div 
+            className="cart-stock-adjustment-notice" 
+            data-cy="cart-stock-adjustment-notice"
+            style={{
+              padding: '1rem 1.25rem',
+              marginBottom: '1.25rem',
+              backgroundColor: 'rgba(234, 179, 8, 0.12)',
+              border: '1px solid #eab308',
+              borderRadius: '8px',
+              color: '#facc15'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h4 style={{ margin: 0, color: '#eab308', fontSize: '1rem', fontWeight: 700 }}>
+                  ⚠️ Atualização de Estoque no Carrinho
+                </h4>
+                <p style={{ margin: '0.35rem 0 0.5rem 0', fontSize: '0.88rem', color: '#e2e8f0' }}>
+                  Houve alteração no estoque dos itens durante sua navegação. Seu carrinho foi ajustado automaticamente:
+                </p>
+                <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                  {cartExpiracao.avisosEstoque.map((aviso, idx) => (
+                    <li key={idx} style={{ marginBottom: '0.2rem' }}>{aviso}</li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                type="button"
+                onClick={limparAvisosEstoque}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  fontSize: '1.2rem',
+                  padding: '0 0.25rem'
+                }}
+                title="Fechar aviso"
+                data-cy="btn-close-stock-adjustment"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         )}
 
@@ -309,11 +366,12 @@ export default function Cart() {
                 <button 
                   type="button" 
                   className="btn btn-primary checkout-btn" 
-                  disabled={isValidatingCheckout}
+                  disabled={isValidatingCheckout || cartExpiracao.expirado}
                   onClick={handleCheckoutClick}
                   data-cy="btn-cart-checkout"
+                  title={cartExpiracao.expirado ? 'Reserva expirada' : undefined}
                 >
-                  {isValidatingCheckout ? 'VERIFICANDO ESTOQUE...' : 'FINALIZAR COMPRA'}
+                  {isValidatingCheckout ? 'VERIFICANDO ESTOQUE...' : cartExpiracao.expirado ? 'RESERVA EXPIRADA' : 'FINALIZAR COMPRA'}
                 </button>
                 
                 <Link to="/catalogo" className="continue-shopping">
@@ -324,16 +382,41 @@ export default function Cart() {
 
           </div>
         ) : (
-          <div className="empty-cart-state">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#444', marginBottom: '1rem' }}>
-              <circle cx="9" cy="21" r="1"></circle>
-              <circle cx="20" cy="21" r="1"></circle>
-              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
-            </svg>
-            <p>Seu carrinho está vazio.</p>
-            <Link to="/catalogo" className="btn btn-primary" style={{ marginTop: '1rem' }}>
-              IR PARA O CATÁLOGO
-            </Link>
+          <div className="empty-cart-state" data-cy="cart-empty-state">
+            {cartExpiracao.expirado || (cartExpiracao.itensExpirados && cartExpiracao.itensExpirados.length > 0) ? (
+              <div style={{ maxWidth: '420px', margin: '0 auto', textAlign: 'center' }}>
+                <p style={{ color: '#ef4444', fontWeight: 600, marginBottom: '1rem' }}>
+                  Carrinho expirado por inatividade. As reservas foram liberadas.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary checkout-btn"
+                  disabled={true}
+                  style={{ opacity: 0.5, cursor: 'not-allowed', width: '100%', marginBottom: '1rem' }}
+                  data-cy="btn-cart-checkout"
+                  title="Reserva expirada - adicione os itens novamente"
+                >
+                  FINALIZAR COMPRA
+                </button>
+                <div>
+                  <Link to="/catalogo" className="btn btn-secondary">
+                    VOLTAR AO CATÁLOGO
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#444', marginBottom: '1rem' }}>
+                  <circle cx="9" cy="21" r="1"></circle>
+                  <circle cx="20" cy="21" r="1"></circle>
+                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                </svg>
+                <p>Seu carrinho está vazio.</p>
+                <Link to="/catalogo" className="btn btn-primary" style={{ marginTop: '1rem' }}>
+                  IR PARA O CATÁLOGO
+                </Link>
+              </>
+            )}
           </div>
         )}
       </div>

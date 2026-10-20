@@ -1123,11 +1123,11 @@ export default function CustomerArea() {
                           {relatedExchanges.length > 0 && (
                             <div className="order-related-exchanges" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.35rem' }}>
                               {relatedExchanges.map(exc => (
-                                <div key={exc.id} className="order-exchange-status-box" style={{ padding: '0.5rem 0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.02)', borderRadius: '6px', border: '1px solid #222' }}>
+                                <div key={exc.id} className="order-exchange-status-box" data-cy={`order-exchange-card-${exc.id}`} style={{ padding: '0.5rem 0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.02)', borderRadius: '6px', border: '1px solid #222' }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div>
                                       <span className="exc-tag-label" style={{ fontWeight: 600, color: '#ccc' }}>Troca {exc.id}:</span>
-                                      <span className={`order-status-tag ${exc.status.replace(/\s+/g, '_').toLowerCase()}`} style={{ marginLeft: '0.4rem' }}>
+                                      <span className={`order-status-tag ${exc.status.replace(/\s+/g, '_').toLowerCase()}`} data-cy={`customer-exchange-status-${exc.id}`} style={{ marginLeft: '0.4rem' }}>
                                         {exc.status}
                                       </span>
                                     </div>
@@ -1140,14 +1140,14 @@ export default function CustomerArea() {
 
                                   {/* Notificação de autorização */}
                                   {exc.notificacaoCliente && (
-                                    <div className="exchange-notif-box" style={{ marginTop: '0.35rem', fontSize: '0.8rem', padding: '0.35rem 0.5rem', borderRadius: '4px', background: 'rgba(57, 255, 20, 0.08)', border: '1px solid rgba(57, 255, 20, 0.2)', color: 'var(--color-primary)' }}>
+                                    <div className="exchange-notif-box" data-cy={`exchange-notif-${exc.id}`} style={{ marginTop: '0.35rem', fontSize: '0.8rem', padding: '0.35rem 0.5rem', borderRadius: '4px', background: 'rgba(57, 255, 20, 0.08)', border: '1px solid rgba(57, 255, 20, 0.2)', color: 'var(--color-primary)' }}>
                                       📢 {exc.notificacaoCliente}
                                     </div>
                                   )}
 
                                   {/* Cupom gerado */}
                                   {(exc.status === 'TROCADO' || exc.status === 'TROCA PROCESSADA') && (
-                                    <div className="refund-coupon-hint" style={{ marginTop: '0.35rem' }}>
+                                    <div className="refund-coupon-hint" data-cy={`customer-exchange-coupon-${exc.id}`} style={{ marginTop: '0.35rem' }}>
                                       Cupom gerado: <strong>{exc.refundCouponCode || exc.codigoCupom || 'Gerado'}</strong>
                                     </div>
                                   )}

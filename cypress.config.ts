@@ -40,6 +40,9 @@ export default defineConfig({
 
             const ts = Date.now();
             const cupomResto5 = `CY-RESTO5-${ts}`;
+            const cupomPromoResto5 = `CY-PROMO5-${ts}`;
+            const cupomTrocaA = `CY-TROCA-A-${ts}`;
+            const cupomTrocaB = `CY-TROCA-B-${ts}`;
             const cupomSobra = `CY-SOBRA-${ts}`;
             const cupomMenor = `CY-MENOR-${ts}`;
             const cupomMaior = `CY-MAIOR-${ts}`;
@@ -51,7 +54,23 @@ export default defineConfig({
               [cupomResto5, targetClienteId]
             );
 
-            // Inserir cupom de troca para excedente (R$ 600,00 para compra de R$ 469,90, excedente de R$ 130,10)
+            // Inserir cupom PROMOCIONAL para residual de R$ 5,00 (Cenário 3 obrigatório)
+            await client.query(
+              `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'PROMOCIONAL', 464.90, NULL)`,
+              [cupomPromoResto5]
+            );
+
+            // Inserir par de cupons de troca (R$ 300,00 cada = R$ 600,00 para compra de R$ 469,90, excedente de R$ 130,10 - Cenário 4 obrigatório)
+            await client.query(
+              `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 300.00, $2)`,
+              [cupomTrocaA, targetClienteId]
+            );
+            await client.query(
+              `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 300.00, $2)`,
+              [cupomTrocaB, targetClienteId]
+            );
+
+            // Inserir cupom de troca para excedente único (R$ 600,00 para compra de R$ 469,90, excedente de R$ 130,10)
             await client.query(
               `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 600.00, $2)`,
               [cupomSobra, targetClienteId]
@@ -73,7 +92,7 @@ export default defineConfig({
               [cupomSuperfluo, targetClienteId]
             );
 
-            return { cupomResto5, cupomSobra, cupomMenor, cupomMaior, cupomSuperfluo };
+            return { cupomResto5, cupomPromoResto5, cupomTrocaA, cupomTrocaB, cupomSobra, cupomMenor, cupomMaior, cupomSuperfluo };
           } finally {
             await client.end();
           }
@@ -138,11 +157,167 @@ export default defineConfig({
 
           await client.connect();
           try {
+            // Cancelar pedidos EM PROCESSAMENTO de clientes de teste (CLI-%) que contenham esta variação
+            // para não inflar artificialmente pedidosEmProcessamento na fórmula do estoque disponível
+            await client.query(`
+              UPDATE "PEDIDO"
+              SET status = 'CANCELADA'
+              WHERE status = 'EM PROCESSAMENTO'
+                AND cliente_id IN (SELECT id FROM "CLIENTE" WHERE codigo LIKE 'CLI-%')
+                AND id IN (SELECT pedido_id FROM "ITEM_PEDIDO" WHERE produto_variacao_id = $1)
+            `, [variacaoId]);
+
+            // Atualizar estoque físico no banco
             await client.query(
               `UPDATE "ESTOQUE" SET quantidade = $1 WHERE produto_variacao_id = $2`,
               [quantidade, variacaoId]
             );
             return true;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async obterEstoqueVariacao({ variacaoId }: { variacaoId: number }) {
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: process.env.PGDATABASE || 'runway'
+          });
+
+          await client.connect();
+          try {
+            const res = await client.query(
+              `SELECT quantidade FROM "ESTOQUE" WHERE produto_variacao_id = $1`,
+              [variacaoId]
+            );
+            return res.rows[0]?.quantidade !== undefined ? Number(res.rows[0].quantidade) : null;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async expirarCarrinhoCliente({ clienteCodigo }: { clienteCodigo: string }) {
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: process.env.PGDATABASE || 'runway'
+          });
+
+          await client.connect();
+          try {
+            await client.query(`
+              UPDATE "CARRINHO"
+              SET dt_expiracao = NOW() - INTERVAL '1 minute'
+              WHERE cliente_id = (SELECT id FROM "CLIENTE" WHERE codigo = $1)
+            `, [clienteCodigo]);
+            return true;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async obterPedidoPorCodigo({ codigoPedido }: { codigoPedido: string }) {
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: process.env.PGDATABASE || 'runway'
+          });
+
+          await client.connect();
+          try {
+            const res = await client.query(
+              'SELECT id, codigo, status, valor_total as "valorTotal", subtotal, valor_frete as "valorFrete" FROM "PEDIDO" WHERE codigo = $1',
+              [codigoPedido]
+            );
+            return res.rows[0] || null;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async obterTrocaPorCodigo({ codigoTroca }: { codigoTroca: string }) {
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: process.env.PGDATABASE || 'runway'
+          });
+
+          await client.connect();
+          try {
+            const res = await client.query(`
+              SELECT t.id, t.codigo, t.status, t.tipo, t.valor_total as "valorTotal",
+                     t.retornou_ao_estoque as "retornouAoEstoque", t.cupom_id as "cupomId",
+                     t.notificacao_cliente as "notificacaoCliente",
+                     c.codigo as "cupomCodigo", c.valor as "cupomValor", c.tipo as "cupomTipo"
+              FROM "TROCA" t
+              LEFT JOIN "CUPOM" c ON c.id = t.cupom_id
+              WHERE t.codigo = $1
+            `, [codigoTroca]);
+            return res.rows[0] || null;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async obterPagamentoCupom({ cupomCodigo, pedidoCodigo }: { cupomCodigo: string; pedidoCodigo?: string }) {
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: process.env.PGDATABASE || 'runway'
+          });
+
+          await client.connect();
+          try {
+            let sql = `
+              SELECT pp.id, pp.pedido_id as "pedidoId", pp.forma_pagamento as "formaPagamento",
+                     pp.valor, pp.cupom_id as "cupomId", c.codigo as "cupomCodigo", p.codigo as "pedidoCodigo"
+              FROM "PAGAMENTO_PEDIDO" pp
+              JOIN "CUPOM" c ON c.id = pp.cupom_id
+              JOIN "PEDIDO" p ON p.id = pp.pedido_id
+              WHERE c.codigo = $1
+            `;
+            const params: any[] = [cupomCodigo];
+            if (pedidoCodigo) {
+              sql += ' AND p.codigo = $2';
+              params.push(pedidoCodigo);
+            }
+            const res = await client.query(sql, params);
+            return res.rows[0] || null;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async gerarCupomTrocaParaCenario11({ clienteCodigo }: { clienteCodigo: string }) {
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: process.env.PGDATABASE || 'runway'
+          });
+
+          await client.connect();
+          try {
+            const clienteRes = await client.query('SELECT id FROM "CLIENTE" WHERE codigo = $1', [clienteCodigo]);
+            const clienteId = clienteRes.rows[0]?.id;
+            const codigoCupom = `TROCA-CY11-${Date.now().toString().slice(-6)}`;
+            await client.query(
+              `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 449.90, $2)`,
+              [codigoCupom, clienteId]
+            );
+            return codigoCupom;
           } finally {
             await client.end();
           }

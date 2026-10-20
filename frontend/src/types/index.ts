@@ -428,6 +428,7 @@ export interface CarrinhoResponseDto {
   subtotal: number;
   itens: ItemCarrinhoDto[];
   itensExpirados: ItemExpiradoDto[];
+  avisosEstoque?: string[];
 }
 
 export interface ExpiracaoCarrinhoResponseDto {

@@ -23,18 +23,6 @@ export default function AdminExchanges() {
     }
   };
 
-  const handleRejectExchange = async (id: string) => {
-    setActionLoadingId(id);
-    setErrorMessage(null);
-    try {
-      await updateExchangeStatus(id, 'TROCA RECUSADA');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Erro ao recusar solicitação de troca');
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
   const handleConfirmReceiptClick = (exc: Exchange) => {
     setSelectedExchange(exc);
     setIsStockModalOpen(true);
@@ -139,26 +127,15 @@ export default function AdminExchanges() {
                 <td>
                   <div className="admin-exchange-actions">
                     {(exc.status === 'EM TROCA' || exc.status === 'TROCA SOLICITADA') && (
-                      <>
-                        <button
-                          onClick={() => handleAcceptExchange(exc.id)}
-                          className="btn btn-primary btn-small btn-status-delivered"
-                          type="button"
-                          disabled={actionLoadingId === exc.id}
-                          data-cy={`btn-aceitar-troca-${exc.id}`}
-                        >
-                          {actionLoadingId === exc.id ? 'PROCESSANDO...' : 'ACEITAR'}
-                        </button>
-                        <button
-                          onClick={() => handleRejectExchange(exc.id)}
-                          className="btn btn-secondary btn-small btn-danger-border"
-                          type="button"
-                          disabled={actionLoadingId === exc.id}
-                          data-cy={`btn-recusar-troca-${exc.id}`}
-                        >
-                          NEGAR
-                        </button>
-                      </>
+                      <button
+                        onClick={() => handleAcceptExchange(exc.id)}
+                        className="btn btn-primary btn-small btn-status-delivered"
+                        type="button"
+                        disabled={actionLoadingId === exc.id}
+                        data-cy={`btn-aceitar-troca-${exc.id}`}
+                      >
+                        {actionLoadingId === exc.id ? 'PROCESSANDO...' : 'ACEITAR'}
+                      </button>
                     )}
                     {(exc.status === 'TROCA AUTORIZADA' || exc.status === 'TROCA ACEITA' || exc.status === 'ITEM ENVIADO' || exc.status === 'ITEM RECEBIDO') && (
                       <button

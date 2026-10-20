@@ -4,7 +4,6 @@
     "lib": ["es2020", "dom"],
     "types": ["cypress"],
     "moduleResolution": "bundler",
-    "ignoreDeprecations": "6.0",
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

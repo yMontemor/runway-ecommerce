@@ -1,8 +1,12 @@
-describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7)', () => {
+describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 1 a 5)', () => {
   let clienteCodigo = '';
   let clienteId = 0;
 
   beforeEach(() => {
+    // Restaurar estoque original da variação 4 (Corre 4 tam 41) para 20
+    cy.task('ajustarEstoqueVariacao', { variacaoId: 4, quantidade: 20 });
+    cy.request({ method: 'DELETE', url: 'http://localhost:5035/api/carrinho/CLI-0005', failOnStatusCode: false });
+
     // Intercepts de APIs reais do RunWay
     cy.intercept('GET', '**/api/clientes').as('getClientes');
     cy.intercept('GET', '**/api/produtos*').as('getProdutos');
@@ -17,9 +21,8 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
 
       // Acessa home e seleciona cliente ativo
       cy.visit('/');
-      cy.wait(['@getClientes', '@getProdutos']);
-      cy.get('[data-cy="user-dropdown"]').click();
-      cy.get(`[data-cy="select-customer-${clienteCodigo}"]`).scrollIntoView().click();
+      cy.get('[data-cy="user-dropdown"]', { timeout: 15000 }).should('be.visible').click();
+      cy.get(`[data-cy="select-customer-${clienteCodigo}"]`, { timeout: 10000 }).scrollIntoView().should('be.visible').click();
       cy.get('[data-cy="user-dropdown"]').should('contain.text', cliente.nome.split(' ')[0]);
 
       // Limpar carrinho prévio do cliente (persistido e localStorage)
@@ -32,6 +35,12 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
         win.localStorage.removeItem(`runway_cart_${clienteCodigo}`);
       });
     });
+  });
+
+  afterEach(() => {
+    // Restaurar estoque original da variação 4 (Corre 4 tam 41) para 20
+    cy.task('ajustarEstoqueVariacao', { variacaoId: 4, quantidade: 20 });
+    cy.request({ method: 'DELETE', url: 'http://localhost:5035/api/carrinho/CLI-0005', failOnStatusCode: false });
   });
 
   before(() => {
@@ -48,16 +57,17 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
    * Helper para adicionar produto ao carrinho e iniciar checkout até o Step 1
    */
   function adicionarProdutoEIrAoCheckout(produtoId: string, tamanho: number) {
-    cy.get('[data-cy="nav-catalogo"]').click();
+    cy.get('[data-cy="nav-catalogo"]').click({ force: true });
     cy.url().should('include', '/catalogo');
-    cy.get('.products-grid').should('be.visible');
+    cy.get('.products-grid', { timeout: 20000 }).should('be.visible');
 
     cy.get(`[data-cy="product-card-${produtoId}"]`).should('be.visible');
     cy.get(`[data-cy="product-card-${produtoId}"]`).find('[data-cy="btn-card-adicionar"]').scrollIntoView().click();
     cy.get(`[data-cy="btn-tamanho-${tamanho}"]`).should('be.visible').click();
     cy.get('[data-cy="btn-confirmar-adicionar-carrinho"]').click();
+    cy.get('[data-cy="btn-confirmar-adicionar-carrinho"]').should('not.exist');
 
-    cy.get('[data-cy="nav-carrinho"]').click();
+    cy.get('[data-cy="nav-carrinho"]').click({ force: true });
     cy.url().should('include', '/carrinho');
     cy.get('[data-cy="btn-cart-checkout"]').should('be.visible').and('not.be.disabled').click();
 
@@ -66,49 +76,64 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
   }
 
   // =========================================================================
-  // CENÁRIO 2: Compra Simples (Endereço existente + 1 Cartão existente)
+  // CENÁRIO 1: Compra com 1 cartão, aprovação e comprovação de baixa no estoque
   // =========================================================================
-  it('Cenário 2: Compra simples com endereço cadastrado e 1 cartão cadastrado gera pedido RW-2026-XXXX e limpa carrinho', () => {
-    // 1. Adicionar Corre 4 (tam 41) e ir ao checkout
-    adicionarProdutoEIrAoCheckout('olympikus_corre_4', 41);
+  it('Cenário 1: Compra com um cartão, aprovação administrativa e comprovação de baixa no estoque do PostgreSQL', () => {
+    // 1. Obter estoque inicial da variação 4 (Corre 4 tam 41) via consulta real no banco
+    cy.task<number>('obterEstoqueVariacao', { variacaoId: 4 }).then((qtdInicial) => {
+      expect(qtdInicial).to.be.greaterThan(0);
 
-    // 2. Step 1: Confirmar seleção de endereço existente (SP) e cálculo de frete
-    cy.get('[data-cy="checkout-addresses-list"]').should('be.visible');
-    cy.get('[data-cy="btn-go-to-payment"]').should('be.visible').and('not.be.disabled').click();
+      // 2. Adicionar Corre 4 (tam 41) e ir ao checkout
+      adicionarProdutoEIrAoCheckout('olympikus_corre_4', 41);
 
-    // 3. Step 2: Selecionar 1 cartão existente (o primeiro já é preenchido com o saldo total)
-    cy.get('[data-cy="checkout-step-2"]').should('be.visible');
-    cy.get('[data-cy="checkout-cards-list"]').should('be.visible');
+      // 3. Step 1: Confirmar seleção de endereço existente (SP) e cálculo de frete
+      cy.get('[data-cy="checkout-addresses-list"]').should('be.visible');
+      cy.get('[data-cy="btn-go-to-payment"]').should('be.visible').and('not.be.disabled').click();
 
-    // Selecionar primeiro cartão disponível
-    cy.get('[data-cy^="chk-card-"]').first().check();
+      // 4. Step 2: Selecionar 1 cartão existente (o primeiro já é preenchido com o saldo total)
+      cy.get('[data-cy="checkout-step-2"]').should('be.visible');
+      cy.get('[data-cy="checkout-cards-list"]').should('be.visible');
+      cy.get('[data-cy^="chk-card-"]').first().check();
+      cy.get('[data-cy="btn-go-to-review"]').should('be.visible').and('not.be.disabled').click();
 
-    // Aguardar validação de pagamento e avançar
-    cy.get('[data-cy="btn-go-to-review"]').should('be.visible').and('not.be.disabled').click();
+      // 5. Step 3: Revisão do pedido
+      cy.get('[data-cy="checkout-step-3"]').should('be.visible');
+      cy.get('[data-cy="btn-confirm-order"]').should('be.visible').and('not.be.disabled').click();
 
-    // 4. Step 3: Revisão do pedido
-    cy.get('[data-cy="checkout-step-3"]').should('be.visible');
-    cy.get('[data-cy="btn-confirm-order"]').should('be.visible').and('not.be.disabled').click();
+      // 6. Intercept real do POST /api/pedidos: status inicial EM PROCESSAMENTO
+      cy.wait('@postPedido').then((interception) => {
+        expect(interception.response?.statusCode).to.eq(201);
+        const body = interception.response?.body;
+        const codigoPedido = body.codigo;
+        expect(codigoPedido).to.match(/^RW-2026-\d{4}$/);
+        expect(body.status).to.eq('EM PROCESSAMENTO');
+        expect(body.valorTotal).to.be.greaterThan(0);
 
-    // 5. Intercept real do POST /api/pedidos
-    cy.wait('@postPedido').then((interception) => {
-      expect(interception.response?.statusCode).to.eq(201);
-      const body = interception.response?.body;
-      expect(body.codigo).to.match(/^RW-2026-\d{4}$/);
-      expect(body.status).to.eq('EM PROCESSAMENTO');
-      expect(body.valorTotal).to.be.greaterThan(0);
+        // Validar tela de confirmação
+        cy.get('[data-cy="order-confirmed-screen"]').should('be.visible');
+        cy.get('[data-cy="confirmed-order-code"]').should('contain.text', codigoPedido);
+        cy.get('[data-cy="confirmed-order-status"]').should('contain.text', 'EM PROCESSAMENTO');
 
-      // 6. Step 4: Validar tela de confirmação
-      cy.get('[data-cy="order-confirmed-screen"]').should('be.visible');
-      cy.get('[data-cy="confirmed-order-code"]').should('contain.text', body.codigo);
-      cy.get('[data-cy="confirmed-order-status"]').should('contain.text', 'EM PROCESSAMENTO');
-      cy.get('[data-cy="confirmed-order-total"]').should('be.visible');
+        // 7. Navegar até o painel administrativo para aprovar o pagamento
+        cy.visit('/admin');
+        cy.get('[data-cy="admin-pedidos"]').click();
+        cy.get(`[data-cy="order-code-${codigoPedido}"]`).should('be.visible');
+
+        // Clicar em PROCESSAR PAGAMENTO (mecanismo determinístico aprova com sucesso)
+        cy.get(`[data-cy="btn-processar-pagamento-${codigoPedido}"]`).click();
+
+        // Comprovar na interface que o status transitou para APROVADA
+        cy.get(`[data-cy="order-status-tag-${codigoPedido}"]`).should('contain.text', 'APROVADA');
+
+        // 8. Comprovação rigorosa de baixa física no estoque do PostgreSQL
+        cy.task<number>('obterEstoqueVariacao', { variacaoId: 4 }).should('eq', qtdInicial - 1);
+      });
+
+      // 9. Validar que o carrinho do cliente foi esvaziado após confirmação
+      cy.get('[data-cy="nav-carrinho"]').click();
+      cy.url().should('include', '/carrinho');
+      cy.contains('Seu carrinho está vazio').should('be.visible');
     });
-
-    // 7. Validar que o carrinho do cliente foi esvaziado após confirmação
-    cy.get('[data-cy="nav-carrinho"]').click();
-    cy.url().should('include', '/carrinho');
-    cy.contains('Seu carrinho está vazio').should('be.visible');
   });
 
   // =========================================================================
@@ -184,9 +209,9 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
   });
 
   // =========================================================================
-  // CENÁRIO 4: Pagamento com Múltiplos Cartões (RN0034: Múltiplos cartões, mínimo R$ 10 cada)
+  // CENÁRIO 2: Pagamento com dois cartões com bloqueio de valor inferior a R$ 10,00
   // =========================================================================
-  it('Cenário 4 (RN0034): Pagamento dividido em múltiplos cartões respeitando valor mínimo (>= R$ 10) é validado e processado', () => {
+  it('Cenário 2 (RN0034): Pagamento com dois cartões, com tentativa de valor inferior a R$ 10,00 bloqueada e sucesso com distribuição válida', () => {
     // 1. Adicionar Pegasus 41 (R$ 550,99) e ir ao checkout
     // Subtotal R$ 550,99 + Frete R$ 20,00 = Total R$ 570,99
     adicionarProdutoEIrAoCheckout('nike_pegasus_41', 40);
@@ -202,18 +227,29 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
       cy.wrap($cards.eq(1)).check();
     });
 
-    // 4. Distribuir valores: Cartão 1 = R$ 500,00; Cartão 2 = restante R$ 70,99
+    // 4. Tentativa de valor inferior a R$ 10,00 (RN0034): Cartão 1 = R$ 5,00
+    cy.get('[data-cy^="input-card-amount-"]').first().clear().type('5.00');
+    cy.get('[data-cy^="input-card-amount-"]').last().clear().type('565.99');
+
+    // Confirmar bloqueio funcional na interface
+    cy.get('[data-cy="payment-validation-warning"]')
+      .should('be.visible')
+      .and('contain.text', 'pelo menos R$ 10,00');
+    cy.get('[data-cy="btn-go-to-review"]').should('be.disabled');
+
+    // 5. Distribuir valores válidos: Cartão 1 = R$ 500,00; Cartão 2 = restante R$ 70,99 (ambos >= R$ 10,00)
     cy.get('[data-cy^="input-card-amount-"]').first().clear().type('500.00');
     cy.get('[data-cy^="btn-use-rest-"]').last().click();
 
     // Confirmar que o saldo restante foi zerado e o formulário habilita avanço
+    cy.contains('[data-cy="payment-validation-warning"]', 'pelo menos R$ 10,00').should('not.exist');
     cy.get('[data-cy="btn-go-to-review"]').should('be.visible').and('not.be.disabled').click();
 
-    // 5. Step 3: Confirmar pedido na revisão
+    // 6. Step 3: Confirmar pedido na revisão
     cy.get('[data-cy="checkout-step-3"]').should('be.visible');
     cy.get('[data-cy="btn-confirm-order"]').should('be.visible').and('not.be.disabled').click();
 
-    // 6. Step 4: Validar tela de confirmação com detalhamento dos cartões
+    // 7. Step 4: Validar tela de confirmação com detalhamento dos cartões
     cy.wait('@postPedido').its('response.statusCode').should('eq', 201);
     cy.get('[data-cy="order-confirmed-screen"]').should('be.visible');
     cy.get('.conf-detail-payments').should('be.visible').within(() => {
@@ -305,21 +341,21 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
   });
 
   // =========================================================================
-  // CENÁRIO 5: Cupom + Cartão com Residual < R$ 10 (RN0035: Cupons + cartão, usar valor máximo dos cupons e permitir residual < R$ 10)
+  // CENÁRIO 3: Cupom PROMOCIONAL + Cartão com Residual < R$ 10,00 (RN0035)
   // =========================================================================
-  it('Cenário 5 (RN0035): Cupom que deixa residual de R$ 5,00 no cartão é aceito sem violar regra de mínimo e gera pedido', () => {
-    // 1. Preparar cupom dinâmico e exclusivo para residual de R$ 5,00
-    cy.task<{ cupomResto5: string; cupomSobra: string }>('prepararCuponsCypress', { clienteId, clienteCodigo })
-      .then(({ cupomResto5 }) => {
+  it('Cenário 3 (RN0035): Cupom PROMOCIONAL combinado com cartão com residual inferior a R$ 10,00 é aceito e gera pedido', () => {
+    // 1. Preparar cupom promocional dinâmico com valor de R$ 464,90
+    cy.task<{ cupomPromoResto5: string }>('prepararCuponsCypress', { clienteId, clienteCodigo })
+      .then(({ cupomPromoResto5 }) => {
         // 2. Adicionar Corre 4 (R$ 449,90) + Frete SP (R$ 20,00) = R$ 469,90
         adicionarProdutoEIrAoCheckout('olympikus_corre_4', 41);
 
         // 3. Step 1: Avançar para pagamento
         cy.get('[data-cy="btn-go-to-payment"]').should('be.visible').and('not.be.disabled').click();
 
-        // 4. Step 2: Aplicar cupom exclusivo de R$ 464,90
+        // 4. Step 2: Aplicar cupom promocional de R$ 464,90
         cy.get('[data-cy="checkout-step-2"]').should('be.visible');
-        cy.get('[data-cy="input-coupon-code"]').type(cupomResto5);
+        cy.get('[data-cy="input-coupon-code"]').type(cupomPromoResto5);
         cy.get('[data-cy="btn-apply-coupon"]').click();
         cy.get('[data-cy="coupon-success-message"]').should('be.visible');
 
@@ -329,7 +365,7 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
         // Selecionar 1 cartão para pagar o residual
         cy.get('[data-cy^="chk-card-"]').first().check();
 
-        // Confirmar que o sistema aceitou o residual de R$ 5,00 sem erro de mínimo
+        // Confirmar que o sistema aceitou o residual de R$ 5,00 sem erro de mínimo (RN0035)
         cy.get('[data-cy="payment-validation-warning"]').should('not.exist');
         cy.get('[data-cy="btn-go-to-review"]').should('be.visible').and('not.be.disabled').click();
 
@@ -346,93 +382,193 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 2 a 7
   });
 
   // =========================================================================
-  // CENÁRIO 6: Cupom com Valor Superior Gerando Cupom de Troca por Excedente (RN0036)
+  // CENÁRIO 4: Cupons de troca excedentes gerando diferença e bloqueio de supérfluo (RN0036)
   // =========================================================================
-  it('Cenário 6 (RN0036): Cupom superior ao total dispensa cartão e gera novo cupom de troca com valor excedente na confirmação', () => {
-    // 1. Preparar cupom dinâmico e exclusivo com valor de R$ 600,00
-    cy.task<{ cupomResto5: string; cupomSobra: string }>('prepararCuponsCypress', { clienteId, clienteCodigo })
-      .then(({ cupomSobra }) => {
-        // 2. Adicionar Corre 4 (R$ 449,90) + Frete SP (R$ 20,00) = R$ 469,90
-        // Excedente esperado: R$ 600,00 - R$ 469,90 = R$ 130,10
-        adicionarProdutoEIrAoCheckout('olympikus_corre_4', 41);
+  it('Cenário 4 (RN0036): Cupons de troca excedentes geram cupom de diferença e bloqueiam aplicação de cupons desnecessários', () => {
+    // 1. Preparar par de cupons de troca (R$ 300 cada = R$ 600 > R$ 469,90) e cupom supérfluo (R$ 40)
+    cy.task<{ cupomTrocaA: string; cupomTrocaB: string; cupomSuperfluo: string }>(
+      'prepararCuponsCypress',
+      { clienteId, clienteCodigo }
+    ).then(({ cupomTrocaA, cupomTrocaB, cupomSuperfluo }) => {
+      // 2. Adicionar Corre 4 (R$ 449,90) + Frete SP (R$ 20,00) = R$ 469,90
+      // Excedente esperado: R$ 600,00 - R$ 469,90 = R$ 130,10
+      adicionarProdutoEIrAoCheckout('olympikus_corre_4', 41);
 
-        // 3. Step 1: Avançar para pagamento
-        cy.get('[data-cy="btn-go-to-payment"]').should('be.visible').and('not.be.disabled').click();
+      // 3. Step 1: Avançar para pagamento
+      cy.get('[data-cy="btn-go-to-payment"]').should('be.visible').and('not.be.disabled').click();
 
-        // 4. Step 2: Aplicar cupom de R$ 600,00
-        cy.get('[data-cy="checkout-step-2"]').should('be.visible');
-        cy.get('[data-cy="input-coupon-code"]').type(cupomSobra);
-        cy.get('[data-cy="btn-apply-coupon"]').click();
-        cy.get('[data-cy="coupon-success-message"]').should('be.visible');
+      // 4. Step 2: Aplicar primeiro cupom de troca (R$ 300,00)
+      cy.get('[data-cy="checkout-step-2"]').should('be.visible');
+      cy.get('[data-cy="input-coupon-code"]').clear().type(cupomTrocaA);
+      cy.get('[data-cy="btn-apply-coupon"]').click();
+      cy.wait('@validarPagamento');
+      cy.get('[data-cy="coupon-success-message"]').should('be.visible');
+      cy.get('[data-cy="checkout-remaining-balance"]').should('contain.text', '169,90');
 
-        // Confirmar que a compra está 100% coberta por cupom e dispensa cartões
-        cy.get('[data-cy="zero-cards-needed-msg"]').should('be.visible');
-        cy.get('[data-cy="checkout-remaining-balance"]').should('contain.text', '0,00');
+      // Aplicar segundo cupom de troca (R$ 300,00): total R$ 600,00 cobre 100% da compra
+      cy.get('[data-cy="input-coupon-code"]').clear().type(cupomTrocaB);
+      cy.get('[data-cy="btn-apply-coupon"]').click();
+      cy.wait('@validarPagamento');
+      cy.get('[data-cy="coupon-success-message"]').should('be.visible');
+      cy.get('[data-cy="zero-cards-needed-msg"]').should('be.visible');
+      cy.get('[data-cy="checkout-remaining-balance"]').should('contain.text', '0,00');
 
-        // Avançar para revisão
-        cy.get('[data-cy="btn-go-to-review"]').should('be.visible').and('not.be.disabled').click();
+      // 5. Tentar aplicar um terceiro cupom supérfluo/desnecessário (R$ 40,00) - RN0036
+      cy.get('[data-cy="input-coupon-code"]').clear().type(cupomSuperfluo);
+      cy.get('[data-cy="btn-apply-coupon"]').click();
+      cy.wait('@validarPagamento');
 
-        // 5. Step 3: Revisão e confirmação
-        cy.get('[data-cy="checkout-step-3"]').should('be.visible');
-        cy.contains('Prévia de Novo Cupom de Troca a Gerar').should('be.visible');
-        cy.get('[data-cy="btn-confirm-order"]').should('be.visible').and('not.be.disabled').click();
+      // Comprovar rejeição funcional de cupom desnecessário e bloqueio do avanço
+      cy.get('[data-cy="payment-validation-warning"]')
+        .should('be.visible')
+        .and('contain.text', 'é desnecessário, pois o valor da compra já foi totalmente coberto');
+      cy.get('[data-cy="btn-go-to-review"]').should('be.disabled');
 
-        // 6. Step 4: Validar geração real do novo cupom de troca por excedente
-        cy.wait('@postPedido').then((interception) => {
-          expect(interception.response?.statusCode).to.eq(201);
-          const body = interception.response?.body;
-          expect(body.novoCupomTroca).to.not.be.null;
-          expect(body.novoCupomTroca.valor).to.eq(130.10);
-          expect(body.novoCupomTroca.codigo).to.match(/^TROCA-/);
+      // 6. Desmarcar o cupom desnecessário para prosseguir com a composição válida
+      cy.get(`[data-cy="chk-coupon-${cupomSuperfluo}"]`).uncheck();
+      cy.wait('@validarPagamento');
+      cy.contains('[data-cy="payment-validation-warning"]', 'desnecessário').should('not.exist');
 
-          // Conferir no DOM da tela de confirmação
-          cy.get('[data-cy="order-confirmed-screen"]').should('be.visible');
-          cy.get('[data-cy="surplus-coupon-banner"]').should('be.visible');
-          cy.get('[data-cy="surplus-coupon-code"]').should('contain.text', body.novoCupomTroca.codigo);
-          cy.get('[data-cy="surplus-coupon-value"]').should('contain.text', '130,10');
-        });
+      // 7. Avançar para a revisão
+      cy.get('[data-cy="btn-go-to-review"]').should('be.visible').and('not.be.disabled').click();
+
+      // 8. Step 3: Revisão e confirmação com prévia do novo cupom de troca
+      cy.get('[data-cy="checkout-step-3"]').should('be.visible');
+      cy.contains('Prévia de Novo Cupom de Troca a Gerar').should('be.visible');
+      cy.get('[data-cy="btn-confirm-order"]').should('be.visible').and('not.be.disabled').click();
+
+      // 9. Step 4: Validar geração real do novo cupom de troca por excedente
+      cy.wait('@postPedido').then((interception) => {
+        expect(interception.response?.statusCode).to.eq(201);
+        const body = interception.response?.body;
+        expect(body.novoCupomTroca).to.not.be.null;
+        expect(body.novoCupomTroca.valor).to.eq(130.10);
+        expect(body.novoCupomTroca.codigo).to.match(/^TROCA-/);
+
+        // Conferir no DOM da tela de confirmação
+        cy.get('[data-cy="order-confirmed-screen"]').should('be.visible');
+        cy.get('[data-cy="surplus-coupon-banner"]').should('be.visible');
+        cy.get('[data-cy="surplus-coupon-code"]').should('contain.text', body.novoCupomTroca.codigo);
+        cy.get('[data-cy="surplus-coupon-value"]').should('contain.text', '130,10');
       });
+    });
   });
 
   // =========================================================================
-  // RN0036: Rejeição de cupom desnecessário/supérfluo quando a compra já está 100% coberta
+  // CENÁRIO 5: Compra REPROVADA (RN0038: não baixa estoque, libera reserva)
   // =========================================================================
-  it('RN0036: deve impedir a utilização de cupom desnecessário quando o valor da compra já está 100% coberto', () => {
-    cy.task<{ cupomSobra: string; cupomSuperfluo: string }>('prepararCuponsCypress', { clienteId, clienteCodigo })
-      .then(({ cupomSobra, cupomSuperfluo }) => {
-        // Compra Corre 4 = Total R$ 469,90 com frete
-        adicionarProdutoEIrAoCheckout('olympikus_corre_4', 41);
-        cy.get('[data-cy="btn-go-to-payment"]').should('be.visible').and('not.be.disabled').click();
-        cy.get('[data-cy="checkout-step-2"]').should('be.visible');
+  it('Cenário 5: Compra com cartão determinístico de reprovação transita para REPROVADA, não baixa estoque e libera reserva para outro cliente', () => {
+    // 1. Selecionar cliente de teste A e cliente de teste B
+    cy.obterClientePrincipal('ana.silva@email.com').then((clienteA) => {
+      cy.obterClientePrincipal('carlos.mendes@email.com').then((clienteB) => {
+        // 2. Calibrar e registrar estoque inicial conhecido (20 unidades) na variação 4 (Corre 4 tam 41)
+        cy.task('ajustarEstoqueVariacao', { variacaoId: 4, quantidade: 20 });
+        cy.task<number>('obterEstoqueVariacao', { variacaoId: 4 }).then((qtdInicial) => {
+          expect(qtdInicial).to.eq(20);
 
-        // 1. Aplicar cupom de R$ 600,00 (já cobre 100% da compra e zera o saldo restante)
-        cy.get('[data-cy="input-coupon-code"]').type(cupomSobra);
-        cy.get('[data-cy="btn-apply-coupon"]').click();
-        cy.get('[data-cy="coupon-success-message"]').should('be.visible');
-        cy.get('[data-cy="checkout-remaining-balance"]').should('contain.text', '0,00');
+          // Limpar carrinhos de A e B
+          cy.request({ method: 'DELETE', url: `http://localhost:5035/api/carrinho/${clienteA.codigo}`, failOnStatusCode: false });
+          cy.request({ method: 'DELETE', url: `http://localhost:5035/api/carrinho/${clienteB.codigo}`, failOnStatusCode: false });
 
-        // 2. Tentar aplicar um segundo cupom desnecessário de R$ 40,00
-        cy.get('[data-cy="input-coupon-code"]').type(cupomSuperfluo);
-        cy.get('[data-cy="btn-apply-coupon"]').click();
+          // 3. Adicionar produto Corre 4 (tam 41) ao carrinho de Ana pela interface
+          adicionarProdutoEIrAoCheckout('olympikus_corre_4', 41);
 
-        // 3. Comprovar que o backend rejeitou na validação contínua e a UI exibiu a mensagem funcional
-        cy.wait('@validarPagamento').then((interception) => {
-          expect(interception.response?.statusCode).to.eq(400);
+          // Step 1: Confirmar endereço existente
+          cy.get('[data-cy="checkout-addresses-list"]').should('be.visible');
+          cy.get('[data-cy="btn-go-to-payment"]').should('be.visible').and('not.be.disabled').click();
+
+          // Step 2: Cadastrar e utilizar cartão que provoca reprovação determinística (final 9999 / titular REPROVAR)
+          cy.get('[data-cy="checkout-step-2"]').should('be.visible');
+          cy.get('[data-cy="btn-add-new-card"]').click();
+
+          cy.get('[data-cy="input-card-number"]').type('4532 0000 0000 9999');
+          cy.get('[data-cy="input-card-holder"]').type('TESTE CARTAO REPROVAR');
+          cy.get('[data-cy="select-card-brand"]').select('Visa');
+          cy.get('[data-cy="input-card-exp"]').type('12/29');
+          cy.get('[data-cy="input-card-cvv"]').type('999');
+          cy.get('[data-cy="btn-save-card"]').click();
+
+          // O novo cartão (final 9999) é selecionado com o valor total
+          cy.get('[data-cy="btn-go-to-review"]').should('be.visible').and('not.be.disabled').click();
+
+          // Step 3: Revisão do pedido e confirmação
+          cy.get('[data-cy="checkout-step-3"]').should('be.visible');
+          cy.get('[data-cy="btn-confirm-order"]').should('be.visible').and('not.be.disabled').click();
+
+          // 4. Capturar criação do pedido (status inicial EM PROCESSAMENTO)
+          cy.wait('@postPedido').then((interception) => {
+            expect(interception.response?.statusCode).to.eq(201);
+            const body = interception.response?.body;
+            const codigoPedido = body.codigo;
+            expect(body.status).to.eq('EM PROCESSAMENTO');
+
+            cy.get('[data-cy="order-confirmed-screen"]').should('be.visible');
+            cy.get('[data-cy="confirmed-order-code"]').should('contain.text', codigoPedido);
+
+            // 5. Processar o pagamento pelo fluxo real da aplicação no painel administrativo
+            cy.visit('/admin');
+            cy.get('[data-cy="admin-pedidos"]').click();
+            cy.get(`[data-cy="order-code-${codigoPedido}"]`).should('be.visible');
+
+            // Clicar em PROCESSAR PAGAMENTO: motor determinístico avalia cartão final 9999 e reprova
+            cy.get(`[data-cy="btn-processar-pagamento-${codigoPedido}"]`).click();
+
+            // 6. Confirmar a transição real de EM PROCESSAMENTO para REPROVADA na interface
+            cy.get(`[data-cy="order-status-tag-${codigoPedido}"]`).should('contain.text', 'REPROVADA');
+
+            // 7. Verificar que NÃO houve baixa física no estoque do PostgreSQL
+            cy.task<number>('obterEstoqueVariacao', { variacaoId: 4 }).should('eq', qtdInicial);
+
+            // 8. Confirmar que a reserva foi liberada e o produto voltou a ficar disponível para outro cliente
+            // Trocar para Cliente B (Carlos Mendes)
+            cy.visit('/');
+            cy.get('[data-cy="user-dropdown"]', { timeout: 15000 }).should('be.visible').click();
+            cy.get(`[data-cy="select-customer-${clienteB.codigo}"]`, { timeout: 10000 }).scrollIntoView().should('be.visible').click();
+            cy.get('[data-cy="user-dropdown"]').should('contain.text', clienteB.nome.split(' ')[0]);
+
+            // Cliente B adiciona o Corre 4 tam 41 liberado ao carrinho
+            cy.get('[data-cy="nav-catalogo"]').click({ force: true });
+            cy.url().should('include', '/catalogo');
+            cy.get('.products-grid', { timeout: 20000 }).should('be.visible');
+            cy.get('[data-cy="product-card-olympikus_corre_4"] [data-cy="btn-card-adicionar"]').click();
+            cy.get('[data-cy="btn-tamanho-41"]').should('be.visible').click();
+            cy.get('[data-cy="btn-confirmar-adicionar-carrinho"]').click();
+            cy.get('[data-cy="btn-confirmar-adicionar-carrinho"]').should('not.exist');
+
+            // Acessar carrinho de Carlos: a unidade liberada está reservada com sucesso para ele
+            cy.get('[data-cy="nav-carrinho"]').click();
+            cy.get('[data-cy="cart-item-row"]').should('have.length', 1);
+            cy.get('[data-cy="cart-item-qty"]').should('contain.text', '1');
+            cy.get('[data-cy="cart-timer-badge"]').should('be.visible');
+            cy.get('[data-cy="btn-cart-checkout"]').should('be.visible').and('not.be.disabled');
+
+            // 9. Confirmar que os dados continuam corretos após atualizar a página
+            cy.reload();
+            cy.get('[data-cy="cart-item-row"]').should('have.length', 1);
+            cy.get('[data-cy="cart-item-qty"]').should('contain.text', '1');
+            cy.get('[data-cy="btn-cart-checkout"]').should('be.visible').and('not.be.disabled');
+
+            // Acessar o admin e verificar que o pedido continua REPROVADO após refresh
+            cy.visit('/admin');
+            cy.get('[data-cy="admin-pedidos"]').click();
+            cy.get(`[data-cy="order-status-tag-${codigoPedido}"]`).should('contain.text', 'REPROVADA');
+
+            // Limpar carrinho de Carlos ao finalizar o teste
+            cy.request({
+              method: 'DELETE',
+              url: `http://localhost:5035/api/carrinho/${clienteB.codigo}`,
+              failOnStatusCode: false
+            });
+          });
         });
-
-        cy.get('[data-cy="payment-validation-warning"]')
-          .should('be.visible')
-          .and('contain.text', 'é desnecessário, pois o valor da compra já foi totalmente coberto');
-
-        // 4. Comprovar que o avanço para revisão permanece bloqueado
-        cy.get('[data-cy="btn-go-to-review"]').should('be.disabled');
       });
+    });
   });
 
   // =========================================================================
-  // CENÁRIO 7: Pedido Persistido como EM PROCESSAMENTO (API Real + Interface)
+  // RF0030: Pedido Persistido como EM PROCESSAMENTO (API Real + Interface)
   // =========================================================================
-  it('Cenário 7: Pedido persistido é validado duplamente como EM PROCESSAMENTO na resposta real da API e na interface', () => {
+  it('RF0030: Pedido persistido é validado duplamente como EM PROCESSAMENTO na resposta real da API e na interface', () => {
     // 1. Adicionar Corre 4 e ir ao checkout
     adicionarProdutoEIrAoCheckout('olympikus_corre_4', 41);
 

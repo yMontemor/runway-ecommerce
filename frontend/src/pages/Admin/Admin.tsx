@@ -36,6 +36,7 @@ export default function Admin() {
           
           <button
             onClick={() => setActiveTab('pedidos')}
+            data-cy="admin-pedidos"
             className={`admin-nav-btn ${activeTab === 'pedidos' ? 'active' : ''}`}
             type="button"
           >
@@ -50,6 +51,7 @@ export default function Admin() {
           
           <button
             onClick={() => setActiveTab('trocas')}
+            data-cy="admin-trocas"
             className={`admin-nav-btn ${activeTab === 'trocas' ? 'active' : ''}`}
             type="button"
           >
@@ -80,6 +82,7 @@ export default function Admin() {
             onClick={() => navigate('/catalogo')}
             className="admin-nav-btn btn-exit-store"
             type="button"
+            data-cy="btn-admin-voltar-loja"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="nav-icon">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
