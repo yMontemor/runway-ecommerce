@@ -212,7 +212,9 @@ export default defineConfig({
           try {
             await client.query(`
               UPDATE "CARRINHO"
-              SET dt_expiracao = NOW() - INTERVAL '1 minute'
+              SET dt_criacao = NOW() - INTERVAL '25 minutes',
+                  dt_atualizacao = NOW() - INTERVAL '25 minutes',
+                  dt_expiracao = NOW() - INTERVAL '1 minute'
               WHERE cliente_id = (SELECT id FROM "CLIENTE" WHERE codigo = $1)
             `, [clienteCodigo]);
             return true;
