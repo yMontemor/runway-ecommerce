@@ -10,8 +10,14 @@ export default defineConfig({
     viewportHeight: 720,
     video: false,
     screenshotOnRunFailure: false,
+    env: {
+      RUNWAY_ADMIN_KEY: process.env.RUNWAY_ADMIN_KEY || process.env.CYPRESS_RUNWAY_ADMIN_KEY || ''
+    },
     setupNodeEvents(on, config) {
       on('task', {
+        obterAdminKey() {
+          return process.env.RUNWAY_ADMIN_KEY || process.env.CYPRESS_RUNWAY_ADMIN_KEY || '';
+        },
         async prepararCuponsCypress({ clienteId, clienteCodigo }: { clienteId?: number; clienteCodigo?: string }) {
           const client = new Client({
             host: process.env.PGHOST || 'localhost',
@@ -320,6 +326,66 @@ export default defineConfig({
               [codigoCupom, clienteId]
             );
             return codigoCupom;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async prepararMassaAnalise() {
+          const { validarConexaoSegura, limparMassaExistente, obterClienteDeterministo, validarVariacoesExistentes, inserirMassaAnalise } = require('./scripts/seed-massa-analise.js');
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: 'runway_test'
+          });
+          await client.connect();
+          try {
+            await validarConexaoSegura(client);
+            const { cliente, endereco, cartaoId } = await obterClienteDeterministo(client);
+            await validarVariacoesExistentes(client);
+            await limparMassaExistente(client);
+            await inserirMassaAnalise(client, { cliente, endereco, cartaoId });
+            return true;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async restaurarMassaAnalise() {
+          const { validarConexaoSegura, limparMassaExistente } = require('./scripts/seed-massa-analise.js');
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: 'runway_test'
+          });
+          await client.connect();
+          try {
+            await validarConexaoSegura(client);
+            const count = await limparMassaExistente(client);
+            return count;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async consultarTotaisMassaAnalise() {
+          const { validarConexaoSegura, consultarTotaisEsperados } = require('./scripts/seed-massa-analise.js');
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: 'runway_test'
+          });
+          await client.connect();
+          try {
+            await validarConexaoSegura(client);
+            const totais = await consultarTotaisEsperados(client);
+            return totais;
           } finally {
             await client.end();
           }

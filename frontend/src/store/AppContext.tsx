@@ -53,6 +53,10 @@ export interface CartExpiracaoState {
 }
 
 interface AppContextType {
+  activeProfile: 'CLIENTE' | 'ADMINISTRADOR';
+  setActiveProfile: (profile: 'CLIENTE' | 'ADMINISTRADOR') => void;
+  adminKey: string | null;
+  setAdminKey: (key: string | null) => void;
   customers: Customer[];
   activeCustomer: Customer;
   isLoadingCustomers: boolean;
@@ -154,6 +158,18 @@ function saveCustomerIdToStorage(id: string): void {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  // Cartão 04: Perfil ativo e chave de acesso administrativo sob demanda (em memória exclusivamente)
+  const [activeProfile, setActiveProfileState] = useState<'CLIENTE' | 'ADMINISTRADOR'>('CLIENTE');
+  const [adminKey, setAdminKey] = useState<string | null>(null);
+
+  const setActiveProfile = useCallback((profile: 'CLIENTE' | 'ADMINISTRADOR') => {
+    setActiveProfileState(profile);
+    if (profile === 'CLIENTE') {
+      // Regra 4: Descartar a chave temporária ao sair do modo administrador
+      setAdminKey(null);
+    }
+  }, []);
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [activeCustomerId, setActiveCustomerId] = useState<string>(() => {
     return getSavedCustomerId() || 'CLI-0001';
@@ -1200,6 +1216,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isLoadingProducts,
         productsLoadError,
         refreshProducts: carregarProdutos,
+        // Cartão 04: Perfil e chave administrativa
+        activeProfile,
+        setActiveProfile,
+        adminKey,
+        setAdminKey,
         customers,
         activeCustomer,
         isLoadingCustomers,

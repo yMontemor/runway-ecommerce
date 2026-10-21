@@ -22,6 +22,7 @@ builder.Services.AddScoped<RunWay.Api.Services.ICupomService, RunWay.Api.Service
 builder.Services.AddScoped<RunWay.Api.Services.IPagamentoService, RunWay.Api.Services.PagamentoService>();
 builder.Services.AddScoped<RunWay.Api.Services.IPedidoService, RunWay.Api.Services.PedidoService>();
 builder.Services.AddScoped<RunWay.Api.Services.ITrocaService, RunWay.Api.Services.TrocaService>();
+builder.Services.AddScoped<RunWay.Api.Services.IAnaliseService, RunWay.Api.Services.AnaliseService>();
 
 builder.Services.AddCors(options =>
 {

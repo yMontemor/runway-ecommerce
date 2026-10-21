@@ -6,11 +6,11 @@ import './Header.css';
 export default function Header() {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { customers, activeCustomer, setActiveCustomer, cartsByCustomer, toggleChatbot } = useApp();
+  const { customers, activeCustomer, setActiveCustomer, cartsByCustomer, toggleChatbot, activeProfile, setActiveProfile } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isAdmin = location.pathname.startsWith('/admin');
+  const isAdmin = activeProfile === 'ADMINISTRADOR' || location.pathname.startsWith('/admin');
 
   const currentCart = cartsByCustomer[activeCustomer.id] || [];
   const cartCount = currentCart.reduce((sum, item) => sum + item.quantity, 0);
@@ -31,14 +31,16 @@ export default function Header() {
   }, [showDropdown]);
 
   const handleCustomerSelect = (id: string) => {
+    setActiveProfile('CLIENTE');
     setActiveCustomer(id);
     setShowDropdown(false);
-    if (isAdmin) {
+    if (location.pathname.startsWith('/admin')) {
       navigate('/cliente');
     }
   };
 
   const handleAdminSelect = () => {
+    setActiveProfile('ADMINISTRADOR');
     navigate('/admin');
     setShowDropdown(false);
   };
@@ -193,6 +195,7 @@ export default function Header() {
                     <div className="dropdown-divider"></div>
                     <button
                       onClick={() => {
+                        setActiveProfile('CLIENTE');
                         navigate('/catalogo');
                         setShowDropdown(false);
                       }}

@@ -1,35 +1,56 @@
-import { useState } from 'react';
-import { mockAnalyticsData } from '../../../data/analytics';
-
-const CATEGORIES = ['TREINO DIÁRIO', 'LONGA DISTÂNCIA', 'VELOCIDADE', 'COMPETIÇÃO', 'TRAIL'];
-
-const MONTHS = [
-  { id: '2026-01', label: 'Jan/26', name: 'Jan' },
-  { id: '2026-02', label: 'Fev/26', name: 'Fev' },
-  { id: '2026-03', label: 'Mar/26', name: 'Mar' },
-  { id: '2026-04', label: 'Abr/26', name: 'Abr' },
-  { id: '2026-05', label: 'Mai/26', name: 'Mai' },
-  { id: '2026-06', label: 'Jun/26', name: 'Jun' },
-  { id: '2026-07', label: 'Jul/26', name: 'Jul' },
-  { id: '2026-08', label: 'Ago/26', name: 'Ago' },
-  { id: '2026-09', label: 'Set/26', name: 'Set' },
-  { id: '2026-10', label: 'Out/26', name: 'Out' },
-  { id: '2026-11', label: 'Nov/26', name: 'Nov' },
-  { id: '2026-12', label: 'Dez/26', name: 'Dez' }
-];
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useApp } from '../../../store/AppContext';
+import { analiseService } from '../../../services/analiseService';
+import type { AnaliseVendasResponseDto } from '../../../services/analiseService';
 
 const CATEGORY_COLORS: Record<string, string> = {
-  'TREINO DIÁRIO': 'var(--color-primary)', // verde neon
-  'LONGA DISTÂNCIA': '#3a86ff',           // azul
-  'VELOCIDADE': '#ff006e',                // rosa
-  'COMPETIÇÃO': '#8338ec',                // roxo
-  'TRAIL': '#ffbe0b'                      // amarelo/laranja
+  'TREINO DIÁRIO': 'var(--color-primary)', // Verde neon
+  'COMPETIÇÃO': '#ff9f40',                // Laranja vibrante
+  'LONGA DISTÂNCIA': '#3a86ff',           // Azul
+  'VELOCIDADE': '#ff006e',                // Rosa
+  'TRAIL': '#2ecc71'                      // Verde esmeralda
 };
 
+const DYNAMIC_PALETTE = ['#8338ec', '#00d2d3', '#ffbe0b', '#f368e0', '#54a0ff'];
+
+function formatMonthLabel(periodo: string): string {
+  if (!periodo || !periodo.includes('-')) return periodo;
+  const [ano, mes] = periodo.split('-');
+  const nomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  const idx = parseInt(mes, 10) - 1;
+  const anoCurto = ano.slice(-2);
+  return `${nomes[idx] || mes}/${anoCurto}`;
+}
+
+function formatCurrency(val: number): string {
+  return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function calcularMesesAbrangidos(dInicioStr: string, dFimStr: string): number {
+  if (!dInicioStr || !dFimStr) return 0;
+  const [y1, m1] = dInicioStr.split('-').map(Number);
+  const [y2, m2] = dFimStr.split('-').map(Number);
+  if (isNaN(y1) || isNaN(m1) || isNaN(y2) || isNaN(m2)) return 0;
+  return (y2 - y1) * 12 + (m2 - m1) + 1;
+}
+
 export default function AdminAnalytics() {
-  const [startMonth, setStartMonth] = useState('2026-01');
-  const [endMonth, setEndMonth] = useState('2026-12');
-  const [selectedCats, setSelectedCats] = useState<string[]>(CATEGORIES);
+  const { activeProfile, setActiveProfile, adminKey, setAdminKey, products, isLoadingProducts } = useApp();
+  const [inputKey, setInputKey] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  // Período padrão: Ano corrente (2026-01-01 a 2026-12-31, 12 meses)
+  const [startDate, setStartDate] = useState('2026-01-01');
+  const [endDate, setEndDate] = useState('2026-12-31');
+  const [selectedCats, setSelectedCats] = useState<string[]>([]);
+  const [catsInitialized, setCatsInitialized] = useState(false);
+
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [analiseData, setAnaliseData] = useState<AnaliseVendasResponseDto | null>(null);
+
   const [tooltip, setTooltip] = useState<{
     month: string;
     category: string;
@@ -38,11 +59,214 @@ export default function AdminAnalytics() {
     y: number;
   } | null>(null);
 
-  const startIdx = MONTHS.findIndex(m => m.id === startMonth);
-  const endIdx = MONTHS.findIndex(m => m.id === endMonth);
-  const isValidPeriod = startIdx <= endIdx;
+  const activeAbortRef = useRef<AbortController | null>(null);
 
-  const visibleMonths = isValidPeriod ? MONTHS.slice(startIdx, endIdx + 1) : [];
+  // Categorias canônicas extraídas exclusivamente do catálogo real de produtos (Condição 3)
+  const availableCategories = useMemo(() => {
+    const cats = new Set<string>();
+    products.forEach(p => {
+      if (p.category && p.category.trim().length > 0) {
+        cats.add(p.category.trim().toUpperCase());
+      }
+    });
+    return Array.from(cats).sort();
+  }, [products]);
+
+  // Inicializar seleção de categorias assim que os produtos do backend forem carregados
+  useEffect(() => {
+    if (!catsInitialized && availableCategories.length > 0) {
+      setSelectedCats(availableCategories);
+      setCatsInitialized(true);
+    }
+  }, [availableCategories, catsInitialized]);
+
+  // Função central de consulta à API
+  const fetchVendas = useCallback(async (start: string, end: string, cats: string[]) => {
+    if (!adminKey) return;
+
+    if (!start || !end) {
+      setValidationError('As datas inicial e final devem ser preenchidas.');
+      return;
+    }
+
+    if (start > end) {
+      setValidationError('A data final não pode ser anterior à data inicial (RF0056).');
+      return;
+    }
+
+    const meses = calcularMesesAbrangidos(start, end);
+    if (meses < 1 || meses > 24) {
+      setValidationError(`O período selecionado abrange ${meses} meses. O limite permitido é de 1 a 24 meses (RN0072).`);
+      return;
+    }
+
+    if (cats.length === 0) {
+      setValidationError('Selecione ao menos uma categoria para exibir no gráfico (RF0057).');
+      return;
+    }
+
+    setValidationError(null);
+    setApiError(null);
+
+    // Cancelar requisição anterior em andamento para evitar race conditions (Condição 13)
+    if (activeAbortRef.current) {
+      activeAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    activeAbortRef.current = abortController;
+
+    setIsLoading(true);
+
+    try {
+      const res = await analiseService.consultarVendas(
+        { dataInicio: start, dataFim: end, categorias: cats },
+        adminKey,
+        abortController.signal
+      );
+
+      if (abortController.signal.aborted) return;
+
+      if (res.sucesso && res.dados) {
+        setAnaliseData(res.dados);
+        setApiError(null);
+      } else {
+        if (res.statusCode === 401) {
+          // Credencial expirada ou revogada: descartar da memória e exibir desbloqueio (Condição 12)
+          setAdminKey(null);
+          setAuthError('Credencial administrativa inválida ou expirada (HTTP 401). Informe-a novamente.');
+        } else {
+          setApiError(res.mensagem || 'Erro ao consultar análise de vendas.');
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setApiError(err.message || 'Falha de comunicação com o servidor ao consultar análise.');
+      }
+    } finally {
+      if (!abortController.signal.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, [adminKey, setAdminKey]);
+
+  // Consulta automática inicial ao desbloquear o administrador e carregar as categorias
+  useEffect(() => {
+    if (adminKey && selectedCats.length > 0 && !analiseData && !isLoading) {
+      fetchVendas(startDate, endDate, selectedCats);
+    }
+  }, [adminKey, selectedCats, analiseData, isLoading, startDate, endDate, fetchVendas]);
+
+  // Limpeza ao desmontar
+  useEffect(() => {
+    return () => {
+      if (activeAbortRef.current) {
+        activeAbortRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Cartão 04 - Proteção Visual 1: Se o usuário estiver no perfil CLIENTE, bloquear visualização (RF0055)
+  if (activeProfile === 'CLIENTE') {
+    return (
+      <div className="admin-analytics-restricted" data-cy="analise-acesso-bloqueado-cliente">
+        <div className="restricted-card">
+          <div className="restricted-icon">🔒</div>
+          <h2>Acesso Restrito — Análise Gerencial (RF0055)</h2>
+          <p>
+            Este módulo contém informações financeiras e estratégicas de acesso exclusivo ao perfil <strong>Administrador</strong>.
+          </p>
+          <div className="restricted-badge">
+            Perfil Atual: <span className="tag-cliente">CLIENTE</span>
+          </div>
+          <p className="restricted-hint">
+            Para acessar a análise gerencial, alterne para o perfil Administrador:
+          </p>
+          <div className="restricted-actions">
+            <button
+              type="button"
+              onClick={() => setActiveProfile('ADMINISTRADOR')}
+              className="btn-unlock-profile"
+              data-cy="btn-alternar-admin"
+            >
+              Alternar para Perfil Administrador
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Cartão 04 - Proteção Visual 2: Se no modo ADMINISTRADOR mas sem chave informada em memória, solicitar credencial sob demanda
+  if (!adminKey) {
+    const handleDesbloquear = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!inputKey.trim()) {
+        setAuthError('Informe a credencial administrativa para desbloquear.');
+        return;
+      }
+      setIsVerifying(true);
+      setAuthError(null);
+      const res = await analiseService.validarAcesso(inputKey.trim());
+      setIsVerifying(false);
+
+      if (res.sucesso) {
+        setAdminKey(inputKey.trim());
+        setAuthError(null);
+      } else {
+        setAuthError(res.mensagem || 'Credencial administrativa inválida (HTTP 401).');
+      }
+    };
+
+    return (
+      <div className="admin-analytics-restricted" data-cy="analise-prompt-chave">
+        <div className="restricted-card">
+          <div className="restricted-icon">🛡️</div>
+          <h2>Autenticação Administrativa (RF0055)</h2>
+          <p>
+            Para visualizar a análise gerencial de vendas, informe a credencial administrativa configurada:
+          </p>
+          <form onSubmit={handleDesbloquear} className="unlock-form">
+            <input
+              type="password"
+              placeholder="Digite a chave administrativa..."
+              value={inputKey}
+              onChange={(e) => setInputKey(e.target.value)}
+              className="unlock-input"
+              data-cy="input-chave-admin"
+              autoFocus
+            />
+            {authError && (
+              <div className="unlock-error" data-cy="msg-erro-autenticacao">
+                {authError}
+              </div>
+            )}
+            <div className="unlock-actions">
+              <button
+                type="submit"
+                disabled={isVerifying}
+                className="btn-unlock-submit"
+                data-cy="btn-desbloquear-analise"
+              >
+                {isVerifying ? 'Validando no Servidor...' : 'Desbloquear Análise'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveProfile('CLIENTE');
+                  setInputKey('');
+                  setAuthError(null);
+                }}
+                className="btn-cancel-unlock"
+                data-cy="btn-voltar-cliente"
+              >
+                Voltar para Modo Cliente
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   const handleCategoryToggle = (cat: string) => {
     setSelectedCats(prev =>
@@ -50,190 +274,221 @@ export default function AdminAnalytics() {
     );
   };
 
-  // Encontrar o valor máximo para escala do eixo Y
-  let maxVolume = 10000;
-  if (isValidPeriod) {
-    visibleMonths.forEach(m => {
-      selectedCats.forEach(cat => {
-        const entry = mockAnalyticsData.find(d => d.date === m.id && d.category === cat);
-        if (entry && entry.salesVolume > maxVolume) {
-          maxVolume = entry.salesVolume;
-        }
-      });
-    });
-  }
-  
-  // Arredondar para o teto de 10.000 mais próximo
-  const yAxisMax = Math.ceil(maxVolume / 10000) * 10000;
+  const handleSelectAllCats = () => {
+    setSelectedCats([...availableCategories]);
+  };
 
-  // Dimensões do Gráfico SVG
+  const handleClearCats = () => {
+    setSelectedCats([]);
+  };
+
+  const handleConsultar = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchVendas(startDate, endDate, selectedCats);
+  };
+
+  // Cálculo da geometria do gráfico SVG baseado nos dados reais retornados
+  const periodos = analiseData?.periodos || [];
+  const series = analiseData?.series || [];
+
   const svgWidth = 780;
   const svgHeight = 360;
   const paddingLeft = 75;
   const paddingRight = 30;
   const paddingTop = 30;
   const paddingBottom = 40;
-  
+
   const chartWidth = svgWidth - paddingLeft - paddingRight;
   const chartHeight = svgHeight - paddingTop - paddingBottom;
 
-  // Geração de coordenadas para cada categoria
-  const categoryLines = selectedCats.map(cat => {
-    if (visibleMonths.length === 0) return { category: cat, points: [] };
-
-    const xSpacing = visibleMonths.length > 1 ? chartWidth / (visibleMonths.length - 1) : chartWidth;
-    
-    const points = visibleMonths.map((m, idx) => {
-      const x = paddingLeft + idx * xSpacing;
-      const entry = mockAnalyticsData.find(d => d.date === m.id && d.category === cat);
-      const val = entry ? entry.salesVolume : 0;
-      // Inverter coordenada Y para o SVG (0,0 no topo esquerdo)
-      const y = paddingTop + chartHeight - (val / yAxisMax) * chartHeight;
-      return { x, y, value: val, monthLabel: m.label, category: cat };
+  // Encontrar o maior valor pontual entre todas as séries retornadas para a escala vertical
+  let maxValorPontual = 0;
+  series.forEach(s => {
+    s.dados.forEach(d => {
+      if (d.valor > maxValorPontual) {
+        maxValorPontual = d.valor;
+      }
     });
-
-    return { category: cat, points };
   });
 
-  // Somatório Total do Volume de Vendas no Período Filtrado
-  const totalSales = mockAnalyticsData
-    .filter(d => {
-      const mIdx = MONTHS.findIndex(m => m.id === d.date);
-      return mIdx >= startIdx && mIdx <= endIdx && selectedCats.includes(d.category);
-    })
-    .reduce((sum, d) => sum + d.salesVolume, 0);
+  // Escala dinâmica inteligente para o eixo financeiro (RNF0044)
+  let yAxisMax = 1000;
+  if (maxValorPontual > 0) {
+    if (maxValorPontual <= 2000) {
+      yAxisMax = Math.ceil(maxValorPontual / 500) * 500;
+    } else if (maxValorPontual <= 10000) {
+      yAxisMax = Math.ceil(maxValorPontual / 1000) * 1000;
+    } else {
+      yAxisMax = Math.ceil(maxValorPontual / 5000) * 5000;
+    }
+  }
 
-  // Exportar dados para CSV
-  const handleExportCSV = () => {
-    if (!isValidPeriod) return;
+  // Espaçamento entre meses
+  const xSpacing = periodos.length > 1 ? chartWidth / (periodos.length - 1) : 0;
 
-    let csvContent = '\uFEFF'; // Adicionar BOM para Excel reconhecer acentuação
-    csvContent += 'Periodo;Categoria;Mes/Ano;Valor\n';
-
-    visibleMonths.forEach(m => {
-      selectedCats.forEach(cat => {
-        const entry = mockAnalyticsData.find(d => d.date === m.id && d.category === cat);
-        if (entry) {
-          const formattedVal = entry.salesVolume.toFixed(2).replace('.', ',');
-          csvContent += `${m.id};${cat};${m.label};"R$ ${formattedVal}"\n`;
-        }
-      });
-    });
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `analise_vendas_runway_${startMonth}_a_${endMonth}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Obter cor da categoria com fallback na paleta dinâmica
+  const getCategoryColor = (cat: string, index: number) => {
+    return CATEGORY_COLORS[cat] || DYNAMIC_PALETTE[index % DYNAMIC_PALETTE.length];
   };
 
   return (
     <div className="admin-tab-content">
-      <div className="admin-header-row">
-        <h3 className="admin-tab-title">ANÁLISE DE VENDAS</h3>
-        <button 
-          onClick={handleExportCSV} 
-          disabled={!isValidPeriod || selectedCats.length === 0}
-          className="btn btn-primary"
+      {/* Barra de Status de Autenticação Administrativa (Cartão 04) */}
+      <div className="admin-auth-status-bar" data-cy="admin-auth-status">
+        <span className="auth-status-indicator">✔ Administrador Autenticado (Sessão em Memória)</span>
+        <button
           type="button"
+          onClick={() => {
+            setAdminKey(null);
+            setInputKey('');
+            setAnaliseData(null);
+          }}
+          className="btn-lock-session"
+          data-cy="btn-bloquear-sessao"
+          title="Bloquear sessão da análise"
         >
-          EXPORTAR PLANILHA (CSV)
+          Bloquear Acesso
         </button>
       </div>
 
-      {/* Filtros de Análise */}
-      <div className="analytics-filters-card">
-        <div className="filters-date-group">
-          <div className="date-input-group">
-            <label>DATA INICIAL</label>
-            <div className="input-with-icon">
-              <select
-                value={startMonth}
-                onChange={e => setStartMonth(e.target.value)}
-                className={`analytics-date-input ${!isValidPeriod ? 'invalid-field' : ''}`}
-              >
-                {MONTHS.map(m => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
-              <span className="calendar-icon">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-              </span>
-            </div>
-          </div>
-
-          <div className="date-input-group">
-            <label>DATA FINAL</label>
-            <div className="input-with-icon">
-              <select
-                value={endMonth}
-                onChange={e => setEndMonth(e.target.value)}
-                className={`analytics-date-input ${!isValidPeriod ? 'invalid-field' : ''}`}
-              >
-                {MONTHS.map(m => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
-              <span className="calendar-icon">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Checkboxes de Categorias */}
-        <div className="categories-filter-group">
-          <span className="group-label">CATEGORIAS</span>
-          <div className="categories-toggle-list">
-            {CATEGORIES.map(cat => {
-              const isActive = selectedCats.includes(cat);
-              const classCat = cat.toLowerCase().replace(' ', '_').normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => handleCategoryToggle(cat)}
-                  className={`category-toggle-btn ${isActive ? 'active' : ''} ${classCat}`}
-                >
-                  {cat}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      <div className="admin-header-row">
+        <h3 className="admin-tab-title">ANÁLISE DE VENDAS</h3>
       </div>
 
-      {/* Validação de Período */}
-      {!isValidPeriod ? (
-        <div className="analytics-validation-error">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-danger)', marginRight: '0.5rem' }}>
+      {/* Formulário de Filtros de Período e Categorias */}
+      <form onSubmit={handleConsultar} className="analytics-filters-card" data-cy="form-filtros-analise">
+        <div className="filters-date-group">
+          <div className="date-input-group">
+            <label htmlFor="input-data-inicio">DATA INICIAL</label>
+            <input
+              id="input-data-inicio"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="analytics-date-input"
+              data-cy="input-data-inicio"
+            />
+          </div>
+
+          <div className="date-input-group">
+            <label htmlFor="input-data-fim">DATA FINAL</label>
+            <input
+              id="input-data-fim"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="analytics-date-input"
+              data-cy="input-data-fim"
+            />
+          </div>
+        </div>
+
+        {/* Seleção de Categorias Reais do Catálogo */}
+        <div className="categories-filter-group">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+            <span className="group-label">CATEGORIAS DE PRODUTOS</span>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={handleSelectAllCats}
+                className="btn-cat-quick-toggle"
+                data-cy="btn-todas-categorias"
+              >
+                Selecionar Todas
+              </button>
+              <button
+                type="button"
+                onClick={handleClearCats}
+                className="btn-cat-quick-toggle"
+                data-cy="btn-limpar-categorias"
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
+
+          {isLoadingProducts ? (
+            <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>
+              Carregando categorias do catálogo...
+            </div>
+          ) : availableCategories.length === 0 ? (
+            <div style={{ color: 'var(--color-danger)', fontSize: '0.8rem' }}>
+              Nenhuma categoria encontrada no catálogo de produtos.
+            </div>
+          ) : (
+            <div className="categories-toggle-list" data-cy="lista-categorias-filtro">
+              {availableCategories.map((cat) => {
+                const isActive = selectedCats.includes(cat);
+                const classCat = cat.toLowerCase().replace(/\s+/g, '_').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => handleCategoryToggle(cat)}
+                    className={`category-toggle-btn ${isActive ? 'active' : ''} ${classCat}`}
+                    data-cy={`toggle-cat-${classCat}`}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Linha de Ação do Filtro */}
+        <div className="filter-actions-row">
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="btn-consultar-analise"
+            data-cy="btn-aplicar-filtros"
+          >
+            {isLoading ? 'Consultando...' : 'CONSULTAR VENDAS'}
+          </button>
+        </div>
+      </form>
+
+      {/* Mensagens de Validação e Erro */}
+      {validationError && (
+        <div className="analytics-validation-error" data-cy="msg-erro-validacao">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '0.5rem', flexShrink: 0 }}>
             <circle cx="12" cy="12" r="10"></circle>
             <line x1="12" y1="8" x2="12" y2="12"></line>
             <line x1="12" y1="16" x2="12.01" y2="16"></line>
           </svg>
-          A data final não pode ser anterior à data inicial.
+          {validationError}
         </div>
-      ) : selectedCats.length === 0 ? (
-        <div className="analytics-validation-error">
-          Selecione ao menos uma categoria para exibir no gráfico.
+      )}
+
+      {apiError && (
+        <div className="analytics-validation-error" data-cy="msg-erro-api">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '0.5rem', flexShrink: 0 }}>
+            <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          {apiError}
         </div>
-      ) : (
-        /* Renderização do Gráfico SVG */
-        <div className="analytics-chart-container">
+      )}
+
+      {/* Banner de Ausência de Vendas (RN0073) */}
+      {analiseData && analiseData.totalGeral === 0 && !isLoading && (
+        <div className="analytics-empty-banner" data-cy="msg-sem-vendas">
+          Nenhum pedido entregue foi registrado no período e categorias selecionados.
+        </div>
+      )}
+
+      {/* Renderização do Gráfico SVG e Totais */}
+      {analiseData && (
+        <div className="analytics-chart-container" data-cy="painel-grafico-analise">
           <div className="svg-chart-wrapper">
+            {isLoading && (
+              <div className="analytics-loading-overlay" data-cy="loading-overlay">
+                <span>Atualizando dados da análise...</span>
+              </div>
+            )}
+
             <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="svg-line-chart">
               {/* Linhas de Grade e Eixo Y */}
               {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
@@ -253,7 +508,7 @@ export default function AdminAnalytics() {
                     <text
                       x={paddingLeft - 10}
                       y={yPos + 4}
-                      fill="#666"
+                      fill="#888888"
                       fontSize="10"
                       textAnchor="end"
                     >
@@ -264,11 +519,16 @@ export default function AdminAnalytics() {
               })}
 
               {/* Rótulos do Eixo X (Meses) */}
-              {visibleMonths.map((m, idx) => {
-                const xSpacing = visibleMonths.length > 1 ? chartWidth / (visibleMonths.length - 1) : chartWidth;
-                const xPos = paddingLeft + idx * xSpacing;
+              {periodos.map((p, idx) => {
+                const xPos = periodos.length > 1
+                  ? paddingLeft + idx * xSpacing
+                  : paddingLeft + chartWidth / 2;
+
+                // Evitar sobreposição de texto caso haja mais de 12 meses
+                const shouldDisplayLabel = periodos.length <= 12 || idx % 2 === 0 || idx === periodos.length - 1;
+
                 return (
-                  <g key={m.id}>
+                  <g key={p}>
                     <line
                       x1={xPos}
                       y1={paddingTop}
@@ -277,29 +537,50 @@ export default function AdminAnalytics() {
                       stroke="#161616"
                       strokeWidth="1"
                     />
-                    <text
-                      x={xPos}
-                      y={paddingTop + chartHeight + 20}
-                      fill="#666"
-                      fontSize="11"
-                      fontWeight="600"
-                      textAnchor="middle"
-                    >
-                      {m.name}
-                    </text>
+                    {shouldDisplayLabel && (
+                      <text
+                        x={xPos}
+                        y={paddingTop + chartHeight + 20}
+                        fill="#888888"
+                        fontSize={periodos.length > 16 ? '9' : '11'}
+                        fontWeight="600"
+                        textAnchor="middle"
+                      >
+                        {formatMonthLabel(p)}
+                      </text>
+                    )}
                   </g>
                 );
               })}
 
-              {/* Linhas e Nós de Dados */}
-              {categoryLines.map(line => {
-                if (line.points.length === 0) return null;
-                const pathString = line.points.map(p => `${p.x},${p.y}`).join(' ');
-                const strokeColor = CATEGORY_COLORS[line.category];
+              {/* Séries Temporais por Categoria (RF0055, RNF0043, RN0073) */}
+              {series.map((serie, sIdx) => {
+                const strokeColor = getCategoryColor(serie.categoria, sIdx);
+
+                // Mapear pontos para coordenadas SVG
+                const points = serie.dados.map((d, dIdx) => {
+                  const x = periodos.length > 1
+                    ? paddingLeft + dIdx * xSpacing
+                    : paddingLeft + chartWidth / 2;
+                  
+                  // Meses sem venda com valor zero representados na base inferior (RN0073)
+                  const y = paddingTop + chartHeight - (d.valor / yAxisMax) * chartHeight;
+
+                  return {
+                    x,
+                    y,
+                    valor: d.valor,
+                    periodo: d.periodo,
+                    categoria: serie.categoria
+                  };
+                });
+
+                if (points.length === 0) return null;
+                const pathString = points.map(pt => `${pt.x},${pt.y}`).join(' ');
 
                 return (
-                  <g key={line.category}>
-                    {/* Polilinha do Gráfico */}
+                  <g key={serie.categoria} data-cy={`serie-${serie.categoria}`}>
+                    {/* Polilinha contínua da categoria */}
                     <polyline
                       fill="none"
                       stroke={strokeColor}
@@ -308,9 +589,9 @@ export default function AdminAnalytics() {
                       strokeLinejoin="round"
                       points={pathString}
                     />
-                    
-                    {/* Círculos / Nós */}
-                    {line.points.map((pt, pIdx) => (
+
+                    {/* Círculos / Nós em cada mês (com hover e clique para Tooltip) */}
+                    {points.map((pt, pIdx) => (
                       <circle
                         key={pIdx}
                         cx={pt.x}
@@ -320,11 +601,33 @@ export default function AdminAnalytics() {
                         stroke={strokeColor}
                         strokeWidth="3"
                         style={{ cursor: 'pointer' }}
+                        data-cy="chart-point"
+                        data-periodo={pt.periodo}
+                        data-categoria={pt.categoria}
+                        data-valor={pt.valor}
                         onMouseEnter={() => {
                           setTooltip({
-                            month: pt.monthLabel,
-                            category: pt.category,
-                            value: pt.value,
+                            month: formatMonthLabel(pt.periodo),
+                            category: pt.categoria,
+                            value: pt.valor,
+                            x: pt.x,
+                            y: pt.y
+                          });
+                        }}
+                        onMouseOver={() => {
+                          setTooltip({
+                            month: formatMonthLabel(pt.periodo),
+                            category: pt.categoria,
+                            value: pt.valor,
+                            x: pt.x,
+                            y: pt.y
+                          });
+                        }}
+                        onClick={() => {
+                          setTooltip({
+                            month: formatMonthLabel(pt.periodo),
+                            category: pt.categoria,
+                            value: pt.valor,
                             x: pt.x,
                             y: pt.y
                           });
@@ -337,38 +640,58 @@ export default function AdminAnalytics() {
               })}
             </svg>
 
-            {/* Tooltip HTML Absoluta */}
+            {/* Tooltip HTML Dinâmico (RNF0046) */}
             {tooltip && (
-              <div 
+              <div
                 className="analytics-tooltip"
+                data-cy="analytics-tooltip"
                 style={{
                   position: 'absolute',
                   left: `${tooltip.x}px`,
-                  top: `${tooltip.y - 10}px`,
+                  top: `${tooltip.y - 12}px`,
                   transform: 'translate(-50%, -100%)'
                 }}
               >
-                <div className="tooltip-cat" style={{ color: CATEGORY_COLORS[tooltip.category] }}>
+                <div className="tooltip-cat" style={{ color: getCategoryColor(tooltip.category, 0) }}>
                   {tooltip.category}
                 </div>
                 <div className="tooltip-value">
-                  {tooltip.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {formatCurrency(tooltip.value)}
                 </div>
                 <div className="tooltip-month">{tooltip.month}</div>
               </div>
             )}
+
+            {/* Legenda das Categorias Posicionada Abaixo do Gráfico (RNF0045) */}
+            <div className="analytics-legend-container" data-cy="analytics-legend">
+              {series.map((s, idx) => (
+                <div key={s.categoria} className="legend-item" data-cy={`legend-${s.categoria}`}>
+                  <span
+                    className="legend-color-dot"
+                    style={{ backgroundColor: getCategoryColor(s.categoria, idx) }}
+                  />
+                  <span className="legend-name">{s.categoria}:</span>
+                  <span className="legend-subtotal">{formatCurrency(s.total)}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* Sumário / Totalizador */}
-          <div className="analytics-summary-card">
-            <span className="summary-title-small">Volume Financeiro de Vendas no Período:</span>
-            <div className="summary-value-big">
-              {totalSales.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          {/* Card de Sumário Financeiro Geral (Totalizador Consolidado) */}
+          <div className="analytics-summary-card" data-cy="analytics-summary">
+            <span className="summary-title-small">Volume Financeiro no Período:</span>
+            <div className="summary-value-big" data-cy="total-geral-vendas">
+              {formatCurrency(analiseData.totalGeral)}
             </div>
 
-            <p className="summary-desc-small" style={{ marginTop: '1.2rem' }}>
-              Período de visualização: <strong>{MONTHS[startIdx]?.label}</strong> a <strong>{MONTHS[endIdx]?.label}</strong>.
+            <p className="summary-desc-small" style={{ marginTop: '1rem' }}>
+              Competência abrangida: <strong>{formatMonthLabel(analiseData.periodoInicial)}</strong> a <strong>{formatMonthLabel(analiseData.periodoFinal)}</strong>.
             </p>
+
+            <div style={{ marginTop: '1.2rem', paddingTop: '1rem', borderTop: '1px solid #1f1f1f', fontSize: '0.75rem', color: '#888' }}>
+              Total de meses: <strong>{periodos.length}</strong><br />
+              Categorias exibidas: <strong>{series.length}</strong>
+            </div>
           </div>
         </div>
       )}
