@@ -448,7 +448,10 @@ export default defineConfig({
             );
             const statusPed8 = resPed8.rows[0]?.status;
             const totais = await consultarTotaisEsperados(client);
-            const totalGeral = totais.reduce((acc, t) => acc + Number(t.valor_categoria), 0);
+            const totalGeral = totais.reduce(
+              (acc: number, t: { valor_categoria: number | string }) => acc + Number(t.valor_categoria),
+              0
+            );
 
             if (statusPed8 !== 'EM TRANSPORTE' || Math.abs(totalGeral - 7850.09) >= 0.01) {
               throw new Error(
