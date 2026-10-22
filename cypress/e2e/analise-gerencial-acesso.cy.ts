@@ -16,10 +16,18 @@ describe('Cenário 7: Controle de Acesso à Análise Gerencial de Vendas (RF0055
   let adminKey = '';
 
   before(() => {
+    // Garantir preparação inicial da massa de testes determinística do Cartão 02
+    cy.task('prepararMassaAnalise');
+
     cy.task('obterAdminKey').then((key: any) => {
       adminKey = (key as string) || '';
       expect(adminKey, 'Variável de ambiente externa RUNWAY_ADMIN_KEY deve estar configurada').to.be.a('string').and.not.be.empty;
     });
+  });
+
+  after(() => {
+    // Restauração obrigatória da massa determinística do Cartão 02 ao concluir a suíte
+    cy.task('prepararMassaAnalise');
   });
 
   beforeEach(() => {
@@ -124,8 +132,8 @@ describe('Cenário 7: Controle de Acesso à Análise Gerencial de Vendas (RF0055
     cy.get('[data-cy="msg-erro-autenticacao"]').should('be.visible').and('contain.text', 'Credencial administrativa ausente ou inválida');
     cy.get('[data-cy="admin-auth-status"]').should('not.exist');
 
-    // Tentativa 2: Informar chave válida fornecida externamente
-    cy.get('[data-cy="input-chave-admin"]').clear().type(adminKey);
+    // Tentativa 2: Informar chave válida fornecida externamente (com log: false para segurança)
+    cy.get('[data-cy="input-chave-admin"]').clear().type(adminKey, { log: false });
     cy.get('[data-cy="btn-desbloquear-analise"]').click();
 
     // Deve desbloquear com sucesso e exibir a barra de status autenticada
@@ -142,7 +150,7 @@ describe('Cenário 7: Controle de Acesso à Análise Gerencial de Vendas (RF0055
     cy.visit('/admin');
     cy.get('[data-cy="admin-analise"]').click();
     cy.get('[data-cy="btn-alternar-admin"]').click();
-    cy.get('[data-cy="input-chave-admin"]').type(adminKey);
+    cy.get('[data-cy="input-chave-admin"]').type(adminKey, { log: false });
     cy.get('[data-cy="btn-desbloquear-analise"]').click();
     cy.get('[data-cy="admin-auth-status"]').should('be.visible');
 

@@ -34,6 +34,79 @@ function calcularMesesAbrangidos(dInicioStr: string, dFimStr: string): number {
   return (y2 - y1) * 12 + (m2 - m1) + 1;
 }
 
+function parseDataIso(dStr: string): { ano: number; mes: number; dia?: number } | null {
+  if (!dStr) return null;
+  const parts = dStr.split('-').map(Number);
+  if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return {
+      ano: parts[0],
+      mes: parts[1],
+      dia: parts.length >= 3 && !isNaN(parts[2]) ? parts[2] : undefined
+    };
+  }
+  return null;
+}
+
+function formatDisplayDate(dStr?: string): string {
+  if (!dStr) return '';
+  const info = parseDataIso(dStr);
+  if (!info) return dStr;
+  if (info.dia) {
+    return `${String(info.dia).padStart(2, '0')}/${String(info.mes).padStart(2, '0')}/${info.ano}`;
+  }
+  const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Dez'];
+  return `${meses[info.mes - 1] || info.mes}/${info.ano}`;
+}
+
+function verificarParcialidadeCompetencia(
+  periodo: string,
+  applied: { startDate: string; endDate: string } | null
+): {
+  isParcial: boolean;
+  detalhe?: string;
+  isInicioParcial: boolean;
+  isFimParcial: boolean;
+} {
+  if (!applied || !periodo) {
+    return { isParcial: false, isInicioParcial: false, isFimParcial: false };
+  }
+
+  const startInfo = parseDataIso(applied.startDate);
+  const endInfo = parseDataIso(applied.endDate);
+  if (!startInfo || !endInfo) {
+    return { isParcial: false, isInicioParcial: false, isFimParcial: false };
+  }
+
+  const [anoPeriodo, mesPeriodo] = periodo.split('-').map(Number);
+  let isInicioParcial = false;
+  let isFimParcial = false;
+  let detalhe = '';
+
+  // Início parcial: se for o primeiro mês da consulta e dia > 1
+  if (startInfo.dia && startInfo.dia > 1 && startInfo.ano === anoPeriodo && startInfo.mes === mesPeriodo) {
+    isInicioParcial = true;
+    detalhe = `a partir de ${String(startInfo.dia).padStart(2, '0')}/${String(startInfo.mes).padStart(2, '0')}`;
+  }
+
+  // Fim parcial: se for o último mês da consulta e dia < último dia do mês
+  if (endInfo.dia && endInfo.ano === anoPeriodo && endInfo.mes === mesPeriodo) {
+    const ultimoDia = new Date(endInfo.ano, endInfo.mes, 0).getDate();
+    if (endInfo.dia < ultimoDia) {
+      isFimParcial = true;
+      const detalheFim = `até ${String(endInfo.dia).padStart(2, '0')}/${String(endInfo.mes).padStart(2, '0')}`;
+      detalhe = detalhe ? `${detalhe} e ${detalheFim}` : detalheFim;
+    }
+  }
+
+  const isParcial = isInicioParcial || isFimParcial;
+  return {
+    isParcial,
+    detalhe: isParcial ? `(${detalhe})` : undefined,
+    isInicioParcial,
+    isFimParcial
+  };
+}
+
 export default function AdminAnalytics() {
   const { activeProfile, setActiveProfile, adminKey, setAdminKey, products, isLoadingProducts } = useApp();
   const [inputKey, setInputKey] = useState('');
@@ -46,6 +119,13 @@ export default function AdminAnalytics() {
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [catsInitialized, setCatsInitialized] = useState(false);
 
+  // Filtros efetivamente aplicados na última consulta retornada (ACH-01)
+  const [appliedFilters, setAppliedFilters] = useState<{
+    startDate: string;
+    endDate: string;
+    categories: string[];
+  } | null>(null);
+
   const [validationError, setValidationError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,6 +137,9 @@ export default function AdminAnalytics() {
     value: number;
     x: number;
     y: number;
+    isPartial?: boolean;
+    partialDetail?: string;
+    coincidentCats?: string[];
   } | null>(null);
 
   const activeAbortRef = useRef<AbortController | null>(null);
@@ -128,6 +211,7 @@ export default function AdminAnalytics() {
 
       if (res.sucesso && res.dados) {
         setAnaliseData(res.dados);
+        setAppliedFilters({ startDate: start, endDate: end, categories: [...cats] });
         setApiError(null);
       } else {
         if (res.statusCode === 401) {
@@ -331,6 +415,17 @@ export default function AdminAnalytics() {
     return CATEGORY_COLORS[cat] || DYNAMIC_PALETTE[index % DYNAMIC_PALETTE.length];
   };
 
+  // Mapeamento de sobreposição de pontos: (periodo_valor) -> lista de categorias
+  // Garante que categorias com valores iguais no mesmo mês permaneçam visualmente identificáveis (ACH-02)
+  const coincidentMap: Record<string, string[]> = {};
+  series.forEach(s => {
+    s.dados.forEach(d => {
+      const key = `${d.periodo}_${d.valor.toFixed(2)}`;
+      if (!coincidentMap[key]) coincidentMap[key] = [];
+      coincidentMap[key].push(s.categoria);
+    });
+  });
+
   return (
     <div className="admin-tab-content">
       {/* Barra de Status de Autenticação Administrativa (Cartão 04) */}
@@ -342,6 +437,7 @@ export default function AdminAnalytics() {
             setAdminKey(null);
             setInputKey('');
             setAnaliseData(null);
+            setAppliedFilters(null);
           }}
           className="btn-lock-session"
           data-cy="btn-bloquear-sessao"
@@ -526,6 +622,7 @@ export default function AdminAnalytics() {
 
                 // Evitar sobreposição de texto caso haja mais de 12 meses
                 const shouldDisplayLabel = periodos.length <= 12 || idx % 2 === 0 || idx === periodos.length - 1;
+                const partialInfo = verificarParcialidadeCompetencia(p, appliedFilters);
 
                 return (
                   <g key={p}>
@@ -546,7 +643,7 @@ export default function AdminAnalytics() {
                         fontWeight="600"
                         textAnchor="middle"
                       >
-                        {formatMonthLabel(p)}
+                        {partialInfo.isParcial ? `${formatMonthLabel(p)}*` : formatMonthLabel(p)}
                       </text>
                     )}
                   </g>
@@ -566,12 +663,19 @@ export default function AdminAnalytics() {
                   // Meses sem venda com valor zero representados na base inferior (RN0073)
                   const y = paddingTop + chartHeight - (d.valor / yAxisMax) * chartHeight;
 
+                  const coincidentCats = coincidentMap[`${d.periodo}_${d.valor.toFixed(2)}`] || [];
+                  const coincidentTotal = coincidentCats.length;
+                  const coincidentIndex = coincidentCats.indexOf(serie.categoria);
+
                   return {
                     x,
                     y,
                     valor: d.valor,
                     periodo: d.periodo,
-                    categoria: serie.categoria
+                    categoria: serie.categoria,
+                    coincidentTotal,
+                    coincidentIndex: coincidentIndex >= 0 ? coincidentIndex : 0,
+                    coincidentCats
                   };
                 });
 
@@ -580,61 +684,103 @@ export default function AdminAnalytics() {
 
                 return (
                   <g key={serie.categoria} data-cy={`serie-${serie.categoria}`}>
-                    {/* Polilinha contínua da categoria */}
-                    <polyline
-                      fill="none"
-                      stroke={strokeColor}
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      points={pathString}
-                    />
-
-                    {/* Círculos / Nós em cada mês (com hover e clique para Tooltip) */}
-                    {points.map((pt, pIdx) => (
-                      <circle
-                        key={pIdx}
-                        cx={pt.x}
-                        cy={pt.y}
-                        r="6"
-                        fill="#050505"
+                    {/* Polilinha contínua da categoria apenas quando houver 2 ou mais pontos (ACH-02) */}
+                    {points.length > 1 && (
+                      <polyline
+                        fill="none"
                         stroke={strokeColor}
-                        strokeWidth="3"
-                        style={{ cursor: 'pointer' }}
-                        data-cy="chart-point"
-                        data-periodo={pt.periodo}
-                        data-categoria={pt.categoria}
-                        data-valor={pt.valor}
-                        onMouseEnter={() => {
-                          setTooltip({
-                            month: formatMonthLabel(pt.periodo),
-                            category: pt.categoria,
-                            value: pt.valor,
-                            x: pt.x,
-                            y: pt.y
-                          });
-                        }}
-                        onMouseOver={() => {
-                          setTooltip({
-                            month: formatMonthLabel(pt.periodo),
-                            category: pt.categoria,
-                            value: pt.valor,
-                            x: pt.x,
-                            y: pt.y
-                          });
-                        }}
-                        onClick={() => {
-                          setTooltip({
-                            month: formatMonthLabel(pt.periodo),
-                            category: pt.categoria,
-                            value: pt.valor,
-                            x: pt.x,
-                            y: pt.y
-                          });
-                        }}
-                        onMouseLeave={() => setTooltip(null)}
+                        strokeWidth="3.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        points={pathString}
                       />
+                    )}
+
+                    {/* Se período for de 1 único mês, renderizar linha guia vertical e traço de nível (ACH-02) */}
+                    {periodos.length === 1 && points.map((pt, pIdx) => (
+                      <g key={`single-guide-${pIdx}`}>
+                        <line
+                          x1={pt.x}
+                          y1={pt.y}
+                          x2={pt.x}
+                          y2={paddingTop + chartHeight}
+                          stroke="#2c2c2c"
+                          strokeWidth="1.5"
+                          strokeDasharray="3 3"
+                        />
+                        <line
+                          x1={pt.x - 24}
+                          y1={pt.y}
+                          x2={pt.x + 24}
+                          y2={pt.y}
+                          stroke={strokeColor}
+                          strokeWidth="2.5"
+                          strokeDasharray="3 3"
+                          opacity="0.75"
+                        />
+                        <circle
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={14 + pt.coincidentIndex * 4}
+                          fill={strokeColor}
+                          opacity="0.18"
+                          pointerEvents="none"
+                        />
+                        <text
+                          x={pt.x}
+                          y={pt.y - 14 - pt.coincidentIndex * 15}
+                          fill={strokeColor}
+                          fontSize="11"
+                          fontWeight="700"
+                          textAnchor="middle"
+                          data-cy={`rotulo-ponto-${serie.categoria}`}
+                        >
+                          {series.length > 1 ? `${serie.categoria}: ${formatCurrency(pt.valor)}` : formatCurrency(pt.valor)}
+                        </text>
+                      </g>
                     ))}
+
+                    {/* Círculos / Nós em cada mês (com suporte a anéis concêntricos se coincidentes - ACH-02) */}
+                    {points.map((pt, pIdx) => {
+                      const circleRadius = pt.coincidentTotal > 1 ? 6 + pt.coincidentIndex * 4 : 6;
+                      const circleFill = pt.coincidentIndex === 0 ? '#050505' : 'none';
+
+                      const handlePointInteraction = () => {
+                        const partialInfo = verificarParcialidadeCompetencia(pt.periodo, appliedFilters);
+                        setTooltip({
+                          month: partialInfo.isParcial ? `${formatMonthLabel(pt.periodo)} ${partialInfo.detalhe}` : formatMonthLabel(pt.periodo),
+                          category: pt.categoria,
+                          value: pt.valor,
+                          x: pt.x,
+                          y: pt.y,
+                          isPartial: partialInfo.isParcial,
+                          partialDetail: partialInfo.detalhe,
+                          coincidentCats: pt.coincidentCats.length > 1 ? pt.coincidentCats : undefined
+                        });
+                      };
+
+                      return (
+                        <circle
+                          key={pIdx}
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={circleRadius}
+                          fill={circleFill}
+                          stroke={strokeColor}
+                          strokeWidth="3"
+                          style={{ cursor: 'pointer' }}
+                          data-cy="chart-point"
+                          data-periodo={pt.periodo}
+                          data-categoria={pt.categoria}
+                          data-valor={pt.valor}
+                          data-coincidente={pt.coincidentTotal > 1 ? 'true' : 'false'}
+                          onMouseEnter={handlePointInteraction}
+                          onMouseOver={handlePointInteraction}
+                          onClick={handlePointInteraction}
+                          onMouseLeave={() => setTooltip(null)}
+                        />
+                      );
+                    })}
                   </g>
                 );
               })}
@@ -659,6 +805,16 @@ export default function AdminAnalytics() {
                   {formatCurrency(tooltip.value)}
                 </div>
                 <div className="tooltip-month">{tooltip.month}</div>
+                {tooltip.isPartial && (
+                  <div className="tooltip-partial-badge" data-cy="tooltip-partial-badge">
+                    * Período Parcial
+                  </div>
+                )}
+                {tooltip.coincidentCats && tooltip.coincidentCats.length > 1 && (
+                  <div className="tooltip-coincident-badge" data-cy="tooltip-coincident-badge">
+                    Coincide com: {tooltip.coincidentCats.filter(c => c !== tooltip.category).join(', ')}
+                  </div>
+                )}
               </div>
             )}
 
@@ -675,6 +831,13 @@ export default function AdminAnalytics() {
                 </div>
               ))}
             </div>
+
+            {/* Aviso de Competência Parcial (ACH-01) */}
+            {periodos.some(p => verificarParcialidadeCompetencia(p, appliedFilters).isParcial) && (
+              <div className="analytics-partial-notice" data-cy="aviso-periodo-parcial">
+                * Competência parcial: o faturamento contabiliza apenas os pedidos entregues nas datas selecionadas pelo administrador.
+              </div>
+            )}
           </div>
 
           {/* Card de Sumário Financeiro Geral (Totalizador Consolidado) */}
@@ -687,6 +850,16 @@ export default function AdminAnalytics() {
             <p className="summary-desc-small" style={{ marginTop: '1rem' }}>
               Competência abrangida: <strong>{formatMonthLabel(analiseData.periodoInicial)}</strong> a <strong>{formatMonthLabel(analiseData.periodoFinal)}</strong>.
             </p>
+            {appliedFilters && (
+              <p className="summary-desc-small" style={{ marginTop: '0.4rem', color: '#999', fontSize: '0.75rem' }}>
+                Período aplicado: <strong>{formatDisplayDate(appliedFilters.startDate)}</strong> a <strong>{formatDisplayDate(appliedFilters.endDate)}</strong>.
+              </p>
+            )}
+            {periodos.some(p => verificarParcialidadeCompetencia(p, appliedFilters).isParcial) && (
+              <div className="summary-partial-tag" data-cy="tag-competencia-parcial" style={{ color: '#ffbe0b', fontSize: '0.75rem', marginTop: '0.3rem' }}>
+                ⚠ Competência inicial/final parcial
+              </div>
+            )}
 
             <div style={{ marginTop: '1.2rem', paddingTop: '1rem', borderTop: '1px solid #1f1f1f', fontSize: '0.75rem', color: '#888' }}>
               Total de meses: <strong>{periodos.length}</strong><br />

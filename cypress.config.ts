@@ -389,6 +389,78 @@ export default defineConfig({
           } finally {
             await client.end();
           }
+        },
+
+        async confirmarBancoSeguro() {
+          const { validarConexaoSegura } = require('./scripts/seed-massa-analise.js');
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: 'runway_test'
+          });
+          await client.connect();
+          try {
+            const db = await validarConexaoSegura(client);
+            return { banco: db, seguro: true };
+          } finally {
+            await client.end();
+          }
+        },
+
+        async obterPedidoDb({ codigoPedido }: { codigoPedido: string }) {
+          const { validarConexaoSegura } = require('./scripts/seed-massa-analise.js');
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: 'runway_test'
+          });
+          await client.connect();
+          try {
+            await validarConexaoSegura(client);
+            const res = await client.query(
+              `SELECT codigo, status, dt_pedido as "dataPedido" FROM "PEDIDO" WHERE codigo = $1`,
+              [codigoPedido]
+            );
+            return res.rows[0] || null;
+          } finally {
+            await client.end();
+          }
+        },
+
+        async validarIntegridadeMassaAposTeste() {
+          const { validarConexaoSegura, consultarTotaisEsperados } = require('./scripts/seed-massa-analise.js');
+          const client = new Client({
+            host: process.env.PGHOST || 'localhost',
+            port: Number(process.env.PGPORT) || 5432,
+            user: process.env.PGUSER || 'postgres',
+            password: process.env.PGPASSWORD || '123',
+            database: 'runway_test'
+          });
+          await client.connect();
+          try {
+            await validarConexaoSegura(client);
+            const resPed8 = await client.query(
+              `SELECT status FROM "PEDIDO" WHERE codigo = 'PED-ANL-0008'`
+            );
+            const statusPed8 = resPed8.rows[0]?.status;
+            const totais = await consultarTotaisEsperados(client);
+            const totalGeral = totais.reduce((acc, t) => acc + Number(t.valor_categoria), 0);
+
+            if (statusPed8 !== 'EM TRANSPORTE' || Math.abs(totalGeral - 7850.09) >= 0.01) {
+              throw new Error(
+                `[FALHA FATAL NA RESTAURAÇÃO DA MASSA]\n` +
+                `Status de PED-ANL-0008: "${statusPed8}" (esperado: "EM TRANSPORTE").\n` +
+                `Total geral: R$ ${totalGeral.toFixed(2)} (esperado: R$ 7.850,09).`
+              );
+            }
+            return { restaurado: true, totalGeral, statusPed8 };
+          } finally {
+            await client.end();
+          }
         }
       });
 

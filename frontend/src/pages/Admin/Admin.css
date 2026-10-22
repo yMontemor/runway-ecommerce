@@ -646,6 +646,34 @@
   color: #666666;
 }
 
+.tooltip-partial-badge {
+  color: #ffbe0b;
+  font-size: 0.65rem;
+  font-weight: 700;
+  margin-top: 0.2rem;
+  padding-top: 0.2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tooltip-coincident-badge {
+  color: #00d2d3;
+  font-size: 0.65rem;
+  font-weight: 700;
+  margin-top: 0.2rem;
+}
+
+.analytics-partial-notice {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  background-color: rgba(255, 190, 11, 0.08);
+  border-left: 3px solid #ffbe0b;
+  border-radius: 4px;
+  color: #ffbe0b;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
 /* Sidebar Sumário */
 .analytics-summary-card {
   background-color: var(--color-surface);
