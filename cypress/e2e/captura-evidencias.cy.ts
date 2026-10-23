@@ -8,7 +8,6 @@
 
 describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', () => {
   const backendBaseUrl = 'http://localhost:5035';
-  let adminKey = '';
 
   before(() => {
     cy.task('confirmarBancoSeguro').then((res: any) => {
@@ -17,11 +16,6 @@ describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', ()
     });
 
     cy.task('prepararMassaAnalise');
-
-    cy.task('obterAdminKey').then((key: any) => {
-      adminKey = (key as string) || '';
-      expect(adminKey, 'RUNWAY_ADMIN_KEY deve estar configurada').to.be.a('string').and.not.be.empty;
-    });
   });
 
   after(() => {
@@ -41,49 +35,32 @@ describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', ()
   });
 
   const desbloquearModoAdmin = () => {
-    cy.visit('/admin');
+    cy.visit('/');
+    cy.get('[data-cy="user-dropdown"]').click();
+    cy.get('[data-cy="painel-admin"]').click();
+    cy.url().should('include', '/admin');
     cy.get('[data-cy="admin-analise"]').click();
 
-    cy.get('body').then(($body) => {
-      if ($body.find('[data-cy="btn-alternar-admin"]').length > 0) {
-        cy.get('[data-cy="btn-alternar-admin"]').click();
-      }
-    });
-
-    cy.get('[data-cy="input-chave-admin"]').should('be.visible').type(adminKey, { log: false });
-    cy.get('[data-cy="btn-desbloquear-analise"]').click();
-
-    cy.get('[data-cy="admin-auth-status"]').should('be.visible');
     cy.get('[data-cy="form-filtros-analise"]').should('be.visible');
     cy.get('[data-cy="lista-categorias-filtro"]').should('be.visible');
   };
 
-  it('Captura 01 e 02: Bloqueio do Perfil Cliente e Formulário de Desbloqueio Administrativo', () => {
+  it('Captura 01 e 02: Barreira de Acesso do Perfil Cliente na rota /admin e Painel Administrativo com 4 Seções', () => {
+    // 01: Captura da barreira de acesso do perfil Cliente ao tentar navegar para /admin
     cy.visit('/admin');
-    cy.get('[data-cy="admin-analise"]').click();
+    cy.get('[data-cy="admin-acesso-restrito-cliente"]').should('be.visible');
+    cy.screenshot('01-bloqueio-perfil-cliente', { capture: 'viewport' });
 
-    // Se estiver em Administrador, alternar para Cliente
-    cy.get('body').then(($body) => {
-      if ($body.find('[data-cy="btn-alternar-admin"]').length === 0 && $body.find('[data-cy="admin-auth-status"]').length > 0) {
-        cy.get('[data-cy="btn-bloquear-sessao"]').click();
-      }
-    });
+    // Alternar para modo Administrador explicitamente
+    cy.get('[data-cy="btn-ativar-admin-explicitamente"]').click();
+    cy.url().should('include', '/admin');
+    cy.get('[data-cy="admin-clientes"]').should('be.visible');
+    cy.get('[data-cy="admin-pedidos"]').should('be.visible');
+    cy.get('[data-cy="admin-trocas"]').should('be.visible');
+    cy.get('[data-cy="admin-analise"]').should('be.visible');
 
-    // 01: Captura da barreira de acesso do perfil Cliente
-    cy.get('body').then(($body) => {
-      if ($body.find('[data-cy="analise-acesso-bloqueado-cliente"]').length > 0) {
-        cy.get('[data-cy="analise-acesso-bloqueado-cliente"]').should('be.visible');
-        cy.screenshot('01-bloqueio-perfil-cliente', { capture: 'viewport' });
-
-        // Alternar para perfil Administrador
-        cy.get('[data-cy="btn-alternar-admin"]').click();
-      }
-    });
-
-    // 02: Captura do prompt de chave administrativa sob demanda (com campo limpo)
-    cy.get('[data-cy="analise-prompt-chave"]').should('be.visible');
-    cy.get('[data-cy="input-chave-admin"]').should('be.visible').and('have.value', '');
-    cy.screenshot('02-desbloqueio-chave-admin', { capture: 'viewport' });
+    // 02: Captura das quatro seções do painel administrativo
+    cy.screenshot('02-painel-administrativo-secoes', { capture: 'viewport' });
   });
 
   it('Captura 03, 04, 05 e 06: Gráfico Inicial, Tooltip, Meses Zerados e Atualização Pós-Entrega', () => {
@@ -164,5 +141,32 @@ describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', ()
       .and('contain.text', '449,90');
 
     cy.screenshot('06-atualizacao-pos-entrega-pedido', { capture: 'viewport' });
+  });
+
+  it('07 e 08: Captura adicional — Consulta de 12 meses (Janeiro a Dezembro de 2026) com cinco categorias', () => {
+    desbloquearModoAdmin();
+
+    // 1. Configurar período de Janeiro a Dezembro de 2026
+    cy.get('[data-cy="input-data-inicio"]').clear().type('2026-01-01');
+    cy.get('[data-cy="input-data-fim"]').clear().type('2026-12-31');
+
+    // 2. Selecionar todas as cinco categorias
+    cy.get('[data-cy="btn-todas-categorias"]').click();
+
+    cy.intercept('GET', '**/api/analise/vendas*dataInicio=2026-01-01*dataFim=2026-12-31*').as('consulta12Meses');
+    cy.get('[data-cy="btn-aplicar-filtros"]').click();
+    cy.wait('@consulta12Meses');
+
+    cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');
+
+    // 3. Capturar tela do gráfico completo de 12 meses com 5 categorias
+    cy.screenshot('07-grafico-12-meses-5-categorias', { capture: 'viewport' });
+
+    // 4. Interagir com um ponto de mês com categorias coincidentes zeradas (ex: 2026-06)
+    cy.get('[data-cy="chart-point"][data-periodo="2026-06"]').first().click({ force: true });
+    cy.get('[data-cy="analytics-tooltip"]').should('be.visible');
+
+    // 5. Capturar tela com tooltip de categorias coincidentes ativo
+    cy.screenshot('08-tooltip-coincidentes-12-meses', { capture: 'viewport' });
   });
 });

@@ -108,10 +108,7 @@ function verificarParcialidadeCompetencia(
 }
 
 export default function AdminAnalytics() {
-  const { activeProfile, setActiveProfile, adminKey, setAdminKey, products, isLoadingProducts } = useApp();
-  const [inputKey, setInputKey] = useState('');
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const { products, isLoadingProducts } = useApp();
 
   // Período padrão: Ano corrente (2026-01-01 a 2026-12-31, 12 meses)
   const [startDate, setStartDate] = useState('2026-01-01');
@@ -137,9 +134,11 @@ export default function AdminAnalytics() {
     value: number;
     x: number;
     y: number;
+    color?: string;
     isPartial?: boolean;
     partialDetail?: string;
     coincidentCats?: string[];
+    coincidentItems?: { categoria: string; valor: number; cor: string }[];
   } | null>(null);
 
   const activeAbortRef = useRef<AbortController | null>(null);
@@ -165,26 +164,24 @@ export default function AdminAnalytics() {
 
   // Função central de consulta à API
   const fetchVendas = useCallback(async (start: string, end: string, cats: string[]) => {
-    if (!adminKey) return;
-
     if (!start || !end) {
       setValidationError('As datas inicial e final devem ser preenchidas.');
       return;
     }
 
     if (start > end) {
-      setValidationError('A data final não pode ser anterior à data inicial (RF0056).');
+      setValidationError('A data final não pode ser anterior à data inicial.');
       return;
     }
 
     const meses = calcularMesesAbrangidos(start, end);
     if (meses < 1 || meses > 24) {
-      setValidationError(`O período selecionado abrange ${meses} meses. O limite permitido é de 1 a 24 meses (RN0072).`);
+      setValidationError(`O período selecionado abrange ${meses} meses. O limite permitido é de 1 a 24 meses.`);
       return;
     }
 
     if (cats.length === 0) {
-      setValidationError('Selecione ao menos uma categoria para exibir no gráfico (RF0057).');
+      setValidationError('Selecione ao menos uma categoria para exibir no gráfico.');
       return;
     }
 
@@ -203,7 +200,6 @@ export default function AdminAnalytics() {
     try {
       const res = await analiseService.consultarVendas(
         { dataInicio: start, dataFim: end, categorias: cats },
-        adminKey,
         abortController.signal
       );
 
@@ -214,13 +210,7 @@ export default function AdminAnalytics() {
         setAppliedFilters({ startDate: start, endDate: end, categories: [...cats] });
         setApiError(null);
       } else {
-        if (res.statusCode === 401) {
-          // Credencial expirada ou revogada: descartar da memória e exibir desbloqueio (Condição 12)
-          setAdminKey(null);
-          setAuthError('Credencial administrativa inválida ou expirada (HTTP 401). Informe-a novamente.');
-        } else {
-          setApiError(res.mensagem || 'Erro ao consultar análise de vendas.');
-        }
+        setApiError(res.mensagem || 'Erro ao consultar análise de vendas.');
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
@@ -231,14 +221,14 @@ export default function AdminAnalytics() {
         setIsLoading(false);
       }
     }
-  }, [adminKey, setAdminKey]);
+  }, []);
 
-  // Consulta automática inicial ao desbloquear o administrador e carregar as categorias
+  // Consulta automática inicial ao carregar as categorias
   useEffect(() => {
-    if (adminKey && selectedCats.length > 0 && !analiseData && !isLoading) {
+    if (selectedCats.length > 0 && !analiseData && !isLoading) {
       fetchVendas(startDate, endDate, selectedCats);
     }
-  }, [adminKey, selectedCats, analiseData, isLoading, startDate, endDate, fetchVendas]);
+  }, [selectedCats, analiseData, isLoading, startDate, endDate, fetchVendas]);
 
   // Limpeza ao desmontar
   useEffect(() => {
@@ -248,109 +238,6 @@ export default function AdminAnalytics() {
       }
     };
   }, []);
-
-  // Cartão 04 - Proteção Visual 1: Se o usuário estiver no perfil CLIENTE, bloquear visualização (RF0055)
-  if (activeProfile === 'CLIENTE') {
-    return (
-      <div className="admin-analytics-restricted" data-cy="analise-acesso-bloqueado-cliente">
-        <div className="restricted-card">
-          <div className="restricted-icon">🔒</div>
-          <h2>Acesso Restrito — Análise Gerencial (RF0055)</h2>
-          <p>
-            Este módulo contém informações financeiras e estratégicas de acesso exclusivo ao perfil <strong>Administrador</strong>.
-          </p>
-          <div className="restricted-badge">
-            Perfil Atual: <span className="tag-cliente">CLIENTE</span>
-          </div>
-          <p className="restricted-hint">
-            Para acessar a análise gerencial, alterne para o perfil Administrador:
-          </p>
-          <div className="restricted-actions">
-            <button
-              type="button"
-              onClick={() => setActiveProfile('ADMINISTRADOR')}
-              className="btn-unlock-profile"
-              data-cy="btn-alternar-admin"
-            >
-              Alternar para Perfil Administrador
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Cartão 04 - Proteção Visual 2: Se no modo ADMINISTRADOR mas sem chave informada em memória, solicitar credencial sob demanda
-  if (!adminKey) {
-    const handleDesbloquear = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!inputKey.trim()) {
-        setAuthError('Informe a credencial administrativa para desbloquear.');
-        return;
-      }
-      setIsVerifying(true);
-      setAuthError(null);
-      const res = await analiseService.validarAcesso(inputKey.trim());
-      setIsVerifying(false);
-
-      if (res.sucesso) {
-        setAdminKey(inputKey.trim());
-        setAuthError(null);
-      } else {
-        setAuthError(res.mensagem || 'Credencial administrativa inválida (HTTP 401).');
-      }
-    };
-
-    return (
-      <div className="admin-analytics-restricted" data-cy="analise-prompt-chave">
-        <div className="restricted-card">
-          <div className="restricted-icon">🛡️</div>
-          <h2>Autenticação Administrativa (RF0055)</h2>
-          <p>
-            Para visualizar a análise gerencial de vendas, informe a credencial administrativa configurada:
-          </p>
-          <form onSubmit={handleDesbloquear} className="unlock-form">
-            <input
-              type="password"
-              placeholder="Digite a chave administrativa..."
-              value={inputKey}
-              onChange={(e) => setInputKey(e.target.value)}
-              className="unlock-input"
-              data-cy="input-chave-admin"
-              autoFocus
-            />
-            {authError && (
-              <div className="unlock-error" data-cy="msg-erro-autenticacao">
-                {authError}
-              </div>
-            )}
-            <div className="unlock-actions">
-              <button
-                type="submit"
-                disabled={isVerifying}
-                className="btn-unlock-submit"
-                data-cy="btn-desbloquear-analise"
-              >
-                {isVerifying ? 'Validando no Servidor...' : 'Desbloquear Análise'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveProfile('CLIENTE');
-                  setInputKey('');
-                  setAuthError(null);
-                }}
-                className="btn-cancel-unlock"
-                data-cy="btn-voltar-cliente"
-              >
-                Voltar para Modo Cliente
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  }
 
   const handleCategoryToggle = (cat: string) => {
     setSelectedCats(prev =>
@@ -376,11 +263,11 @@ export default function AdminAnalytics() {
   const series = analiseData?.series || [];
 
   const svgWidth = 780;
-  const svgHeight = 360;
+  const svgHeight = 380;
   const paddingLeft = 75;
   const paddingRight = 30;
-  const paddingTop = 30;
-  const paddingBottom = 40;
+  const paddingTop = 25;
+  const paddingBottom = 55;
 
   const chartWidth = svgWidth - paddingLeft - paddingRight;
   const chartHeight = svgHeight - paddingTop - paddingBottom;
@@ -415,38 +302,35 @@ export default function AdminAnalytics() {
     return CATEGORY_COLORS[cat] || DYNAMIC_PALETTE[index % DYNAMIC_PALETTE.length];
   };
 
-  // Mapeamento de sobreposição de pontos: (periodo_valor) -> lista de categorias
-  // Garante que categorias com valores iguais no mesmo mês permaneçam visualmente identificáveis (ACH-02)
+  // Mapeamento de sobreposição de pontos: (periodo_valor) -> lista de categorias e detalhes estruturados
+  // Garante que categorias com valores iguais no mesmo mês permaneçam visualmente identificáveis e consultáveis
+  interface CoincidentItem {
+    categoria: string;
+    valor: number;
+    cor: string;
+  }
   const coincidentMap: Record<string, string[]> = {};
-  series.forEach(s => {
+  const coincidentItemsMap: Record<string, CoincidentItem[]> = {};
+
+  series.forEach((s, sIdx) => {
+    const cor = getCategoryColor(s.categoria, sIdx);
     s.dados.forEach(d => {
       const key = `${d.periodo}_${d.valor.toFixed(2)}`;
-      if (!coincidentMap[key]) coincidentMap[key] = [];
+      if (!coincidentMap[key]) {
+        coincidentMap[key] = [];
+        coincidentItemsMap[key] = [];
+      }
       coincidentMap[key].push(s.categoria);
+      coincidentItemsMap[key].push({
+        categoria: s.categoria,
+        valor: d.valor,
+        cor
+      });
     });
   });
 
   return (
     <div className="admin-tab-content">
-      {/* Barra de Status de Autenticação Administrativa (Cartão 04) */}
-      <div className="admin-auth-status-bar" data-cy="admin-auth-status">
-        <span className="auth-status-indicator">✔ Administrador Autenticado (Sessão em Memória)</span>
-        <button
-          type="button"
-          onClick={() => {
-            setAdminKey(null);
-            setInputKey('');
-            setAnaliseData(null);
-            setAppliedFilters(null);
-          }}
-          className="btn-lock-session"
-          data-cy="btn-bloquear-sessao"
-          title="Bloquear sessão da análise"
-        >
-          Bloquear Acesso
-        </button>
-      </div>
-
       <div className="admin-header-row">
         <h3 className="admin-tab-title">ANÁLISE DE VENDAS</h3>
       </div>
@@ -634,14 +518,24 @@ export default function AdminAnalytics() {
                       stroke="#161616"
                       strokeWidth="1"
                     />
+                    {/* Traço de demarcação (tick) na linha de base */}
+                    <line
+                      x1={xPos}
+                      y1={paddingTop + chartHeight}
+                      x2={xPos}
+                      y2={paddingTop + chartHeight + 4}
+                      stroke="#333333"
+                      strokeWidth="1"
+                    />
                     {shouldDisplayLabel && (
                       <text
                         x={xPos}
-                        y={paddingTop + chartHeight + 20}
+                        y={paddingTop + chartHeight + 28}
                         fill="#888888"
-                        fontSize={periodos.length > 16 ? '9' : '11'}
+                        fontSize={periodos.length > 16 ? '9' : '10.5'}
                         fontWeight="600"
                         textAnchor="middle"
+                        data-cy="rotulo-eixo-x"
                       >
                         {partialInfo.isParcial ? `${formatMonthLabel(p)}*` : formatMonthLabel(p)}
                       </text>
@@ -740,22 +634,52 @@ export default function AdminAnalytics() {
                       </g>
                     ))}
 
-                    {/* Círculos / Nós em cada mês (com suporte a anéis concêntricos se coincidentes - ACH-02) */}
+                    {/* Círculos / Nós em cada mês */}
                     {points.map((pt, pIdx) => {
-                      const circleRadius = pt.coincidentTotal > 1 ? 6 + pt.coincidentIndex * 4 : 6;
-                      const circleFill = pt.coincidentIndex === 0 ? '#050505' : 'none';
+                      const isSingleMonth = periodos.length === 1;
+
+                      // Cálculo do raio e preenchimento respeitando o tipo de período e valor
+                      let circleRadius: number;
+                      let circleFill: string;
+                      let circleStrokeWidth: number;
+
+                      if (isSingleMonth) {
+                        // Preserva integralmente o destaque de 1 único mês e a diferenciação concêntrica ACH-02
+                        circleRadius = pt.coincidentTotal > 1 ? 6 + pt.coincidentIndex * 4 : 6;
+                        circleFill = pt.coincidentIndex === 0 ? '#050505' : 'none';
+                        circleStrokeWidth = 3;
+                      } else {
+                        // Múltiplos meses (redução de marcadores e eliminação de halos concêntricos excessivos)
+                        if (pt.valor === 0) {
+                          // Linha de base R$ 0,00: raio uniforme compacto de 3.5px sem halos gigantes
+                          circleRadius = 3.5;
+                          circleFill = pt.coincidentIndex === 0 ? '#0a0a0a' : 'none';
+                          circleStrokeWidth = 1.8;
+                        } else {
+                          // Valor > 0: compacto, com anel concêntrico suave se coincidente (limitado a max 6.5px)
+                          circleRadius = pt.coincidentTotal > 1
+                            ? Math.min(6.5, 4.0 + pt.coincidentIndex * 1.0)
+                            : 4.0;
+                          circleFill = pt.coincidentIndex === 0 ? '#0a0a0a' : 'none';
+                          circleStrokeWidth = 2;
+                        }
+                      }
 
                       const handlePointInteraction = () => {
                         const partialInfo = verificarParcialidadeCompetencia(pt.periodo, appliedFilters);
+                        const key = `${pt.periodo}_${pt.valor.toFixed(2)}`;
+                        const cItems = coincidentItemsMap[key] || [];
                         setTooltip({
                           month: partialInfo.isParcial ? `${formatMonthLabel(pt.periodo)} ${partialInfo.detalhe}` : formatMonthLabel(pt.periodo),
                           category: pt.categoria,
                           value: pt.valor,
                           x: pt.x,
                           y: pt.y,
+                          color: strokeColor,
                           isPartial: partialInfo.isParcial,
                           partialDetail: partialInfo.detalhe,
-                          coincidentCats: pt.coincidentCats.length > 1 ? pt.coincidentCats : undefined
+                          coincidentCats: pt.coincidentCats.length > 1 ? pt.coincidentCats : undefined,
+                          coincidentItems: cItems.length > 1 ? cItems : undefined
                         });
                       };
 
@@ -767,8 +691,8 @@ export default function AdminAnalytics() {
                           r={circleRadius}
                           fill={circleFill}
                           stroke={strokeColor}
-                          strokeWidth="3"
-                          style={{ cursor: 'pointer' }}
+                          strokeWidth={circleStrokeWidth}
+                          style={{ cursor: 'pointer', pointerEvents: 'all' }}
                           data-cy="chart-point"
                           data-periodo={pt.periodo}
                           data-categoria={pt.categoria}
@@ -798,7 +722,7 @@ export default function AdminAnalytics() {
                   transform: 'translate(-50%, -100%)'
                 }}
               >
-                <div className="tooltip-cat" style={{ color: getCategoryColor(tooltip.category, 0) }}>
+                <div className="tooltip-cat" style={{ color: tooltip.color || getCategoryColor(tooltip.category, 0) }}>
                   {tooltip.category}
                 </div>
                 <div className="tooltip-value">
@@ -810,10 +734,34 @@ export default function AdminAnalytics() {
                     * Período Parcial
                   </div>
                 )}
-                {tooltip.coincidentCats && tooltip.coincidentCats.length > 1 && (
+                {tooltip.coincidentItems && tooltip.coincidentItems.length > 1 ? (
                   <div className="tooltip-coincident-badge" data-cy="tooltip-coincident-badge">
-                    Coincide com: {tooltip.coincidentCats.filter(c => c !== tooltip.category).join(', ')}
+                    <div className="tooltip-coincident-header">
+                      Coincide com:
+                    </div>
+                    <div className="tooltip-coincident-list" data-cy="tooltip-coincident-list">
+                      {tooltip.coincidentItems.map((item) => (
+                        <div
+                          key={item.categoria}
+                          className={`tooltip-coincident-item ${item.categoria === tooltip.category ? 'active' : ''}`}
+                          data-cy={`tooltip-item-${item.categoria}`}
+                        >
+                          <span
+                            className="tooltip-coincident-dot"
+                            style={{ backgroundColor: item.cor }}
+                          />
+                          <span className="tooltip-item-cat">{item.categoria}:</span>
+                          <span className="tooltip-item-val">{formatCurrency(item.valor)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
+                ) : (
+                  tooltip.coincidentCats && tooltip.coincidentCats.length > 1 && (
+                    <div className="tooltip-coincident-badge" data-cy="tooltip-coincident-badge">
+                      Coincide com: {tooltip.coincidentCats.filter(c => c !== tooltip.category).join(', ')}
+                    </div>
+                  )
                 )}
               </div>
             )}

@@ -14,17 +14,9 @@
  */
 
 describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 4)', () => {
-  let adminKey = '';
-
   before(() => {
     // 1. Garantir preparação inicial da massa de testes determinística do Cartão 02
     cy.task('prepararMassaAnalise');
-
-    // 2. Obter credencial administrativa exclusivamente de variável de ambiente (sem valores fixos no código)
-    cy.task('obterAdminKey').then((key: any) => {
-      adminKey = (key as string) || '';
-      expect(adminKey, 'Variável de ambiente RUNWAY_ADMIN_KEY deve estar configurada no ambiente').to.be.a('string').and.not.be.empty;
-    });
   });
 
   after(() => {
@@ -41,25 +33,16 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
   });
 
   /**
-   * Procedimento reutilizável para autenticar o modo Administrador e acessar o módulo de Análise
+   * Procedimento reutilizável para acessar o módulo de Análise via modo Administrador demonstrativo
    */
   const desbloquearModoAdmin = () => {
-    cy.visit('/admin');
+    cy.visit('/');
+    cy.get('[data-cy="user-dropdown"]').click();
+    cy.get('[data-cy="painel-admin"]').click();
+    cy.url().should('include', '/admin');
     cy.get('[data-cy="admin-analise"]').click();
 
-    // Alternar para Administrador se estiver como Cliente
-    cy.get('body').then(($body) => {
-      if ($body.find('[data-cy="btn-alternar-admin"]').length > 0) {
-        cy.get('[data-cy="btn-alternar-admin"]').click();
-      }
-    });
-
-    // Informar a credencial administrativa com { log: false } para não expor segredo em logs
-    cy.get('[data-cy="input-chave-admin"]').should('be.visible').type(adminKey, { log: false });
-    cy.get('[data-cy="btn-desbloquear-analise"]').click();
-
     // Confirmar que o painel e os filtros estão prontos
-    cy.get('[data-cy="admin-auth-status"]').should('be.visible');
     cy.get('[data-cy="form-filtros-analise"]').should('be.visible');
     cy.get('[data-cy="lista-categorias-filtro"]').should('be.visible');
   };
@@ -435,5 +418,98 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
     cy.get('[data-cy="msg-erro-validacao"]')
       .should('be.visible')
       .and('contain.text', 'As datas inicial e final devem ser preenchidas');
+  });
+
+  // =========================================================================================
+  // VALIDAÇÃO OBJETIVA DE LEGIBILIDADE, RAIO MÁXIMO E NÃO-SOBREPOSIÇÃO DO SVG (12 MESES / 5 CATS)
+  // =========================================================================================
+  it('Deve garantir legibilidade visual, raio máximo e ausência de sobreposição no eixo X em consulta de 12 meses com 5 categorias', () => {
+    desbloquearModoAdmin();
+
+    // 1. Configurar consulta anual completa: Janeiro a Dezembro de 2026 (12 meses)
+    cy.get('[data-cy="input-data-inicio"]').clear().type('2026-01-01');
+    cy.get('[data-cy="input-data-fim"]').clear().type('2026-12-31');
+
+    // 2. Selecionar todas as cinco categorias disponíveis
+    cy.get('[data-cy="btn-todas-categorias"]').click();
+
+    cy.intercept('GET', '**/api/analise/vendas*dataInicio=2026-01-01*dataFim=2026-12-31*').as('consulta12Meses');
+    cy.get('[data-cy="btn-aplicar-filtros"]').click();
+
+    cy.wait('@consulta12Meses').then((interception) => {
+      expect(interception.response?.statusCode).to.eq(200);
+      expect(interception.response?.body.periodos).to.have.length(12);
+      expect(interception.response?.body.series).to.have.length(5);
+    });
+
+    // 3. Validar a renderização das cinco séries e da legenda completa
+    cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');
+    cy.get('.svg-line-chart').should('exist');
+    cy.get('[data-cy="analytics-legend"]').within(() => {
+      cy.get('.legend-item').should('have.length', 5);
+    });
+
+    // 4. Verificação objetiva: Raio máximo dos marcadores em consulta de múltiplos meses
+    // Todos os pontos em múltiplos meses devem ter raio <= 7.0px (eliminando halos concêntricos gigantes)
+    cy.get('[data-cy="chart-point"]').each(($point) => {
+      const r = Number($point.attr('r'));
+      expect(r, `Raio do ponto (${$point.attr('data-categoria')} em ${$point.attr('data-periodo')})`).to.be.at.most(7.0);
+    });
+
+    // 5. Verificação objetiva: Meses zerados (R$ 0,00) com raio compacto na linha de base
+    // Exemplo: Junho de 2026 (2026-06), onde todas as categorias estão zeradas
+    cy.get('[data-cy="chart-point"][data-periodo="2026-06"]').each(($point) => {
+      expect(Number($point.attr('data-valor'))).to.eq(0);
+      const r = Number($point.attr('r'));
+      expect(r, 'Raio de ponto zerado na linha de base').to.be.at.most(4.0);
+    });
+
+    // 6. Verificação objetiva: Ausência de sobreposição entre marcadores e rótulos do eixo X
+    // Medir matematicamente a coordenada inferior do marcador mais baixo vs. topo do rótulo do mês
+    let maxPointBottom = 0;
+    cy.get('[data-cy="chart-point"]').each(($point) => {
+      const cy = Number($point.attr('cy'));
+      const r = Number($point.attr('r'));
+      const pointBottom = cy + r;
+      if (pointBottom > maxPointBottom) {
+        maxPointBottom = pointBottom;
+      }
+    }).then(() => {
+      cy.get('[data-cy="rotulo-eixo-x"]').each(($label) => {
+        const textY = Number($label.attr('y'));
+        // textY é a linha de base do texto (353). O topo da fonte (10.5px) fica por volta de 342.5.
+        // A folga entre o ponto mais baixo e a linha de base do texto deve ser de pelo menos 20px,
+        // garantindo folga superior livre >= 10px em relação ao topo das letras.
+        const gap = textY - maxPointBottom;
+        expect(gap, 'Espaçamento vertical entre ponto mais baixo e rótulo do eixo X').to.be.at.least(20);
+      });
+    });
+
+    // 7. Verificação objetiva: Tooltip estruturado em pontos coincidentes (mês com múltiplas categorias em R$ 0,00)
+    cy.get('[data-cy="chart-point"][data-periodo="2026-06"]').first().click({ force: true });
+    cy.get('[data-cy="analytics-tooltip"]').should('be.visible');
+    cy.get('[data-cy="analytics-tooltip"]').should('contain.text', 'Jun/26');
+    cy.get('[data-cy="analytics-tooltip"]').should('contain.text', '0,00');
+
+    // Validar bloco de coincidências completo com todas as categorias coincidentes
+    cy.get('[data-cy="tooltip-coincident-badge"]').should('be.visible').and('contain.text', 'Coincide com');
+    cy.get('[data-cy="tooltip-coincident-list"]').within(() => {
+      cy.get('.tooltip-coincident-item').should('have.length', 5);
+      cy.get('.tooltip-coincident-dot').should('have.length', 5);
+      cy.contains('0,00').should('exist');
+    });
+
+    // 8. Verificação objetiva: Preservação dos valores reais do banco e integridade das 5 séries
+    cy.get('[data-cy="total-geral-vendas"]').should('contain.text', '12.398,79'); // Total de 2026 entregue com as 5 categorias
+
+    // 9. Verificação objetiva: Preservação de gráfico de um único mês (RN0072, ACH-02)
+    cy.get('[data-cy="input-data-inicio"]').clear().type('2026-01-01');
+    cy.get('[data-cy="input-data-fim"]').clear().type('2026-01-31');
+    cy.get('[data-cy="btn-aplicar-filtros"]').click();
+
+    cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');
+    cy.get('.svg-line-chart').contains('text', 'Jan/26').should('exist');
+    cy.get('[data-cy="rotulo-ponto-COMPETIÇÃO"]').should('be.visible');
+    cy.get('[data-cy="rotulo-ponto-TREINO DIÁRIO"]').should('be.visible');
   });
 });

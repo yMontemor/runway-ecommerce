@@ -1,28 +1,24 @@
 /**
- * Suíte E2E: Restrição de Acesso à Análise Gerencial ao Perfil Administrador (Cenário 7 / RF0055).
- * Cartão 04 - RunWay E-Commerce
+ * Suíte E2E: Navegação Administrativa e Controle de Acesso (Cenário 7 / RF0055).
+ * Cartão 04 - RunWay E-Commerce (Alternativa C Controlada - Protótipo Acadêmico Demonstrativo)
  * 
- * Valida que:
- * 1. Chamadas diretas à API sem credencial administrativa retornam HTTP 401 Unauthorized.
- * 2. Chamadas diretas à API com credencial inválida retornam HTTP 401 Unauthorized.
- * 3. Chamadas diretas à API com credencial administrativa válida retornam HTTP 200 OK.
- * 4. Na interface, usuários com perfil Cliente são bloqueados visualmente de acessar os dados da análise.
- * 5. Na interface, o Administrador consegue desbloquear e visualizar a análise sob demanda com sua credencial.
- * 6. A credencial é mantida estritamente em memória e descartada ao alternar de perfil ou bloquear a sessão.
+ * Validações obrigatórias:
+ * 1. Perfil Cliente não possui acesso à análise pela navegação demonstrativa da loja.
+ * 2. Acesso direto à rota /admin no modo Cliente apresenta barreira demonstrativa e não ativa perfil Administrador automaticamente.
+ * 3. Entrada explícita no modo Administrador via menu superior ativa perfil Administrador.
+ * 4. Disponibilidade das quatro seções administrativas (Clientes, Pedidos, Trocas, Análise).
+ * 5. Abertura direta da Análise Gerencial sem formulário ou solicitação de chave administrativa.
+ * 6. "Voltar à Loja" restaura o perfil Cliente e o cliente anteriormente selecionado, navegando para /.
+ * 7. Seleção de outro cliente no menu superior ativa esse cliente e retorna à loja /.
+ * 8. API: Endpoint de análise /api/analise/vendas acessível diretamente retornando HTTP 200 com dados consolidados.
  */
 
-describe('Cenário 7: Controle de Acesso à Análise Gerencial de Vendas (RF0055)', () => {
+describe('Cenário 7: Navegação Administrativa Demonstrativa e Acesso à Análise (RF0055)', () => {
   const backendBaseUrl = 'http://localhost:5035';
-  let adminKey = '';
 
   before(() => {
     // Garantir preparação inicial da massa de testes determinística do Cartão 02
     cy.task('prepararMassaAnalise');
-
-    cy.task('obterAdminKey').then((key: any) => {
-      adminKey = (key as string) || '';
-      expect(adminKey, 'Variável de ambiente externa RUNWAY_ADMIN_KEY deve estar configurada').to.be.a('string').and.not.be.empty;
-    });
   });
 
   after(() => {
@@ -31,7 +27,7 @@ describe('Cenário 7: Controle de Acesso à Análise Gerencial de Vendas (RF0055
   });
 
   beforeEach(() => {
-    // Limpeza de sessão antes de cada teste
+    // Limpeza de sessão antes de cada teste para garantir isolamento determinístico
     cy.window().then((win) => {
       win.sessionStorage.clear();
       win.localStorage.clear();
@@ -39,43 +35,157 @@ describe('Cenário 7: Controle de Acesso à Análise Gerencial de Vendas (RF0055
   });
 
   // -------------------------------------------------------------
-  // VALIDAÇÕES DA API (BACKEND)
+  // VALIDAÇÕES DA INTERFACE (FRONTEND)
   // -------------------------------------------------------------
 
-  it('7.1 - API: Chamada direta a GET /api/analise/vendas sem credencial deve retornar HTTP 401 Unauthorized', () => {
-    cy.request({
-      method: 'GET',
-      url: `${backendBaseUrl}/api/analise/vendas?dataInicio=2025-11&dataFim=2026-03&categorias=TREINO%20DI%C3%81RIO`,
-      failOnStatusCode: false
-    }).then((response) => {
-      expect(response.status).to.eq(401);
-      expect(response.body).to.have.property('erro');
-      expect(response.body.erro).to.include('Acesso não autorizado');
+  it('7.1 - Navegação da Loja (Modo Cliente): Não exibe links de análise gerencial no fluxo comum do cliente', () => {
+    cy.visit('/');
+
+    // Confirma que a navegação padrão de cliente está presente
+    cy.get('[data-cy="nav-catalogo"]').should('be.visible');
+    cy.get('[data-cy="nav-carrinho"]').should('be.visible');
+    cy.get('[data-cy="nav-perfil"]').should('be.visible');
+
+    // Confirma que a barra de navegação comum não contém link para análise
+    cy.get('.header-nav').within(() => {
+      cy.contains('Análise').should('not.exist');
+      cy.contains('Painel Administrativo').should('not.exist');
+    });
+
+    // O botão de alternância do cabeçalho indica perfil Cliente (não exibe badge de Admin ativo)
+    cy.get('[data-cy="user-dropdown"]').should('not.have.class', 'admin-user-btn');
+  });
+
+  it('7.2 - Acesso Direto à Rota /admin no Modo Cliente: Apresenta barreira demonstrativa e preserva o modo Cliente mesmo após recarregar a página', () => {
+    // 1. Acessa a rota administrativa diretamente estando em modo Cliente
+    cy.visit('/admin');
+
+    // 2. Confirma apresentação da barreira demonstrativa de proteção
+    cy.get('[data-cy="admin-acesso-restrito-cliente"]').should('be.visible');
+    cy.contains('Acesso Restrito — Painel Administrativo').should('be.visible');
+
+    // 3. Confirma que o painel administrativo e suas seções NÃO foram renderizados
+    cy.get('[data-cy="admin-clientes"]').should('not.exist');
+    cy.get('[data-cy="admin-analise"]').should('not.exist');
+    cy.get('[data-cy="form-filtros-analise"]').should('not.exist');
+
+    // 4. Recarregar a página para verificar que a recarga não ativa automaticamente o modo Administrador
+    cy.reload();
+    cy.get('[data-cy="admin-acesso-restrito-cliente"]').should('be.visible');
+    cy.get('[data-cy="admin-clientes"]').should('not.exist');
+
+    // 5. Clica no botão "Voltar à Loja" da barreira
+    cy.get('[data-cy="btn-voltar-loja-bloqueio"]').click();
+    cy.url().should('eq', Cypress.config().baseUrl + '/');
+  });
+
+  it('7.3 - Entrada Explícita no Modo Administrador: Ativa o modo Administrador e disponibiliza as quatro seções', () => {
+    cy.visit('/');
+
+    // 1. Abre o menu dropdown de perfis no cabeçalho
+    cy.get('[data-cy="user-dropdown"]').click();
+
+    // 2. Clica explicitamente em "Painel Administrativo"
+    cy.get('[data-cy="painel-admin"]').should('be.visible').click();
+
+    // 3. Deve navegar para /admin
+    cy.url().should('include', '/admin');
+
+    // 4. O botão de perfil no cabeçalho deve indicar o modo Administrador ativo
+    cy.get('[data-cy="user-dropdown"]').should('have.class', 'admin-user-btn').and('contain.text', 'Admin');
+
+    // 5. As quatro seções administrativas obrigatórias devem estar disponíveis na barra lateral
+    cy.get('[data-cy="admin-clientes"]').should('be.visible');
+    cy.get('[data-cy="admin-pedidos"]').should('be.visible');
+    cy.get('[data-cy="admin-trocas"]').should('be.visible');
+    cy.get('[data-cy="admin-analise"]').should('be.visible');
+  });
+
+  it('7.4 - Abertura Direta da Análise Gerencial: Abre filtros e gráfico sem solicitar chave administrativa', () => {
+    // 1. Entrada explícita no modo Administrador
+    cy.visit('/');
+    cy.get('[data-cy="user-dropdown"]').click();
+    cy.get('[data-cy="painel-admin"]').click();
+    cy.url().should('include', '/admin');
+
+    // 2. Clica na aba "Análise"
+    cy.get('[data-cy="admin-analise"]').click();
+
+    // 3. Filtros gerenciais e categorias devem abrir diretamente
+    cy.get('[data-cy="form-filtros-analise"]').should('be.visible');
+    cy.get('[data-cy="lista-categorias-filtro"]').should('be.visible');
+    cy.contains('ANÁLISE DE VENDAS').should('be.visible');
+
+    // 4. Nenhum formulário ou prompt de chave administrativa deve ser exibido
+    cy.get('[data-cy="input-chave-admin"]').should('not.exist');
+    cy.get('[data-cy="analise-prompt-chave"]').should('not.exist');
+    cy.get('[data-cy="btn-desbloquear-analise"]').should('not.exist');
+  });
+
+  it('7.5 - Retorno à Loja via "Voltar à Loja": Restaura o cliente anteriormente selecionado e navega para a homepage', () => {
+    cy.visit('/');
+
+    // 1. Aguarda carregamento do cliente ativo real da API
+    cy.get('[data-cy="user-dropdown"] .user-name').should('not.have.text', 'Cliente');
+
+    // 2. Obtém o nome do cliente que está ativo inicialmente
+    let nomeClienteOriginal = '';
+    cy.get('[data-cy="user-dropdown"] .user-name').invoke('text').then((texto) => {
+      nomeClienteOriginal = texto.trim();
+      expect(nomeClienteOriginal).to.not.be.empty;
+
+      // 3. Entra no modo Administrador
+      cy.get('[data-cy="user-dropdown"]').click();
+      cy.get('[data-cy="painel-admin"]').click();
+      cy.url().should('include', '/admin');
+      cy.get('[data-cy="user-dropdown"]').should('contain.text', 'Admin');
+
+      // 4. Clica em "Voltar à Loja" na barra lateral administrativa
+      cy.get('[data-cy="btn-admin-voltar-loja"]').click();
+
+      // 5. Navega para a homepage /
+      cy.url().should('eq', Cypress.config().baseUrl + '/');
+
+      // 6. O cliente anteriormente selecionado deve ter sido restaurado com precisão
+      cy.get('[data-cy="user-dropdown"] .user-name').should('have.text', nomeClienteOriginal);
+      cy.get('[data-cy="user-dropdown"]').should('not.have.class', 'admin-user-btn');
     });
   });
 
-  it('7.2 - API: Chamada direta com credencial inválida deve retornar HTTP 401 Unauthorized', () => {
-    cy.request({
-      method: 'GET',
-      url: `${backendBaseUrl}/api/analise/vendas?dataInicio=2025-11&dataFim=2026-03&categorias=TREINO%20DI%C3%81RIO`,
-      headers: {
-        'Authorization': 'Bearer credencial_incorreta_proposital'
-      },
-      failOnStatusCode: false
-    }).then((response) => {
-      expect(response.status).to.eq(401);
-      expect(response.body).to.have.property('erro');
-      expect(response.body.erro).to.include('Credencial administrativa ausente ou inválida');
+  it('7.6 - Seleção de Outro Cliente no Menu: Ativa o cliente selecionado e retorna à loja', () => {
+    // 1. Entra no modo Administrador
+    cy.visit('/');
+    cy.get('[data-cy="user-dropdown"] .user-name').should('not.have.text', 'Cliente');
+    cy.get('[data-cy="user-dropdown"]').click();
+    cy.get('[data-cy="painel-admin"]').click();
+    cy.url().should('include', '/admin');
+    cy.get('[data-cy="user-dropdown"]').should('contain.text', 'Admin');
+
+    // 2. Abre o menu dropdown no topo enquanto Administrador
+    cy.get('[data-cy="user-dropdown"]').click();
+
+    // 3. Seleciona um cliente na lista de clientes (primeiro disponível)
+    cy.get('.dropdown-customers-list button').first().then(($btn) => {
+      const nomeClienteClicado = $btn.find('.cust-name-text').text().trim();
+      cy.wrap($btn).click();
+
+      // 4. Deve navegar de volta à loja /
+      cy.url().should('eq', Cypress.config().baseUrl + '/');
+
+      // 5. O modo Administrador foi desativado e o cliente selecionado agora está ativo
+      cy.get('[data-cy="user-dropdown"]').should('not.have.class', 'admin-user-btn');
+      cy.get('[data-cy="user-dropdown"] .user-name').should('have.text', nomeClienteClicado);
     });
   });
 
-  it('7.3 - API: Chamada com credencial administrativa válida deve retornar HTTP 200 OK e dados consolidados', () => {
+  // -------------------------------------------------------------
+  // VALIDAÇÃO DA API (BACKEND)
+  // -------------------------------------------------------------
+
+  it('7.7 - API: Chamada direta a GET /api/analise/vendas retorna HTTP 200 e dados consolidados (sem autenticação)', () => {
     cy.request({
       method: 'GET',
-      url: `${backendBaseUrl}/api/analise/vendas?dataInicio=2025-11&dataFim=2026-03&categorias=TREINO%20DI%C3%81RIO&categorias=COMPETI%C3%87%C3%83O`,
-      headers: {
-        'Authorization': `Bearer ${adminKey}`
-      }
+      url: `${backendBaseUrl}/api/analise/vendas?dataInicio=2025-11&dataFim=2026-03&categorias=TREINO%20DI%C3%81RIO&categorias=COMPETI%C3%87%C3%83O`
     }).then((response) => {
       expect(response.status).to.eq(200);
       expect(response.body).to.have.property('totalGeral', 7850.09);
@@ -83,83 +193,5 @@ describe('Cenário 7: Controle de Acesso à Análise Gerencial de Vendas (RF0055
       expect(response.body).to.have.property('periodoFinal', '2026-03');
       expect(response.body.series).to.have.length(2);
     });
-  });
-
-  // -------------------------------------------------------------
-  // VALIDAÇÕES DA INTERFACE (FRONTEND)
-  // -------------------------------------------------------------
-
-  it('7.4 - Interface: Perfil Cliente tentando acessar Análise Gerencial deve visualizar barreira de bloqueio sem acesso aos dados', () => {
-    // 1. Acessa a aplicação na rota inicial (inicia como perfil Cliente)
-    cy.visit('/');
-
-    // 2. Tenta navegar diretamente para a rota administrativa
-    cy.visit('/admin');
-
-    // 3. Clica na aba Análise
-    cy.get('[data-cy="admin-analise"]').click();
-
-    // 4. Confirma que a barreira de proteção visual para Cliente está visível
-    cy.get('[data-cy="analise-acesso-bloqueado-cliente"]').should('be.visible');
-    cy.contains('Acesso Restrito — Análise Gerencial').should('be.visible');
-    cy.contains('CLIENTE').should('be.visible');
-
-    // 5. Confirma que os dados da análise e gráficos NÃO estão renderizados no DOM
-    cy.get('[data-cy="admin-auth-status"]').should('not.exist');
-    cy.get('.admin-header-row').should('not.exist');
-    cy.get('.analytics-chart-card').should('not.exist');
-  });
-
-  it('7.5 - Interface: Modo Administrador desbloqueia a análise sob demanda com a credencial correta', () => {
-    cy.visit('/admin');
-
-    // Clica na aba Análise (estando inicialmente como Cliente)
-    cy.get('[data-cy="admin-analise"]').click();
-    cy.get('[data-cy="analise-acesso-bloqueado-cliente"]').should('be.visible');
-
-    // Alterna para perfil Administrador
-    cy.get('[data-cy="btn-alternar-admin"]').click();
-
-    // O prompt de chave de acesso administrativo sob demanda deve aparecer
-    cy.get('[data-cy="analise-prompt-chave"]').should('be.visible');
-    cy.get('[data-cy="input-chave-admin"]').should('be.visible');
-
-    // Tentativa 1: Informar chave errada
-    cy.get('[data-cy="input-chave-admin"]').type('chave_incorreta_teste');
-    cy.get('[data-cy="btn-desbloquear-analise"]').click();
-
-    // Deve exibir mensagem de erro de autenticação e permanecer bloqueado
-    cy.get('[data-cy="msg-erro-autenticacao"]').should('be.visible').and('contain.text', 'Credencial administrativa ausente ou inválida');
-    cy.get('[data-cy="admin-auth-status"]').should('not.exist');
-
-    // Tentativa 2: Informar chave válida fornecida externamente (com log: false para segurança)
-    cy.get('[data-cy="input-chave-admin"]').clear().type(adminKey, { log: false });
-    cy.get('[data-cy="btn-desbloquear-analise"]').click();
-
-    // Deve desbloquear com sucesso e exibir a barra de status autenticada
-    cy.get('[data-cy="admin-auth-status"]').should('be.visible');
-    cy.contains('Administrador Autenticado').should('be.visible');
-
-    // Deve exibir o painel de análise com filtros e cabeçalho
-    cy.get('.admin-header-row').should('be.visible');
-    cy.contains('ANÁLISE DE VENDAS').should('be.visible');
-  });
-
-  it('7.6 - Interface: A credencial administrativa é descartada ao bloquear a sessão ou retornar à loja', () => {
-    // 1. Acessa como Admin e desbloqueia
-    cy.visit('/admin');
-    cy.get('[data-cy="admin-analise"]').click();
-    cy.get('[data-cy="btn-alternar-admin"]').click();
-    cy.get('[data-cy="input-chave-admin"]').type(adminKey, { log: false });
-    cy.get('[data-cy="btn-desbloquear-analise"]').click();
-    cy.get('[data-cy="admin-auth-status"]').should('be.visible');
-
-    // 2. Clica em Bloquear Acesso
-    cy.get('[data-cy="btn-bloquear-sessao"]').click();
-
-    // 3. A sessão em memória deve ser limpa e a tela deve voltar ao estado de solicitação de chave
-    cy.get('[data-cy="analise-prompt-chave"]').should('be.visible');
-    cy.get('[data-cy="admin-auth-status"]').should('not.exist');
-    cy.get('.admin-header-row').should('not.exist');
   });
 });

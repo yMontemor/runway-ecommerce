@@ -55,8 +55,10 @@ export interface CartExpiracaoState {
 interface AppContextType {
   activeProfile: 'CLIENTE' | 'ADMINISTRADOR';
   setActiveProfile: (profile: 'CLIENTE' | 'ADMINISTRADOR') => void;
-  adminKey: string | null;
-  setAdminKey: (key: string | null) => void;
+  previousCustomerId: string | null;
+  enterAdminMode: () => void;
+  exitAdminToStore: () => void;
+  selectCustomerAndExitAdmin: (id: string) => void;
   customers: Customer[];
   activeCustomer: Customer;
   isLoadingCustomers: boolean;
@@ -139,6 +141,26 @@ export function useApp() {
 }
 
 const ACTIVE_CUSTOMER_STORAGE_KEY = 'runway_active_customer_id';
+const ACTIVE_PROFILE_STORAGE_KEY = 'runway_active_profile';
+const PREVIOUS_CUSTOMER_STORAGE_KEY = 'runway_previous_customer_id';
+
+function getSavedProfile(): 'CLIENTE' | 'ADMINISTRADOR' {
+  try {
+    const saved = sessionStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY);
+    return saved === 'ADMINISTRADOR' ? 'ADMINISTRADOR' : 'CLIENTE';
+  } catch {
+    return 'CLIENTE';
+  }
+}
+
+function getSavedPreviousCustomerId(): string | null {
+  try {
+    const saved = sessionStorage.getItem(PREVIOUS_CUSTOMER_STORAGE_KEY);
+    return saved && saved.trim() ? saved.trim() : null;
+  } catch {
+    return null;
+  }
+}
 
 function getSavedCustomerId(): string | null {
   try {
@@ -158,22 +180,55 @@ function saveCustomerIdToStorage(id: string): void {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  // Cartão 04: Perfil ativo e chave de acesso administrativo sob demanda (em memória exclusivamente)
-  const [activeProfile, setActiveProfileState] = useState<'CLIENTE' | 'ADMINISTRADOR'>('CLIENTE');
-  const [adminKey, setAdminKey] = useState<string | null>(null);
+  // Perfil ativo demonstrativo e controle de transição com preservação do cliente anterior
+  const [activeProfile, setActiveProfileState] = useState<'CLIENTE' | 'ADMINISTRADOR'>(getSavedProfile);
+  const [previousCustomerId, setPreviousCustomerIdState] = useState<string | null>(getSavedPreviousCustomerId);
 
   const setActiveProfile = useCallback((profile: 'CLIENTE' | 'ADMINISTRADOR') => {
     setActiveProfileState(profile);
-    if (profile === 'CLIENTE') {
-      // Regra 4: Descartar a chave temporária ao sair do modo administrador
-      setAdminKey(null);
-    }
+    try {
+      sessionStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, profile);
+    } catch (_) {}
   }, []);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [activeCustomerId, setActiveCustomerId] = useState<string>(() => {
     return getSavedCustomerId() || 'CLI-0001';
   });
+
+  const enterAdminMode = useCallback(() => {
+    setPreviousCustomerIdState(activeCustomerId);
+    try {
+      sessionStorage.setItem(PREVIOUS_CUSTOMER_STORAGE_KEY, activeCustomerId);
+      sessionStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, 'ADMINISTRADOR');
+    } catch (_) {}
+    setActiveProfileState('ADMINISTRADOR');
+  }, [activeCustomerId]);
+
+  const exitAdminToStore = useCallback(() => {
+    const prevId = previousCustomerId || getSavedPreviousCustomerId();
+    if (prevId) {
+      setActiveCustomerId(prevId);
+      saveCustomerIdToStorage(prevId);
+    }
+    setPreviousCustomerIdState(null);
+    try {
+      sessionStorage.removeItem(PREVIOUS_CUSTOMER_STORAGE_KEY);
+      sessionStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, 'CLIENTE');
+    } catch (_) {}
+    setActiveProfileState('CLIENTE');
+  }, [previousCustomerId]);
+
+  const selectCustomerAndExitAdmin = useCallback((id: string) => {
+    setActiveCustomerId(id);
+    saveCustomerIdToStorage(id);
+    setPreviousCustomerIdState(null);
+    try {
+      sessionStorage.removeItem(PREVIOUS_CUSTOMER_STORAGE_KEY);
+      sessionStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, 'CLIENTE');
+    } catch (_) {}
+    setActiveProfileState('CLIENTE');
+  }, []);
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
   const [customerLoadError, setCustomerLoadError] = useState<string | null>(null);
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
@@ -1216,11 +1271,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isLoadingProducts,
         productsLoadError,
         refreshProducts: carregarProdutos,
-        // Cartão 04: Perfil e chave administrativa
+        // Modo Administrativo e transição de perfil
         activeProfile,
         setActiveProfile,
-        adminKey,
-        setAdminKey,
+        previousCustomerId,
+        enterAdminMode,
+        exitAdminToStore,
+        selectCustomerAndExitAdmin,
         customers,
         activeCustomer,
         isLoadingCustomers,

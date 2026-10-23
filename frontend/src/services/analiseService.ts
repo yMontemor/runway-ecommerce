@@ -36,80 +36,16 @@ export interface ConsultaAnaliseVendasResult {
   dados?: AnaliseVendasResponseDto;
 }
 
-export interface ValidacaoAcessoAdminResult {
-  sucesso: boolean;
-  statusCode: number;
-  mensagem?: string;
-  dados?: any;
-}
-
 export const analiseService = {
   /**
-   * Valida a credencial administrativa informada contra o endpoint protegido GET /api/analise/vendas.
-   * Não embute credenciais no código do frontend: a chave é recebida dinamicamente da memória.
-   */
-  async validarAcesso(chaveAdmin?: string | null): Promise<ValidacaoAcessoAdminResult> {
-    try {
-      const headers: Record<string, string> = {
-        'Accept': 'application/json'
-      };
-
-      if (chaveAdmin && chaveAdmin.trim().length > 0) {
-        headers['Authorization'] = `Bearer ${chaveAdmin.trim()}`;
-      }
-
-      const response = await fetch(
-        `${API_BASE_URL}/api/analise/vendas?dataInicio=2026-01&dataFim=2026-01&categorias=TREINO%20DI%C3%81RIO`,
-        {
-          method: 'GET',
-          headers
-        }
-      );
-
-      if (response.status === 200) {
-        const dados = await response.json();
-        return {
-          sucesso: true,
-          statusCode: 200,
-          dados
-        };
-      }
-
-      const erroJson = await response.json().catch(() => ({}));
-      return {
-        sucesso: false,
-        statusCode: response.status,
-        mensagem: erroJson.erro || (response.status === 401
-          ? 'Credencial administrativa ausente ou inválida (HTTP 401).'
-          : 'Acesso negado à análise gerencial.')
-      };
-    } catch (err: any) {
-      return {
-        sucesso: false,
-        statusCode: 0,
-        mensagem: err.message || 'Falha de comunicação com o servidor ao validar credencial.'
-      };
-    }
-  },
-
-  /**
    * Consulta o histórico de vendas agrupado por período e categoria de produto (RF0055, RF0056, RF0057, RN0071, RN0072, RN0073).
-   * Consome o endpoint protegido GET /api/analise/vendas com a credencial administrativa volátil.
+   * No modelo demonstrativo do protótipo, a consulta é realizada diretamente pela camada de apresentação.
    */
   async consultarVendas(
     params: ConsultaAnaliseVendasParams,
-    chaveAdmin?: string | null,
     signal?: AbortSignal
   ): Promise<ConsultaAnaliseVendasResult> {
     try {
-      const headers: Record<string, string> = {
-        'Accept': 'application/json'
-      };
-
-      if (chaveAdmin && chaveAdmin.trim().length > 0) {
-        headers['Authorization'] = `Bearer ${chaveAdmin.trim()}`;
-      }
-
       const queryParams = new URLSearchParams();
       queryParams.append('dataInicio', params.dataInicio);
       queryParams.append('dataFim', params.dataFim);
@@ -119,7 +55,9 @@ export const analiseService = {
 
       const response = await fetch(`${API_BASE_URL}/api/analise/vendas?${queryParams.toString()}`, {
         method: 'GET',
-        headers,
+        headers: {
+          'Accept': 'application/json'
+        },
         signal
       });
 
@@ -136,9 +74,7 @@ export const analiseService = {
       return {
         sucesso: false,
         statusCode: response.status,
-        mensagem: erroJson.erro || (response.status === 401
-          ? 'Credencial administrativa ausente ou inválida (HTTP 401).'
-          : 'Erro ao consultar análise gerencial de vendas.')
+        mensagem: erroJson.erro || 'Erro ao consultar análise gerencial de vendas.'
       };
     } catch (err: any) {
       if (err.name === 'AbortError') {

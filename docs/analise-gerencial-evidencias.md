@@ -68,9 +68,8 @@ flowchart TD
     end
 
     subgraph Backend
-        AC[AnaliseController.cs]
+        AC[AnaliseController.cs (Acesso Direto)]
         AS[AnaliseService.cs]
-        AA[AdminAuthorizeAttribute.cs]
         DB[(runway_test)]
     end
 
@@ -87,7 +86,7 @@ flowchart TD
         BMK[Benchmark: benchmark_analise_rnf0011.js]
     end
 
-    RF55 --> AA --> AC --> AS --> AAX
+    RF55 --> AC --> AS --> AAX
     RF56 --> AS --> AAX
     RF57 --> AS --> AAX
     RN71 --> AS
@@ -99,14 +98,14 @@ flowchart TD
 
     AAX --> C07
     AAX --> C08A
-    AA --> C08B
+    CTX --> C08B
 ```
 
 ### Detalhamento da Rastreabilidade por Requisito
 
 | ID | Regra de Negócio | Camada Backend | Camada Frontend | Teste Automatizado | Evidência Visual / Aferição |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **RF0055** | Consulta gerencial restrita e por período | `AnaliseController.cs`, `AdminAuthorizeAttribute.cs` | `AdminAnalytics.tsx`, `analiseService.ts` | Cypress: Cenário 7 (`analise-gerencial-acesso.cy.ts`) | `01-bloqueio-perfil-cliente.png`, `02-desbloqueio-chave-admin.png` |
+| **RF0055** | Consulta gerencial restrita e por período | `AnaliseController.cs` (acesso direto, sem autenticação) | `AdminAnalytics.tsx`, `analiseService.ts`, `AppContext.tsx` | Cypress: Cenário 7 (`analise-gerencial-acesso.cy.ts`) | `01-bloqueio-perfil-cliente.png`, `02-painel-administrativo-secoes.png` |
 | **RF0056** | Intervalo de datas e ordem cronológica | `AnaliseService.cs:48-56` | `AdminAnalytics.tsx:87-95` | Cypress: Cenário 4 (`analise-gerencial-grafico.cy.ts:311`) | `03-grafico-completo-inicial.png` |
 | **RF0057** | Seleção simples e múltipla de categorias | `AnaliseService.cs:64-75` | `AdminAnalytics.tsx:103-106` | Cypress: Cenários 1 e 2 (`analise-gerencial-grafico.cy.ts:70,128`) | `03-grafico-completo-inicial.png` |
 | **RN0071** | Granularidade mensal e cômputo sem frete | `AnaliseService.cs:115-140` | `AdminAnalytics.tsx:432-470` | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:201`) | `03-grafico-completo-inicial.png` |
@@ -193,26 +192,26 @@ Os sete cenários funcionais exigidos para a entrega foram integralmente automat
     - Total Geral de vendas sobe para **R$ 8.299,99**.
   - Restauração canônica automática pós-teste via hook `afterEach` com verificação de integridade no banco.
 
-### Cenário 7: Restrição da análise gerencial ao administrador
-- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-acesso.cy.ts` (linha 14)
-- **Requisitos Cobertos:** RF0055, Controle de Acesso
+### Cenário 7: Navegação administrativa demonstrativa e acesso à análise
+- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-acesso.cy.ts` (linha 16)
+- **Requisitos Cobertos:** RF0055, Navegação Administrativa Demonstrativa (Alternativa C Controlada)
 - **Verificações Realizadas:**
-  - Teste 7.1 (API): Requisição sem token retorna `HTTP 401 Unauthorized`.
-  - Teste 7.2 (API): Requisição com credencial errada retorna `HTTP 401 Unauthorized`.
-  - Teste 7.3 (API): Requisição com credencial válida via `Authorization: Bearer <key>` retorna `HTTP 200 OK`.
-  - Teste 7.4 (UI): Usuário no perfil CLIENTE é bloqueado visualmente de acessar o módulo (`data-cy="analise-acesso-bloqueado-cliente"`).
-  - Teste 7.5 (UI): Administrador desbloqueia o painel sob demanda informando a credencial configurada.
-  - Teste 7.6 (UI): Credencial mantida estritamente em memória e descartada ao bloquear a sessão ou mudar de perfil.
+  - Teste 7.1 (UI): Modo Cliente não exibe links de análise gerencial no fluxo comum da loja.
+  - Teste 7.2 (UI): Acesso direto à rota `/admin` no modo Cliente apresenta barreira demonstrativa e preserva o modo Cliente mesmo após recarga (`reload`).
+  - Teste 7.3 (UI): Entrada explícita no modo Administrador via menu superior ativa perfil Administrador e disponibiliza as quatro seções (Clientes, Pedidos, Trocas e Análise).
+  - Teste 7.4 (UI): Abertura direta da Análise Gerencial sem formulário ou solicitação de chave administrativa.
+  - Teste 7.5 (UI): "Voltar à Loja" restaura o perfil Cliente e o cliente anteriormente selecionado, navegando para a homepage `/`.
+  - Teste 7.6 (UI): Seleção de outro cliente no menu superior ativa esse cliente e retorna à loja `/`.
+  - Teste 7.7 (API): Chamada direta a `GET /api/analise/vendas` retorna `HTTP 200 OK` e dados consolidados sem cabeçalhos de autorização (conforme protótipo acadêmico sem login/auth).
 
 ---
 
 ## 6. Inventário de Arquivos do Módulo
 
 ### Backend (C# / ASP.NET Core / EF Core)
-- `backend/Controllers/AnaliseController.cs`: Controller MVC REST expondo `GET /api/analise/vendas` protegido com atributo `[AdminAuthorize]`.
+- `backend/Controllers/AnaliseController.cs`: Controller MVC REST expondo `GET /api/analise/vendas` acessível diretamente sem autenticação conforme escopo do protótipo acadêmico.
 - `backend/Services/AnaliseService.cs`: Serviço que implementa agregação mensal, fuso `America/Sao_Paulo`, filtro de status `ENTREGUE`, preenchimento de meses sem vendas e validações de 1 a 24 meses.
 - `backend/Services/IAnaliseService.cs`: Interface do serviço de análise gerencial.
-- `backend/Filters/AdminAuthorizeAttribute.cs`: Filtro de ação assíncrono que valida credencial administrativa sob demanda extraída de `Authorization: Bearer` ou `X-Admin-Key`.
 - `backend/DTOs/Analise/AnaliseVendasFiltroDto.cs`: DTO de entrada para validação de período e categorias.
 - `backend/DTOs/Analise/AnaliseVendasResponseDto.cs`: DTO consolidado com períodos, séries, totais e metadados.
 - `backend/DTOs/Analise/AnaliseVendasSerieDto.cs`: DTO representando uma série temporal de categoria.
@@ -243,19 +242,19 @@ Os sete cenários funcionais exigidos para a entrega foram integralmente automat
 
 Todas as evidências visuais abaixo foram geradas através da execução real da interface React integrada à API ASP.NET Core e ao banco PostgreSQL `runway_test`, salvas no diretório `docs/evidencias/`:
 
-### Evidência 01 — Bloqueio Administrativo ao Perfil Cliente (RF0055)
+### Evidência 01 — Barreira de Acesso Demonstrativo na Rota /admin (RF0055)
 - **Arquivo:** `docs/evidencias/01-bloqueio-perfil-cliente.png`
-- **Descrição:** Demonstra a barreira de segurança visual quando o usuário está no perfil CLIENTE, impedindo a visualização de faturamento e exibindo mensagem explicativa com botão para alternar de perfil.
+- **Descrição:** Demonstra a barreira de proteção visual ao tentar acessar diretamente a rota `/admin` enquanto em perfil Cliente, preservando o modo Cliente sem ativação automática e oferecendo botão para retorno à loja ou ativação explícita.
 
 ![Evidência 01 — Bloqueio Perfil Cliente](evidencias/01-bloqueio-perfil-cliente.png)
 
 ---
 
-### Evidência 02 — Formulário de Desbloqueio com Chave Administrativa (RF0055)
-- **Arquivo:** `docs/evidencias/02-desbloqueio-chave-admin.png`
-- **Descrição:** Exibição do prompt sob demanda solicitando a credencial administrativa com campo oculto do tipo senha, mantendo a chave exclusivamente em memória sem expor segredos.
+### Evidência 02 — Painel Administrativo com as Quatro Seções (RF0055)
+- **Arquivo:** `docs/evidencias/02-painel-administrativo-secoes.png`
+- **Descrição:** Exibição do painel administrativo completo ativado explicitamente, disponibilizando as quatro funcionalidades canônicas: Clientes, Pedidos, Trocas e Análise, com abertura direta da Análise de Vendas sem solicitação de chave.
 
-![Evidência 02 — Desbloqueio Chave Admin](evidencias/02-desbloqueio-chave-admin.png)
+![Evidência 02 — Painel Administrativo](evidencias/02-painel-administrativo-secoes.png)
 
 ---
 
@@ -288,6 +287,22 @@ Todas as evidências visuais abaixo foram geradas através da execução real da
 - **Descrição:** Interface React recalculada em tempo real após a transição oficial do pedido `PED-ANL-0008` para o status `ENTREGUE` via PATCH da API. O mês de Março/2026 da categoria *Treino Diário* sobe de R$ 0,00 para **R$ 449,90**, o subtotal da categoria atualiza para **R$ 2.800,49** e o faturamento geral atinge **R$ 8.299,99**.
 
 ![Evidência 06 — Atualização Pós-Entrega](evidencias/06-atualizacao-pos-entrega-pedido.png)
+
+---
+
+### Evidência 07 — Gráfico Anual de 12 Meses com Cinco Categorias e Eixo X Desobstruído
+- **Arquivo:** `docs/evidencias/07-grafico-12-meses-5-categorias.png`
+- **Descrição:** Consulta abrangendo o período completo de Janeiro a Dezembro de 2026 com as cinco categorias ativas. Demonstra o refinamento visual do SVG: marcadores contidos (raio máximo $\le 7\text{ px}$), linha de base de R$ 0,00 limpa e uniforme sem acúmulo concêntrico de halos, e vão livre superior a $20\text{ px}$ entre a linha de base e os rótulos dos doze meses.
+
+![Evidência 07 — Gráfico 12 Meses](evidencias/07-grafico-12-meses-5-categorias.png)
+
+---
+
+### Evidência 08 — Tooltip Estruturado com Consulta de Categorias Coincidentes
+- **Arquivo:** `docs/evidencias/08-tooltip-coincidentes-12-meses.png`
+- **Descrição:** Interatividade no tooltip flutuante ao consultar um ponto onde múltiplas categorias apresentam o mesmo valor (mês com faturamento zero nas cinco séries). O tooltip exibe em destaque a categoria focada e detalha a lista estruturada de todas as categorias coincidentes com indicador de cor individual e valor monetário exato formatado (`R$ 0,00`).
+
+![Evidência 08 — Tooltip Coincidentes 12 Meses](evidencias/08-tooltip-coincidentes-12-meses.png)
 
 ---
 
@@ -365,12 +380,15 @@ Em conformidade com as boas práticas de Engenharia de Software, as divergência
 - **Texto da RN0012 no DRS Original:** *"Um livro pode estar associado com mais de uma categoria."*
 - **Decisão Implementada:** No modelo de dados atual do RunWay, cada produto (tênis de corrida) possui exatamente uma categoria associada como atributo escalar na entidade `PRODUTO` (`categoria VARCHAR(50)`). Não existe tabela associativa intermediária N:N entre produtos e categorias. Contudo, como cada pedido do cliente pode conter itens de múltiplas categorias distintas, a segregação contábil ocorre no nível do `ITEM_PEDIDO`, atendendo integralmente à decomposição das séries no gráfico gerencial.
 
-### 10.3. Controle Administrativo Simplificado
-- **Orientação da Disciplina:** O professor dispensou expressamente a implementação de controle de acesso complexo (RBAC), tela formal de login e gerenciamento de perfis de usuário para a entrega acadêmica.
-- **Decisão Implementada:** Foi adotado um mecanismo simplificado e eficiente de controle de acesso:
-  1. No frontend: verificação visual de perfil no `AppContext` bloqueando clientes.
-  2. No backend: filtro de ação `[AdminAuthorize]` exigindo uma chave secreta sob demanda via cabeçalho HTTP `Authorization: Bearer <RUNWAY_ADMIN_KEY>`.
-  A chave não é armazenada em cookies ou localStorage, permanecendo estritamente em memória volátil durante a sessão do administrador.
+### 10.3. Alternância Demonstrativa de Perfis e Ausência de Autenticação (Alternativa C Controlada)
+- **Orientação da Disciplina:** O professor dispensou expressamente a implementação de controle de acesso complexo (RBAC), tela formal de login e autenticação para o protótipo acadêmico, solicitando a manutenção do fluxo demonstrativo ágil entre Cliente e Administrador.
+- **Decisão Implementada (Alternativa C Controlada):**
+  1. **Alternância demonstrativa de perfis:** A transição entre os papéis de Cliente e Administrador é realizada no frontend via `AppContext` e refletida no menu superior (`Header`). A seleção de "Painel Administrativo" ativa o perfil Administrador e direciona para `/admin`. A opção "Voltar à Loja" restaura o perfil Cliente, recupera o cliente previamente ativo e retorna à homepage `/`.
+  2. **Acesso direto à rota `/admin`:** A rota `/admin` não ativa automaticamente o modo Administrador. Se acessada diretamente em modo Cliente (inclusive após recarga de página), uma barreira demonstrativa na interface (`[data-cy="admin-acesso-restrito-cliente"]`) informa que a área é restrita e orienta a alternância pelo menu.
+  3. **Acesso direto às funcionalidades administrativas:** Uma vez no painel, as quatro abas (Clientes, Pedidos, Trocas e Análise) ficam disponíveis de forma direta, sem formulários ou digitação de chaves manuais.
+  4. **Ausência de autorização no backend:** O endpoint `/api/analise/vendas` não possui filtros de autorização (`[AdminAuthorize]`) e responde diretamente às requisições, harmonizando-se com os demais endpoints do sistema (`ClientesController`, `PedidosController`, `TrocasController`). Em conformidade com o escopo acadêmico, não há tokens estáticos embutidos no JavaScript nem proteção criptográfica contra chamadas HTTP diretas via curl/Postman.
+  5. **Cenário 7 Atualizado:** Valida a navegação demonstrativa completa, a barreira de acesso direto em modo Cliente, o retorno com restauração de cliente e o consumo direto da API sem asserções de erro 401.
+  6. **Permanência das Regras Financeiras:** Todas as regras contábeis, filtros de períodos, agregação de categorias e critérios de status (`ENTREGUE`) permanecem rigorosamente aplicados e validados.
 
 ### 10.4. Desempenho Local vs. Ambiente de Produção
 - As medições do benchmark RNF0011 foram obtidas em ambiente local de desenvolvimento (Windows 11, PostgreSQL local em SSD NVMe, loopback TCP). Em ambiente produtivo distribuído na nuvem, haverá latência de rede adicional (RTT) e concorrência de conexões. Ainda assim, a margem obtida (média de 7,33 ms contra o teto de 1.000 ms) garante folga técnica superior a 950 ms para absorver variações de rede.
@@ -383,8 +401,7 @@ Para reproduzir integralmente os testes e as evidências sem utilizar credenciai
 
 ### Passo 1: Configurar Variáveis de Ambiente no Terminal (PowerShell)
 ```powershell
-# Defina as variáveis do seu ambiente local (sem expor segredos em arquivos públicos)
-$env:RUNWAY_ADMIN_KEY = "<sua-chave-administrativa>"
+# Defina as variáveis de conexão ao banco de testes local (sem expor segredos)
 $env:ConnectionStrings__RunWayDatabase = "Host=localhost;Port=5432;Database=runway_test;Username=<seu-usuario>;Password=<sua-senha>"
 $env:PGHOST = "localhost"
 $env:PGPORT = "5432"

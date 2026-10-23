@@ -13,8 +13,6 @@
  */
 
 describe('Auditoria ACH-01 e ACH-02 — Competências Parciais, Mês Único e Pontos Coincidentes', () => {
-  let adminKey = '';
-
   before(() => {
     // 1. Confirmar banco seguro e preparar massa canônica
     cy.task('confirmarBancoSeguro').then((res: any) => {
@@ -22,13 +20,7 @@ describe('Auditoria ACH-01 e ACH-02 — Competências Parciais, Mês Único e Po
     });
     cy.task('prepararMassaAnalise');
 
-    // 2. Obter credencial administrativa exclusivamente de variável de ambiente
-    cy.task('obterAdminKey').then((key: any) => {
-      adminKey = (key as string) || '';
-      expect(adminKey, 'RUNWAY_ADMIN_KEY deve estar configurada no ambiente').to.be.a('string').and.not.be.empty;
-    });
-
-    // 3. Confirmar que a API ASP.NET Core está consumindo o banco runway_test
+    // 2. Confirmar que a API ASP.NET Core está consumindo o banco runway_test
     cy.request({
       url: 'http://localhost:5035/api/pedidos/PED-ANL-0001',
       failOnStatusCode: false
@@ -51,19 +43,12 @@ describe('Auditoria ACH-01 e ACH-02 — Competências Parciais, Mês Único e Po
   });
 
   const desbloquearModoAdmin = () => {
-    cy.visit('/admin');
+    cy.visit('/');
+    cy.get('[data-cy="user-dropdown"]').click();
+    cy.get('[data-cy="painel-admin"]').click();
+    cy.url().should('include', '/admin');
     cy.get('[data-cy="admin-analise"]').click();
 
-    cy.get('body').then(($body) => {
-      if ($body.find('[data-cy="btn-alternar-admin"]').length > 0) {
-        cy.get('[data-cy="btn-alternar-admin"]').click();
-      }
-    });
-
-    cy.get('[data-cy="input-chave-admin"]').should('be.visible').type(adminKey, { log: false });
-    cy.get('[data-cy="btn-desbloquear-analise"]').click();
-
-    cy.get('[data-cy="admin-auth-status"]').should('be.visible');
     cy.get('[data-cy="form-filtros-analise"]').should('be.visible');
     // Aguardar a renderização inicial do painel
     cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');

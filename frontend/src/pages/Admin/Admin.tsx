@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useApp } from '../../store/AppContext';
 import AdminClients from './components/AdminClients';
 import AdminOrders from './components/AdminOrders';
 import AdminExchanges from './components/AdminExchanges';
@@ -8,10 +9,54 @@ import './Admin.css';
 
 export default function Admin() {
   const navigate = useNavigate();
+  const { activeProfile, enterAdminMode, exitAdminToStore } = useApp();
   const [activeTab, setActiveTab] = useState<'clientes' | 'pedidos' | 'trocas' | 'analise'>('clientes');
 
+  // Proteção demonstrativa: se estiver em modo Cliente ao acessar /admin diretamente,
+  // preserva o modo Cliente e exibe a barreira visual sem ativar o perfil automaticamente.
+  if (activeProfile === 'CLIENTE') {
+    return (
+      <div className="admin-analytics-restricted" data-cy="admin-acesso-restrito-cliente">
+        <div className="restricted-card">
+          <div className="restricted-icon">🔒</div>
+          <h2>Acesso Restrito — Painel Administrativo</h2>
+          <p>
+            O painel administrativo é destinado à demonstração das funcionalidades do perfil <strong>Administrador</strong>.
+          </p>
+          <div className="restricted-badge">
+            Perfil Atual: <span className="tag-cliente">CLIENTE</span>
+          </div>
+          <p className="restricted-hint">
+            Para acessar o painel de gestão, ative explicitamente o modo Administrador:
+          </p>
+          <div className="restricted-actions">
+            <button
+              type="button"
+              onClick={() => {
+                exitAdminToStore();
+                navigate('/');
+              }}
+              className="btn-cancel-unlock"
+              data-cy="btn-voltar-loja-bloqueio"
+            >
+              Voltar à Loja
+            </button>
+            <button
+              type="button"
+              onClick={() => enterAdminMode()}
+              className="btn-unlock-profile"
+              data-cy="btn-ativar-admin-explicitamente"
+            >
+              Ativar Modo Administrador
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="admin-layout-page">
+    <div className="admin-layout-page" data-cy="admin-layout">
       {/* Sidebar Administrativa */}
       <aside className="admin-sidebar">
         <div className="admin-sidebar-brand">
@@ -80,7 +125,10 @@ export default function Admin() {
           <div className="sidebar-nav-divider"></div>
           
           <button
-            onClick={() => navigate('/catalogo')}
+            onClick={() => {
+              exitAdminToStore();
+              navigate('/');
+            }}
             className="admin-nav-btn btn-exit-store"
             type="button"
             data-cy="btn-admin-voltar-loja"

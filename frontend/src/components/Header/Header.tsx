@@ -1,16 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../../store/AppContext';
 import './Header.css';
 
 export default function Header() {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { customers, activeCustomer, setActiveCustomer, cartsByCustomer, toggleChatbot, activeProfile, setActiveProfile } = useApp();
+  const {
+    customers,
+    activeCustomer,
+    cartsByCustomer,
+    toggleChatbot,
+    activeProfile,
+    enterAdminMode,
+    exitAdminToStore,
+    selectCustomerAndExitAdmin
+  } = useApp();
   const navigate = useNavigate();
-  const location = useLocation();
 
-  const isAdmin = activeProfile === 'ADMINISTRADOR' || location.pathname.startsWith('/admin');
+  const isAdmin = activeProfile === 'ADMINISTRADOR';
 
   const currentCart = cartsByCustomer[activeCustomer.id] || [];
   const cartCount = currentCart.reduce((sum, item) => sum + item.quantity, 0);
@@ -31,18 +39,15 @@ export default function Header() {
   }, [showDropdown]);
 
   const handleCustomerSelect = (id: string) => {
-    setActiveProfile('CLIENTE');
-    setActiveCustomer(id);
+    selectCustomerAndExitAdmin(id);
     setShowDropdown(false);
-    if (location.pathname.startsWith('/admin')) {
-      navigate('/cliente');
-    }
+    navigate('/');
   };
 
   const handleAdminSelect = () => {
-    setActiveProfile('ADMINISTRADOR');
-    navigate('/admin');
+    enterAdminMode();
     setShowDropdown(false);
+    navigate('/admin');
   };
 
   const triggerChatbot = (e: React.MouseEvent) => {
@@ -195,12 +200,13 @@ export default function Header() {
                     <div className="dropdown-divider"></div>
                     <button
                       onClick={() => {
-                        setActiveProfile('CLIENTE');
-                        navigate('/catalogo');
+                        exitAdminToStore();
                         setShowDropdown(false);
+                        navigate('/');
                       }}
                       className="dropdown-item return-store-item"
                       type="button"
+                      data-cy="dropdown-voltar-loja"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.45rem' }}>
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>

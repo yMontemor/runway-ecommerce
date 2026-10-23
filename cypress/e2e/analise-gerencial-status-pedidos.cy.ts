@@ -17,7 +17,6 @@
 
 describe('Cartão 08 — Cenários Funcionais 5 e 6 (Status ENTREGUE e Atualização Reativa)', () => {
   const backendBaseUrl = 'http://localhost:5035';
-  let adminKey = '';
 
   before(() => {
     // 1. Confirmar que a conexão do ambiente está estritamente vinculada a runway_test
@@ -28,12 +27,6 @@ describe('Cartão 08 — Cenários Funcionais 5 e 6 (Status ENTREGUE e Atualiza�
 
     // 2. Garantir preparação inicial da massa de testes determinística do Cartão 02
     cy.task('prepararMassaAnalise');
-
-    // 3. Obter credencial administrativa exclusivamente de variável de ambiente
-    cy.task('obterAdminKey').then((key: any) => {
-      adminKey = (key as string) || '';
-      expect(adminKey, 'Variável de ambiente RUNWAY_ADMIN_KEY deve estar configurada no ambiente').to.be.a('string').and.not.be.empty;
-    });
   });
 
   afterEach(() => {
@@ -62,25 +55,16 @@ describe('Cartão 08 — Cenários Funcionais 5 e 6 (Status ENTREGUE e Atualiza�
   });
 
   /**
-   * Procedimento reutilizável para autenticar o modo Administrador e acessar o módulo de Análise
+   * Procedimento reutilizável para acessar o módulo de Análise via modo Administrador demonstrativo
    */
   const desbloquearModoAdmin = () => {
-    cy.visit('/admin');
+    cy.visit('/');
+    cy.get('[data-cy="user-dropdown"]').click();
+    cy.get('[data-cy="painel-admin"]').click();
+    cy.url().should('include', '/admin');
     cy.get('[data-cy="admin-analise"]').click();
 
-    // Alternar para Administrador se estiver como Cliente
-    cy.get('body').then(($body) => {
-      if ($body.find('[data-cy="btn-alternar-admin"]').length > 0) {
-        cy.get('[data-cy="btn-alternar-admin"]').click();
-      }
-    });
-
-    // Informar a credencial administrativa com { log: false } para segurança
-    cy.get('[data-cy="input-chave-admin"]').should('be.visible').type(adminKey, { log: false });
-    cy.get('[data-cy="btn-desbloquear-analise"]').click();
-
     // Confirmar que o painel e os filtros estão prontos
-    cy.get('[data-cy="admin-auth-status"]').should('be.visible');
     cy.get('[data-cy="form-filtros-analise"]').should('be.visible');
     cy.get('[data-cy="lista-categorias-filtro"]').should('be.visible');
   };

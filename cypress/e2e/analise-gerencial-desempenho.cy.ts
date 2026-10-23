@@ -22,7 +22,6 @@
  */
 
 describe('Cenário 8 — Validação de Desempenho RNF0011 no Cypress (Consultas <= 1.000 ms)', { retries: 0 }, () => {
-  let adminKey = '';
   const LIMITE_RNF0011_MS = 1000.0;
   const API_BASE_URL = 'http://localhost:5035';
 
@@ -36,21 +35,12 @@ describe('Cenário 8 — Validação de Desempenho RNF0011 no Cypress (Consultas
     // 2. Garantir preparação determinística da massa do Cartão 02
     cy.task('prepararMassaAnalise');
 
-    // 3. Obter credencial administrativa exclusivamente de variável de ambiente (sem fallback fixo)
-    cy.task('obterAdminKey').then((key: any) => {
-      adminKey = (key as string) || '';
-      expect(adminKey, 'Variável de ambiente RUNWAY_ADMIN_KEY não configurada').to.be.a('string').and.not.be.empty;
-
-      // 4. Validar autorização administrativa preliminar na API
-      cy.request({
-        url: `${API_BASE_URL}/api/analise/vendas?dataInicio=2025-11-01&dataFim=2026-03-31&categorias=TREINO%20DI%C3%81RIO`,
-        headers: {
-          Authorization: `Bearer ${adminKey}`
-        },
-        failOnStatusCode: false
-      }).then((res) => {
-        expect(res.status, 'Chave administrativa deve ser aceita pela API (HTTP 200)').to.eq(200);
-      });
+    // 3. Validar acesso ao endpoint de análise na API (acesso direto conforme protótipo)
+    cy.request({
+      url: `${API_BASE_URL}/api/analise/vendas?dataInicio=2025-11-01&dataFim=2026-03-31&categorias=TREINO%20DI%C3%81RIO`,
+      failOnStatusCode: false
+    }).then((res) => {
+      expect(res.status, 'Endpoint de análise deve responder HTTP 200').to.eq(200);
     });
 
     // 5. Confirmar que a API ASP.NET Core está ativa e consome comprovadamente o banco runway_test
@@ -90,14 +80,12 @@ describe('Cenário 8 — Validação de Desempenho RNF0011 no Cypress (Consultas
     subtotaisEsperados?: Record<string, number>;
   }) => {
     const urlCompleta = `${API_BASE_URL}/api/analise/vendas?${queryString}`;
-    const headersAuth = { Authorization: `Bearer ${adminKey}` };
 
     cy.log(`--- [WARMUP] Executando 2 requisições preliminares para: ${nomeVariacao} ---`);
     // 1. Aquecimentos (Warmup x2)
     for (let w = 1; w <= 2; w++) {
       cy.request({
         url: urlCompleta,
-        headers: headersAuth,
         log: false
       }).then((warmRes) => {
         cy.log(`[WARMUP ${w}] Tempo de resposta: ${warmRes.duration} ms (Status: ${warmRes.status})`);
@@ -111,7 +99,6 @@ describe('Cenário 8 — Validação de Desempenho RNF0011 no Cypress (Consultas
     for (let i = 1; i <= 5; i++) {
       cy.request({
         url: urlCompleta,
-        headers: headersAuth,
         log: false
       }).then((oficialRes) => {
         // Validação Estrita 1: Status HTTP 200 OK obrigatório

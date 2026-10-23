@@ -28,22 +28,10 @@ const {
   consultarTotaisEsperados
 } = require('../../scripts/seed-massa-analise.js');
 
-// 1. Obtenção estrita da credencial administrativa (sem fallback fixo)
-const adminKeyEnv = (process.env.RUNWAY_ADMIN_KEY || process.env.CYPRESS_RUNWAY_ADMIN_KEY || '').trim();
-
-if (!adminKeyEnv) {
-  console.error('\n❌ [ERRO DE SEGURANÇA E CONFIGURAÇÃO]');
-  console.error('A variável de ambiente RUNWAY_ADMIN_KEY (ou CYPRESS_RUNWAY_ADMIN_KEY) não está configurada.');
-  console.error('Conforme os requisitos do Cartão 06, nenhuma chave administrativa fixa é permitida como fallback.');
-  console.error('Defina a variável no ambiente antes de executar o benchmark. Exemplo:');
-  console.error('  $env:RUNWAY_ADMIN_KEY="<sua-chave>"; node tests/performance/benchmark_analise_rnf0011.js\n');
-  process.exit(1);
-}
-
+// 1. Configuração da API (Alternativa C Controlada — protótipo acadêmico com acesso direto à API)
 const API_CONFIG = {
   hostname: process.env.RUNWAY_API_HOST || 'localhost',
-  port: Number(process.env.RUNWAY_API_PORT) || 5035,
-  adminKey: adminKeyEnv
+  port: Number(process.env.RUNWAY_API_PORT) || 5035
 };
 
 const LIMITE_RNF0011_MS = 1000.0;
@@ -177,29 +165,19 @@ async function validarAmbienteSeguro() {
 
   console.log(`✔ [OK] API ASP.NET Core confirmada ativa e consumindo comprovadamente o banco "runway_test"!`);
 
-  // 1.4 Validar autenticação administrativa na API
+  // 1.4 Validar endpoint de análise na API (acesso direto conforme protótipo acadêmico)
   const authTest = await requestHttp({
     hostname: API_CONFIG.hostname,
     port: API_CONFIG.port,
     path: '/api/analise/vendas?dataInicio=2025-11&dataFim=2026-03&categorias=TREINO%20DI%C3%81RIO',
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${API_CONFIG.adminKey}`
-    }
+    method: 'GET'
   });
-
-  if (authTest.statusCode === 401) {
-    throw new Error(
-      `[ERRO DE AUTORIZAÇÃO] A credencial administrativa fornecida via ambiente foi rejeitada pela API (HTTP 401).\n` +
-      `Verifique a variável RUNWAY_ADMIN_KEY no ambiente do backend e no ambiente de execução do script.`
-    );
-  }
 
   if (authTest.statusCode !== 200) {
     throw new Error(`[ERRO NA API] Consulta preliminar retornou status inesperado: HTTP ${authTest.statusCode}`);
   }
 
-  console.log(`✔ [OK] Credencial administrativa validada com sucesso pelo backend (HTTP 200 OK).`);
+  console.log(`✔ [OK] Endpoint de análise gerencial validado diretamente com o backend (HTTP 200 OK).`);
 }
 
 /**
@@ -312,10 +290,7 @@ async function executarCenario({
       hostname: API_CONFIG.hostname,
       port: API_CONFIG.port,
       path: pathQuery,
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${API_CONFIG.adminKey}`
-      }
+      method: 'GET'
     });
 
     warmups.push(res.durationMs);
@@ -327,10 +302,7 @@ async function executarCenario({
       hostname: API_CONFIG.hostname,
       port: API_CONFIG.port,
       path: pathQuery,
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${API_CONFIG.adminKey}`
-      }
+      method: 'GET'
     });
 
     oficialSamples.push(res.durationMs);
