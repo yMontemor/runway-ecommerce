@@ -436,10 +436,21 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
     cy.intercept('GET', '**/api/analise/vendas*dataInicio=2026-01-01*dataFim=2026-12-31*').as('consulta12Meses');
     cy.get('[data-cy="btn-aplicar-filtros"]').click();
 
+    let totalGeralRetornadoApi = 0;
+
     cy.wait('@consulta12Meses').then((interception) => {
       expect(interception.response?.statusCode).to.eq(200);
       expect(interception.response?.body.periodos).to.have.length(12);
       expect(interception.response?.body.series).to.have.length(5);
+
+      const corpo = interception.response?.body;
+      totalGeralRetornadoApi = Number(corpo.totalGeral);
+
+      // O total geral deve corresponder exatamente à soma dos subtotais das 5 séries retornadas
+      // e contemplar ao menos o piso determinístico de 2026 da massa oficial (R$ 4.300,59 em Jan-Mar/2026)
+      const somaSeries = corpo.series.reduce((acc: number, s: any) => acc + Number(s.total), 0);
+      expect(totalGeralRetornadoApi).to.be.closeTo(somaSeries, 0.01);
+      expect(totalGeralRetornadoApi).to.be.at.least(4300.59);
     });
 
     // 3. Validar a renderização das cinco séries e da legenda completa
@@ -499,15 +510,32 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
       cy.contains('0,00').should('exist');
     });
 
-    // 8. Verificação objetiva: Preservação dos valores reais do banco e integridade das 5 séries
-    cy.get('[data-cy="total-geral-vendas"]').should('contain.text', '12.398,79'); // Total de 2026 entregue com as 5 categorias
+    // 8. Verificação objetiva: Preservação dos valores determinísticos da massa oficial em Jan-Mar/2026
+    // e consistência do card totalizador com o payload real da API (independente de pedidos de outros módulos)
+    cy.get('[data-cy="chart-point"][data-periodo="2026-01"][data-categoria="TREINO DIÁRIO"]')
+      .should('have.attr', 'data-valor', '550.99');
+    cy.get('[data-cy="chart-point"][data-periodo="2026-01"][data-categoria="COMPETIÇÃO"]')
+      .should('have.attr', 'data-valor', '2199.8');
+    cy.get('[data-cy="chart-point"][data-periodo="2026-02"][data-categoria="TREINO DIÁRIO"]')
+      .should('have.attr', 'data-valor', '449.9');
+    cy.get('[data-cy="chart-point"][data-periodo="2026-03"][data-categoria="COMPETIÇÃO"]')
+      .should('have.attr', 'data-valor', '1099.9');
 
-    // 9. Verificação objetiva: Preservação de gráfico de um único mês (RN0072, ACH-02)
+    cy.then(() => {
+      const valorFormatado = totalGeralRetornadoApi.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+      cy.get('[data-cy="total-geral-vendas"]').should('contain.text', valorFormatado);
+    });
+
+    // 9. Verificação objetiva: Preservação de gráfico de um único mês determinístico (Jan/2026 = R$ 2.750,79) (RN0072, ACH-02)
     cy.get('[data-cy="input-data-inicio"]').clear().type('2026-01-01');
     cy.get('[data-cy="input-data-fim"]').clear().type('2026-01-31');
     cy.get('[data-cy="btn-aplicar-filtros"]').click();
 
     cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');
+    cy.get('[data-cy="total-geral-vendas"]').should('contain.text', '2.750,79');
     cy.get('.svg-line-chart').contains('text', 'Jan/26').should('exist');
     cy.get('[data-cy="rotulo-ponto-COMPETIÇÃO"]').should('be.visible');
     cy.get('[data-cy="rotulo-ponto-TREINO DIÁRIO"]').should('be.visible');

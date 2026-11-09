@@ -83,6 +83,8 @@ flowchart TD
         C07[Cypress: analise-gerencial-grafico.cy.ts]
         C08A[Cypress: analise-gerencial-status-pedidos.cy.ts]
         C08B[Cypress: analise-gerencial-acesso.cy.ts]
+        C08C[Cypress: analise-gerencial-desempenho.cy.ts]
+        C08D[Cypress: analise-gerencial-competencias.cy.ts]
         BMK[Benchmark: benchmark_analise_rnf0011.js]
     end
 
@@ -94,10 +96,12 @@ flowchart TD
     RN73 --> AS
     RN74 --> AS --> DB
     RNF11 --> AC --> BMK
+    RNF11 --> C08C
     RNF43 --> AAX
 
     AAX --> C07
     AAX --> C08A
+    AAX --> C08D
     CTX --> C08B
 ```
 
@@ -106,27 +110,27 @@ flowchart TD
 | ID | Regra de Negócio | Camada Backend | Camada Frontend | Teste Automatizado | Evidência Visual / Aferição |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **RF0055** | Consulta gerencial restrita e por período | `AnaliseController.cs` (acesso direto, sem autenticação) | `AdminAnalytics.tsx`, `analiseService.ts`, `AppContext.tsx` | Cypress: Cenário 7 (`analise-gerencial-acesso.cy.ts`) | `01-bloqueio-perfil-cliente.png`, `02-painel-administrativo-secoes.png` |
-| **RF0056** | Intervalo de datas e ordem cronológica | `AnaliseService.cs:48-56` | `AdminAnalytics.tsx:87-95` | Cypress: Cenário 4 (`analise-gerencial-grafico.cy.ts:311`) | `03-grafico-completo-inicial.png` |
-| **RF0057** | Seleção simples e múltipla de categorias | `AnaliseService.cs:64-75` | `AdminAnalytics.tsx:103-106` | Cypress: Cenários 1 e 2 (`analise-gerencial-grafico.cy.ts:70,128`) | `03-grafico-completo-inicial.png` |
-| **RN0071** | Granularidade mensal e cômputo sem frete | `AnaliseService.cs:115-140` | `AdminAnalytics.tsx:432-470` | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:201`) | `03-grafico-completo-inicial.png` |
-| **RN0072** | Período de 1 a 24 meses de calendário | `AnaliseService.cs:58-62` | `AdminAnalytics.tsx:97-101` | Cypress: Cenário 4 (`analise-gerencial-grafico.cy.ts:375-408`) | Validação de rejeição e limite |
-| **RN0073** | Preenchimento contínuo de R$ 0,00 | `AnaliseService.cs:150-165` | `AdminAnalytics.tsx:501-525` | Cypress: Cenário 3 e Benchmark C6 | `05-meses-zerados-rn0073.png` |
-| **RN0074** | Consideração estrita do status ENTREGUE | `AnaliseService.cs:128` | `AdminAnalytics.tsx:120-140` | Cypress: Cenários 5 e 6 (`analise-gerencial-status-pedidos.cy.ts`) | `06-atualizacao-pos-entrega-pedido.png` |
-| **RN0012** | Categoria do produto | `RunWayDbContext.cs`, `Produto.cs` | `AdminAnalytics.tsx:66-73` | Cypress: Cenário 2 | Agregação contábil por item |
-| **RNF0011** | Tempo de resposta HTTP < 1.000 ms | `AnaliseController.cs`, `AnaliseService.cs` | Requisição SPA assíncrona | Benchmark: `benchmark_analise_rnf0011.js` | 8/8 conformes, Média: 7,33 ms, Máx: 24,11 ms |
-| **RNF0043** | Polilinhas contínuas e eixos X/Y | DTO `AnaliseVendasResponseDto.cs` | `AdminAnalytics.tsx` (SVG nativo) | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:220-240`) | `03-grafico-completo-inicial.png` |
-| **RNF0044** | Eixo Y formatado em R$ com escala dinâmica | DTO `AnaliseVendasSerieDto.cs` | `AdminAnalytics.tsx:280-310` | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:226-229`) | `03-grafico-completo-inicial.png` |
-| **RNF0045** | Legenda com nome e cor na parte inferior | DTO `AnaliseVendasSerieDto.cs` | `AdminAnalytics.tsx:550-580` | Cypress: Cenários 1, 2 e 3 (`analise-gerencial-grafico.cy.ts:178`) | `03-grafico-completo-inicial.png` |
-| **RNF0046** | Tooltip flutuante interativo | DTO `AnalisePontoMensalDto.cs` | `AdminAnalytics.tsx:600-645` | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:278-308`) | `04-tooltip-pico-janeiro.png`, `05-meses-zerados-rn0073.png` |
+| **RF0056** | Intervalo de datas e ordem cronológica | `AnaliseService.cs:28-31, 71-93` | `AdminAnalytics.tsx:167-175, 341-364` | Cypress: Cenário 4 (`analise-gerencial-grafico.cy.ts:296`), ACH-01 (`analise-gerencial-competencias.cy.ts:60`) | `03-grafico-completo-inicial.png` |
+| **RF0057** | Seleção simples e múltipla de categorias | `AnaliseService.cs:34-66` | `AdminAnalytics.tsx:147-163, 367-417` | Cypress: Cenários 1 e 2 (`analise-gerencial-grafico.cy.ts:53, 111`) | `03-grafico-completo-inicial.png` |
+| **RN0071** | Granularidade mensal e cômputo sem frete | `AnaliseService.cs:118-145` | `AdminAnalytics.tsx:502-545` | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:184`) | `03-grafico-completo-inicial.png` |
+| **RN0072** | Período de 1 a 24 meses de calendário | `AnaliseService.cs:98-103` | `AdminAnalytics.tsx:29-35, 177-181` | Cypress: Cenário 4 (`analise-gerencial-grafico.cy.ts:325-350, 393-400`) e Cenário 8 (`analise-gerencial-desempenho.cy.ts:183-208`) | Validação de rejeição e limite |
+| **RN0073** | Preenchimento contínuo de R$ 0,00 | `AnaliseService.cs:135-179` | `AdminAnalytics.tsx:557-591` | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:243-291`), ACH-02 (`analise-gerencial-competencias.cy.ts:176`) e Benchmark C6 | `05-meses-zerados-rn0073.png` |
+| **RN0074** | Consideração estrita do status ENTREGUE | `AnaliseService.cs:128` | `AdminAnalytics.tsx:456-460` | Cypress: Cenários 5 e 6 (`analise-gerencial-status-pedidos.cy.ts:75, 180`) | `06-atualizacao-pos-entrega-pedido.png` |
+| **RN0012** | Categoria do produto | `RunWayDbContext.cs`, `Produto.cs` | `AdminAnalytics.tsx:147-155` | Cypress: Cenário 2 (`analise-gerencial-grafico.cy.ts:111`) | Agregação contábil por item |
+| **RNF0011** | Tempo de resposta HTTP < 1.000 ms | `AnaliseController.cs`, `AnaliseService.cs` | Requisição SPA assíncrona | Cypress: Cenário 8 (`analise-gerencial-desempenho.cy.ts`) e Benchmark (`benchmark_analise_rnf0011.js`) | 8/8 conformes, Média: 7,33 ms, Máx: 24,11 ms |
+| **RNF0043** | Polilinhas contínuas e eixos X/Y | DTO `AnaliseVendasResponseDto.cs` | `AdminAnalytics.tsx` (SVG nativo) | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:203-254`) | `03-grafico-completo-inicial.png` |
+| **RNF0044** | Eixo Y formatado em R$ com escala dinâmica | DTO `SerieCategoriaDto.cs` | `AdminAnalytics.tsx:285-295, 474-499` | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:209-213`) | `03-grafico-completo-inicial.png` |
+| **RNF0045** | Legenda com nome e cor na parte inferior | DTO `SerieCategoriaDto.cs` | `AdminAnalytics.tsx:770-781` | Cypress: Cenários 1, 2 e 3 (`analise-gerencial-grafico.cy.ts:98, 161, 255`) | `03-grafico-completo-inicial.png` |
+| **RNF0046** | Tooltip flutuante interativo | DTO `PontoAnaliseDto.cs` | `AdminAnalytics.tsx:668-767` | Cypress: Cenário 3 (`analise-gerencial-grafico.cy.ts:261-291`) | `04-tooltip-pico-janeiro.png`, `05-meses-zerados-rn0073.png` |
 
 ---
 
-## 5. Mapeamento dos Sete Cenários Funcionais
+## 5. Mapeamento dos Oito Cenários Obrigatórios e Suítes de Validação
 
-Os sete cenários funcionais exigidos para a entrega foram integralmente automatizados em testes E2E reais via Cypress, distribuídos em suítes com papéis bem definidos:
+Os oito cenários obrigatórios exigidos para a entrega (sete funcionais e um não funcional de desempenho), além das validações complementares de competências parciais e legibilidade, foram integralmente automatizados em testes E2E reais via Cypress (5 suítes principais totalizando 21 testes de validação, mais 1 suíte auxiliar com 3 testes de captura de evidências):
 
 ### Cenário 1: Seleção de uma única categoria
-- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-grafico.cy.ts` (linha 70)
+- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-grafico.cy.ts` (linha 53)
 - **Requisitos Cobertos:** RF0055, RF0057, RN0071
 - **Verificações Realizadas:**
   - Configuração do período canônico (Nov/2025 a Mar/2026).
@@ -137,7 +141,7 @@ Os sete cenários funcionais exigidos para a entrega foram integralmente automat
   - Comprovação de ausência de qualquer polilinha ou legenda de outras categorias.
 
 ### Cenário 2: Seleção simultânea de categorias
-- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-grafico.cy.ts` (linha 128)
+- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-grafico.cy.ts` (linha 111)
 - **Requisitos Cobertos:** RF0055, RF0057, RN0071, RNF0043, RNF0045
 - **Verificações Realizadas:**
   - Seleção conjunta de **TREINO DIÁRIO** e **COMPETIÇÃO**.
@@ -147,7 +151,7 @@ Os sete cenários funcionais exigidos para a entrega foram integralmente automat
   - Total geral consolidado no sumário: **R$ 7.850,09**.
 
 ### Cenário 3: Exibição mensal, valores monetários, eixos, linhas, legenda e tooltip
-- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-grafico.cy.ts` (linha 201)
+- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-grafico.cy.ts` (linha 184)
 - **Requisitos Cobertos:** RF0055, RN0071, RN0073, RNF0043, RNF0044, RNF0045, RNF0046
 - **Verificações Realizadas:**
   - Eixo X com os 5 meses textuais: `Nov/25`, `Dez/25`, `Jan/26`, `Fev/26`, `Mar/26`.
@@ -159,29 +163,30 @@ Os sete cenários funcionais exigidos para a entrega foram integralmente automat
     - Fev/26: Treino R$ 449,90 | Competição R$ 0,00 *(RN0073)*
     - Mar/26: Treino R$ 0,00 *(RN0073)* | Competição R$ 1.099,90
   - Posicionamento da legenda na parte inferior do SVG (RNF0045).
-  - Disparo de hover/clique ativando o tooltip (RNF0046) no pico de Jan/26 (R$ 2.199,80) e no ponto zerado de Mar/26 (R$ 0,00).
+  - Disparo de hover/clique ativando o tooltip (RNF0046) no pico de Jan/26 (R$ 2.199,80) e nos pontos zerados de Mar/26 e Fev/26 (R$ 0,00).
 
 ### Cenário 4: Alteração dinâmica do período, atualização da consulta e validações de intervalo
-- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-grafico.cy.ts` (linha 311)
+- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-grafico.cy.ts` (linha 296) e `cypress/e2e/analise-gerencial-competencias.cy.ts` (linha 60)
 - **Requisitos Cobertos:** RF0056, RN0071, RN0072
 - **Verificações Realizadas:**
-  - Execução de 4 consultas consecutivas na SPA sem recarregar a página (`window.location.reload` desabilitado).
+  - Execução de 4 consultas consecutivas na SPA sem recarregar a página (monitorado por listener `beforeunload`).
   - Consulta 1 mês (Jan/2026): Total R$ 2.750,79 (Treino R$ 550,99 e Competição R$ 2.199,80).
   - Consulta 2 meses (Fev/2026 a Mar/2026): Total R$ 1.549,80 (Treino R$ 449,90 e Competição R$ 1.099,90).
   - Reversão para 5 meses: Total restabelecido em R$ 7.850,09.
-  - Rejeição de cronologia invertida (`2026-03-31` a `2025-11-01`): bloqueio preventivo sem chamada à rede (RF0056).
-  - Rejeição de período excessivo (> 24 meses): validação de regra RN0072.
+  - Rejeição de cronologia invertida (`2026-05-01` a `2026-01-01`): bloqueio preventivo na validação (RF0056).
+  - Rejeição de período excessivo (> 24 meses, `2024-01-01` a `2026-06-01`): validação de regra RN0072.
+  - Consulta com datas parciais (`2025-11-18` a `2025-11-30`): exclui `PED-ANL-0001` (`15/11/2025`, R$ 449,90) e contabiliza apenas `PED-ANL-0002` (`20/11/2025`, R$ 1.099,90).
 
 ### Cenário 5: Exclusão de pedidos não entregues
 - **Arquivo de Teste:** `cypress/e2e/analise-gerencial-status-pedidos.cy.ts` (linha 75)
 - **Requisitos Cobertos:** RF0055, RN0074 (Regra Oficial da Entrega)
 - **Verificações Realizadas:**
-  - Auditoria prévia direta no PostgreSQL comprovando existência de `PED-ANL-0007` (APROVADA, R$ 1.099,90 em Fev/26) e `PED-ANL-0008` (EM TRANSPORTE, R$ 449,90 em Mar/26).
+  - Auditoria prévia na API comprovando existência de `PED-ANL-0007` (APROVADA, R$ 1.099,90 em Fev/26) e `PED-ANL-0008` (EM TRANSPORTE, R$ 449,90 em Mar/26).
   - Execução da consulta na interface abrangendo Nov/2025 a Mar/2026 e ambas as categorias.
-  - Comprovação analítica de que, embora os pedidos estejam dentro do período e das categorias ativas, **nenhum deles integra o faturamento**, mantendo Treino em Mar/26 em R$ 0,00 e o total em R$ 7.850,09.
+  - Comprovação analítica de que, embora os pedidos estejam dentro do período e das categorias ativas, **nenhum deles integra o faturamento**, mantendo Competição em Fev/26 em R$ 0,00, Treino em Mar/26 em R$ 0,00 e o total em R$ 7.850,09.
 
 ### Cenário 6: Alteração oficial de pedido para ENTREGUE e atualização do gráfico
-- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-status-pedidos.cy.ts` (linha 192)
+- **Arquivo de Teste:** `cypress/e2e/analise-gerencial-status-pedidos.cy.ts` (linha 180)
 - **Requisitos Cobertos:** RF0055, RN0071, RN0074
 - **Verificações Realizadas:**
   - Realização de chamada oficial `PATCH /api/pedidos/PED-ANL-0008/status` com corpo `{ "novoStatus": "ENTREGUE" }`.
@@ -190,7 +195,7 @@ Os sete cenários funcionais exigidos para a entrega foram integralmente automat
     - Treino Diário em Mar/2026 salta de R$ 0,00 para **R$ 449,90**.
     - Subtotal acumulado de Treino Diário sobe para **R$ 2.800,49**.
     - Total Geral de vendas sobe para **R$ 8.299,99**.
-  - Restauração canônica automática pós-teste via hook `afterEach` com verificação de integridade no banco.
+  - Restauração canônica automática pós-teste e via hook `afterEach` com verificação de integridade no banco.
 
 ### Cenário 7: Navegação administrativa demonstrativa e acesso à análise
 - **Arquivo de Teste:** `cypress/e2e/analise-gerencial-acesso.cy.ts` (linha 16)
@@ -204,6 +209,16 @@ Os sete cenários funcionais exigidos para a entrega foram integralmente automat
   - Teste 7.6 (UI): Seleção de outro cliente no menu superior ativa esse cliente e retorna à loja `/`.
   - Teste 7.7 (API): Chamada direta a `GET /api/analise/vendas` retorna `HTTP 200 OK` e dados consolidados sem cabeçalhos de autorização (conforme protótipo acadêmico sem login/auth).
 
+### Cenário 8: Tempo de resposta das consultas de até 1 segundo (RNF0011)
+- **Arquivos de Teste:** `cypress/e2e/analise-gerencial-desempenho.cy.ts` (linha 24) e `tests/performance/benchmark_analise_rnf0011.js`
+- **Requisitos Cobertos:** RNF0011, RF0055, RN0072, RN0073
+- **Verificações Realizadas:**
+  - Variação 1 (Cypress): Consulta de 1 categoria (Treino Diário, 5 meses) $\le 1.000\text{ ms}$ com total R$ 2.350,59.
+  - Variação 2 (Cypress): Consulta comparativa de 2 categorias (Treino + Competição, 5 meses) $\le 1.000\text{ ms}$ com total R$ 7.850,09.
+  - Variação 3 (Cypress): Consulta de período mínimo de 1 mês (Jan/2026) $\le 1.000\text{ ms}$ com total R$ 2.750,79.
+  - Variação 4 (Cypress): Consulta de período máximo de 24 meses (RN0072) $\le 1.000\text{ ms}$ com total R$ 7.850,09.
+  - Benchmark Node.js: 8 cenários (`C1` a `C8`) medindo o ciclo HTTP completo via `process.hrtime.bigint()`.
+
 ---
 
 ## 6. Inventário de Arquivos do Módulo
@@ -212,24 +227,26 @@ Os sete cenários funcionais exigidos para a entrega foram integralmente automat
 - `backend/Controllers/AnaliseController.cs`: Controller MVC REST expondo `GET /api/analise/vendas` acessível diretamente sem autenticação conforme escopo do protótipo acadêmico.
 - `backend/Services/AnaliseService.cs`: Serviço que implementa agregação mensal, fuso `America/Sao_Paulo`, filtro de status `ENTREGUE`, preenchimento de meses sem vendas e validações de 1 a 24 meses.
 - `backend/Services/IAnaliseService.cs`: Interface do serviço de análise gerencial.
-- `backend/DTOs/Analise/AnaliseVendasFiltroDto.cs`: DTO de entrada para validação de período e categorias.
+- `backend/DTOs/Analise/ConsultaAnaliseVendasRequestDto.cs`: DTO de entrada para validação de período (`dataInicio`, `dataFim`) e categorias.
 - `backend/DTOs/Analise/AnaliseVendasResponseDto.cs`: DTO consolidado com períodos, séries, totais e metadados.
-- `backend/DTOs/Analise/AnaliseVendasSerieDto.cs`: DTO representando uma série temporal de categoria.
-- `backend/DTOs/Analise/AnalisePontoMensalDto.cs`: DTO de cada nó mensal contendo ano, mês, período formatado e valor financeiro.
+- `backend/DTOs/Analise/SerieCategoriaDto.cs`: DTO representando uma série temporal de categoria.
+- `backend/DTOs/Analise/PontoAnaliseDto.cs`: DTO de cada nó mensal contendo o período formatado (`YYYY-MM`) e valor financeiro.
 - `backend/Data/RunWayDbContext.cs`: Contexto do Entity Framework Core mapeando tabelas de domínio.
 
 ### Frontend (React / TypeScript / Vite)
-- `frontend/src/pages/Admin/components/AdminAnalytics.tsx`: Componente principal contendo filtros cronológicos, seletores de categoria, barreiras de segurança visual, SVG nativo do gráfico, legendas interativas e tooltips flutuantes.
-- `frontend/src/pages/Admin/Admin.tsx`: Painel administrativo com chaveamento de abas e contexto de perfis.
+- `frontend/src/pages/Admin/components/AdminAnalytics.tsx`: Componente principal contendo filtros cronológicos, seletores de categoria, SVG nativo do gráfico, legendas interativas e tooltips flutuantes.
+- `frontend/src/pages/Admin/Admin.tsx`: Painel administrativo com barreira demonstrativa de acesso em modo Cliente, chaveamento de abas e contexto de perfis.
 - `frontend/src/services/analiseService.ts`: Cliente HTTP frontend para consumo do endpoint com cancelamento via `AbortController`.
 - `frontend/src/store/AppContext.tsx`: Contexto global da aplicação gerenciando perfis de usuário (`CLIENTE` vs. `ADMINISTRADOR`).
 
-### Testes Automatizados e Benchmarks
-- `cypress/e2e/analise-gerencial-grafico.cy.ts`: Testes E2E dos Cenários 1 a 4.
-- `cypress/e2e/analise-gerencial-status-pedidos.cy.ts`: Testes E2E dos Cenários 5 e 6.
-- `cypress/e2e/analise-gerencial-acesso.cy.ts`: Testes E2E e de integração do Cenário 7.
+### Testes Automatizados e Benchmarks (6 Suítes Cypress / 24 Testes + 1 Benchmark)
+- `cypress/e2e/analise-gerencial-grafico.cy.ts`: 5 testes E2E (Cenários 1 a 4 + legibilidade de 12 meses e 5 categorias).
+- `cypress/e2e/analise-gerencial-status-pedidos.cy.ts`: 2 testes E2E (Cenários 5 e 6).
+- `cypress/e2e/analise-gerencial-acesso.cy.ts`: 7 testes E2E e de API (Cenário 7: 7.1 a 7.7).
+- `cypress/e2e/analise-gerencial-desempenho.cy.ts`: 4 testes de desempenho HTTP no Cypress (Cenário 8: Variações 1 a 4).
+- `cypress/e2e/analise-gerencial-competencias.cy.ts`: 3 testes E2E complementares de competências parciais, mês único e pontos coincidentes (ACH-01 e ACH-02).
+- `cypress/e2e/captura-evidencias.cy.ts`: 3 testes utilitários isolados para captura visual das 8 evidências reais.
 - `tests/performance/benchmark_analise_rnf0011.js`: Script de benchmark com medição em nanossegundos via `process.hrtime.bigint()`.
-- `cypress/e2e/captura-evidencias.cy.ts`: Utilitário isolado de captura visual das evidências reais.
 - `cypress.config.ts`: Configuração do Cypress com tasks de integração direta ao banco `runway_test`.
 
 ### Massa de Dados
@@ -338,25 +355,26 @@ A conformidade ao requisito **RNF0011 (Tempo de resposta para consultas $\le$ 1.
 
 ## 9. Gabaritos Financeiros Oficiais e Auditoria da Massa
 
-A massa de testes do Cartão 02 é determinística e isolada no banco de dados `runway_test`. A composição analítica dos pedidos e faturamentos é demonstrada a seguir:
+A massa de testes do Cartão 02 (`scripts/seed-massa-analise.js`) é determinística e isolada no banco de dados `runway_test`, contendo **exatamente 9 pedidos** (`PED-ANL-0001` a `PED-ANL-0009`), sendo **7 com status `ENTREGUE`** (que somam **8 registros em `ITEM_PEDIDO`**, pois `PED-ANL-0003` é um pedido misto com itens de duas categorias distintas) e **2 com outros status** (`1 APROVADA` e `1 EM TRANSPORTE`). A composição analítica dos pedidos e faturamentos é demonstrada a seguir:
 
 ### Estado Canônico Inicial (Antes da Transição de Pedido)
-- **Pedidos com status `ENTREGUE` (7 pedidos):**
-  - `PED-ANL-0001` (Nov/2025): Competição (R$ 1.099,90)
-  - `PED-ANL-0002` (Nov/2025): Treino Diário (R$ 449,90)
-  - `PED-ANL-0003` (Dez/2025): Competição (R$ 1.099,90)
-  - `PED-ANL-0004` (Dez/2025): Treino Diário (R$ 899,80)
-  - `PED-ANL-0005` (Jan/2026): Competição (R$ 2.199,80)
-  - `PED-ANL-0006` (Jan/2026): Treino Diário (R$ 550,99)
-  - `PED-ANL-0009` (Mar/2026): Competição (R$ 1.099,90)
-  - `PED-ANL-COR4` (Fev/2026): Treino Diário (R$ 449,90)
-- **Subtotais Iniciais:**
-  - **TREINO DIÁRIO:** **R$ 2.350,59**
-  - **COMPETIÇÃO:** **R$ 5.499,50**
-  - **TOTAL GERAL INICIAL:** **R$ 7.850,09**
-- **Pedidos não entregues (Omitidos da análise conforme regra):**
-  - `PED-ANL-0007`: Status `APROVADA`, data 25/02/2026, valor R$ 1.099,90 (omitido).
-  - `PED-ANL-0008`: Status `EM TRANSPORTE`, data 05/03/2026, valor R$ 449,90 (omitido).
+- **Pedidos com status `ENTREGUE` (7 pedidos / 8 itens em `ITEM_PEDIDO`):**
+  - `PED-ANL-0001` (`15/11/2025` — Nov/2025): Treino Diário — 1x Corre 4 (R$ 449,90)
+  - `PED-ANL-0002` (`20/11/2025` — Nov/2025): Competição — 1x VaporFly 4 (R$ 1.099,90)
+  - `PED-ANL-0003` (`10/12/2025` — Dez/2025, pedido misto com 2 itens):
+    - Item 1: Treino Diário — 2x Corre 4 (R$ 899,80)
+    - Item 2: Competição — 1x VaporFly 4 (R$ 1.099,90)
+  - `PED-ANL-0004` (`14/01/2026` — Jan/2026): Treino Diário — 1x Pegasus 41 (R$ 550,99)
+  - `PED-ANL-0005` (`22/01/2026` — Jan/2026): Competição — 2x VaporFly 4 (R$ 2.199,80)
+  - `PED-ANL-0006` (`18/02/2026` — Fev/2026): Treino Diário — 1x Corre 4 (R$ 449,90)
+  - `PED-ANL-0009` (`12/03/2026` — Mar/2026): Competição — 1x VaporFly 4 (R$ 1.099,90)
+- **Subtotais Iniciais (`2025-11` a `2026-03`):**
+  - **TREINO DIÁRIO:** **R$ 2.350,59** ($449,90 + 899,80 + 550,99 + 449,90 + 0,00$)
+  - **COMPETIÇÃO:** **R$ 5.499,50** ($1.099,90 + 1.099,90 + 2.199,80 + 0,00 + 1.099,90$)
+  - **TOTAL GERAL INICIAL:** **R$ 7.850,09** ($2.350,59 + 5.499,50$)
+- **Pedidos não entregues (2 pedidos omitidos da análise conforme regra):**
+  - `PED-ANL-0007`: Status `APROVADA`, data `25/02/2026`, Competição — 1x VaporFly 4, valor R$ 1.099,90 (omitido).
+  - `PED-ANL-0008`: Status `EM TRANSPORTE`, data `05/03/2026`, Treino Diário — 1x Corre 4, valor R$ 449,90 (omitido).
 
 ### Estado Pós-Transição de `PED-ANL-0008` para ENTREGUE
 - O pedido `PED-ANL-0008` (tênis Corre 4, categoria *Treino Diário*, competência Março/2026, valor de R$ 449,90) tem seu status alterado para `ENTREGUE` via endpoint oficial.
@@ -434,8 +452,8 @@ node tests/performance/benchmark_analise_rnf0011.js
 
 ### Passo 6: Executar os Testes Funcionais Cypress
 ```powershell
-# Executar a suíte completa de testes da Análise Gerencial
-npx cypress run --spec "cypress/e2e/analise-gerencial-grafico.cy.ts,cypress/e2e/analise-gerencial-status-pedidos.cy.ts,cypress/e2e/analise-gerencial-acesso.cy.ts"
+# Executar as 5 suítes principais de validação da Análise Gerencial (21 testes)
+npx cypress run --spec "cypress/e2e/analise-gerencial-grafico.cy.ts,cypress/e2e/analise-gerencial-status-pedidos.cy.ts,cypress/e2e/analise-gerencial-acesso.cy.ts,cypress/e2e/analise-gerencial-desempenho.cy.ts,cypress/e2e/analise-gerencial-competencias.cy.ts"
 ```
 
 ### Passo 7: Reexecutar a Captura de Evidências Visuais (Opcional)
@@ -452,8 +470,8 @@ A auditoria documental e consolidação de evidências do Cartão 09 foi conclu�
 
 1. **Requisitos conferidos diretamente no DRS:** Todos os 13 identificadores foram inspecionados no documento oficial do professor (`DRS_LES_2_2026.docx`), com citação exata de textos e classificação precisa.
 2. **Matriz de Rastreabilidade implementada:** Cobertura ponta a ponta desde os requisitos até o código, testes e telas.
-3. **Mapeamento dos 7 cenários funcionais:** Cada cenário possui correspondência estrita com asserções reais no Cypress.
-4. **Evidências visuais genuínas:** 6 capturas de tela em alta fidelidade geradas no ambiente real e verificadas em `docs/evidencias/`.
+3. **Mapeamento dos 8 cenários obrigatórios:** Cada cenário possui correspondência estrita com asserções reais nas 5 suítes principais do Cypress (21 testes de validação) e no script de benchmark.
+4. **Evidências visuais genuínas:** 8 capturas de tela em alta fidelidade geradas no ambiente real e verificadas em `docs/evidencias/` (por meio da suíte auxiliar `captura-evidencias.cy.ts` com 3 blocos de captura).
 5. **Correção do resultado RNF0011:** Benchmark documentado com o valor oficial revisado (máximo de 24,11 ms, média de 7,33 ms, 8/8 conformes).
 6. **Divergências formalizadas:** Registro claro e objetivo sobre a restrição ao status `ENTREGUE` (RN0074) e a modelagem de categoria escalar (RN0012).
 7. **Segurança e Privacidade:** Nenhuma chave fixa, senha ou segredo foi inserido nos relatórios ou artefatos.

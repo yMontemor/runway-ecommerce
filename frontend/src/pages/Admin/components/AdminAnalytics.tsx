@@ -54,7 +54,7 @@ function formatDisplayDate(dStr?: string): string {
   if (info.dia) {
     return `${String(info.dia).padStart(2, '0')}/${String(info.mes).padStart(2, '0')}/${info.ano}`;
   }
-  const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Dez'];
+  const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   return `${meses[info.mes - 1] || info.mes}/${info.ano}`;
 }
 

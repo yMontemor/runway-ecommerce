@@ -3,7 +3,7 @@
  * RunWay E-Commerce — LES (Entrega 10/11/2026)
  * 
  * Executa os fluxos reais contra backend e banco runway_test,
- * capturando as 6 evidências em alta fidelidade solicitadas no Cartão 09.
+ * capturando as 8 evidências em alta fidelidade solicitadas no Cartão 09.
  */
 
 describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', () => {
@@ -16,10 +16,6 @@ describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', ()
     });
 
     cy.task('prepararMassaAnalise');
-  });
-
-  after(() => {
-    cy.task('prepararMassaAnalise');
     cy.task('validarIntegridadeMassaAposTeste').then((res: any) => {
       expect(res.restaurado).to.be.true;
       expect(res.statusPed8).to.eq('EM TRANSPORTE');
@@ -31,6 +27,26 @@ describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', ()
     cy.window().then((win) => {
       win.sessionStorage.clear();
       win.localStorage.clear();
+    });
+  });
+
+  afterEach(() => {
+    // Garante que qualquer mutação realizada em um bloco de captura (como a transição de PED-ANL-0008 no bloco 2)
+    // seja imediatamente restaurada e validada antes do próximo bloco iniciar.
+    cy.task('prepararMassaAnalise');
+    cy.task('validarIntegridadeMassaAposTeste').then((res: any) => {
+      expect(res.restaurado).to.be.true;
+      expect(res.statusPed8).to.eq('EM TRANSPORTE');
+      expect(res.totalGeral).to.eq(7850.09);
+    });
+  });
+
+  after(() => {
+    // Verificação final de integridade da suíte (sem duplicar a restauração já executada pelo afterEach)
+    cy.task('validarIntegridadeMassaAposTeste').then((res: any) => {
+      expect(res.restaurado).to.be.true;
+      expect(res.statusPed8).to.eq('EM TRANSPORTE');
+      expect(res.totalGeral).to.eq(7850.09);
     });
   });
 

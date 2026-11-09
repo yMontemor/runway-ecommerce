@@ -1,6 +1,6 @@
 /**
- * Serviço de comunicação HTTP com o endpoint protegido de Análise Gerencial de Vendas (Cartão 03 / Cartão 04).
- * RF0055: Acesso restrito ao perfil Administrador mediante credencial administrativa informada sob demanda.
+ * Serviço de comunicação HTTP com o endpoint de Análise Gerencial de Vendas (Cartão 03 / Cartão 04).
+ * RF0055: Consulta gerencial de vendas por período e categoria consumida pelo painel administrativo demonstrativo.
  */
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5035';
 
