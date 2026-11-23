@@ -607,6 +607,11 @@
   margin-bottom: 0.5rem;
 }
 
+.svg-plot-area {
+  position: relative;
+  width: 100%;
+}
+
 .svg-line-chart {
   width: 100%;
   height: auto;

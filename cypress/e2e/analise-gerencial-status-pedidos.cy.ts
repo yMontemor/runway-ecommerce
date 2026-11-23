@@ -37,7 +37,9 @@ describe('Cartão 08 — Cenários Funcionais 5 e 6 (Status ENTREGUE e Atualiza�
     cy.task('validarIntegridadeMassaAposTeste').then((res: any) => {
       expect(res.restaurado, 'A base runway_test deve ser restaurada após a execução do teste').to.be.true;
       expect(res.statusPed8, 'PED-ANL-0008 deve retornar para EM TRANSPORTE').to.eq('EM TRANSPORTE');
-      expect(res.totalGeral, 'Total financeiro canônico da massa deve ser R$ 7.850,09').to.eq(7850.09);
+      expect(res.statusPed36, 'PED-ANL-0036 deve permanecer EM TRANSPORTE').to.eq('EM TRANSPORTE');
+      expect(res.totalGeral, 'Total financeiro canônico da massa controlada deve coincidir com o gabarito')
+        .to.be.closeTo(res.totalCanonicoEsperado, 0.01);
     });
   });
 
@@ -59,8 +61,8 @@ describe('Cartão 08 — Cenários Funcionais 5 e 6 (Status ENTREGUE e Atualiza�
    */
   const desbloquearModoAdmin = () => {
     cy.visit('/');
-    cy.get('[data-cy="user-dropdown"]').click();
-    cy.get('[data-cy="painel-admin"]').click();
+    cy.get('[data-cy="user-dropdown"]', { timeout: 10000 }).should('be.visible').click();
+    cy.get('[data-cy="painel-admin"]', { timeout: 10000 }).should('be.visible').click();
     cy.url().should('include', '/admin');
     cy.get('[data-cy="admin-analise"]').click();
 
@@ -172,6 +174,53 @@ describe('Cartão 08 — Cenários Funcionais 5 e 6 (Status ENTREGUE e Atualiza�
 
     cy.get('[data-cy="chart-point"][data-periodo="2026-03"][data-categoria="TREINO DIÁRIO"]').click({ force: true });
     cy.get('[data-cy="analytics-tooltip"]').should('contain.text', '0,00');
+
+    // ---------------------------------------------------------------------------------------
+    // Etapa 5.5: Auditoria dos demais status não entregues na massa ampliada (REPROVADA, EM TROCA, APROVADA, TROCADO, EM TRANSPORTE, EM PROCESSAMENTO)
+    // ---------------------------------------------------------------------------------------
+    const pedidosNaoEntreguesAmpliados = [
+      { codigo: 'PED-ANL-0015', status: 'REPROVADA' },
+      { codigo: 'PED-ANL-0023', status: 'EM TROCA' },
+      { codigo: 'PED-ANL-0027', status: 'APROVADA' },
+      { codigo: 'PED-ANL-0028', status: 'TROCADO' },
+      { codigo: 'PED-ANL-0036', status: 'EM TRANSPORTE' },
+      { codigo: 'PED-ANL-0043', status: 'EM PROCESSAMENTO' }
+    ];
+
+    pedidosNaoEntreguesAmpliados.forEach(({ codigo, status }) => {
+      cy.request('GET', `${backendBaseUrl}/api/pedidos/${codigo}`).then((res) => {
+        expect(res.status).to.eq(200);
+        expect(res.body.status, `${codigo} deve estar com status ${status}`).to.eq(status);
+      });
+    });
+
+    // Consultar todas as 5 categorias no período completo 2025-11-01 a 2026-12-31 e comprovar exclusão de todos esses status
+    cy.get('[data-cy="input-data-inicio"]').clear().type('2025-11-01');
+    cy.get('[data-cy="input-data-fim"]').clear().type('2026-12-31');
+    cy.get('[data-cy="btn-todas-categorias"]').click();
+
+    cy.intercept('GET', '**/api/analise/vendas*dataInicio=2025-11-01*dataFim=2026-12-31*').as('consultaExclusaoAmpliada');
+    cy.get('[data-cy="btn-aplicar-filtros"]').click();
+
+    cy.wait('@consultaExclusaoAmpliada').then((interception) => {
+      expect(interception.response?.statusCode).to.eq(200);
+      const series = interception.response?.body.series;
+
+      const valorPonto = (cat: string, periodo: string) =>
+        series.find((s: any) => s.categoria === cat)?.dados.find((d: any) => d.periodo === periodo)?.valor;
+
+      // PED-ANL-0015 (REPROVADA, Jan/26, LONGA DISTÂNCIA) excluído
+      expect(valorPonto('LONGA DISTÂNCIA', '2026-01')).to.eq(0);
+      // PED-ANL-0023 (EM TROCA, Abr/26, VELOCIDADE) excluído
+      expect(valorPonto('VELOCIDADE', '2026-04')).to.eq(0);
+      // PED-ANL-0027 (APROVADA, Jun/26, LONGA DISTÂNCIA) e PED-ANL-0028 (TROCADO, Jun/26, TREINO DIÁRIO) excluídos
+      expect(valorPonto('LONGA DISTÂNCIA', '2026-06')).to.eq(0);
+      expect(valorPonto('TREINO DIÁRIO', '2026-06')).to.eq(0);
+      // PED-ANL-0036 (EM TRANSPORTE, Set/26, LONGA DISTÂNCIA) excluído
+      expect(valorPonto('LONGA DISTÂNCIA', '2026-09')).to.eq(0);
+      // PED-ANL-0043 (EM PROCESSAMENTO, Dez/26, TREINO DIÁRIO R$ 449,90) excluído -> permanece apenas PED-ANL-0041 (R$ 2.399,98)
+      expect(valorPonto('TREINO DIÁRIO', '2026-12')).to.eq(2399.98);
+    });
   });
 
   // =========================================================================================

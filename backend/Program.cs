@@ -7,6 +7,24 @@ var connectionString = builder.Configuration.GetConnectionString("RunWayDatabase
     ?? throw new InvalidOperationException(
         "A connection string 'RunWayDatabase' não foi configurada.");
 
+var csb = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
+
+if (builder.Environment.IsEnvironment("Testing"))
+{
+    if (!string.Equals(csb.Database, "runway_test", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            $"[BLOQUEIO DE SEGURANÇA] O ambiente Testing exige conexão obrigatória com o banco 'runway_test'. Banco configurado: '{csb.Database}'. Inicialização abortada para evitar contaminação do banco principal.");
+    }
+
+    if (string.IsNullOrWhiteSpace(csb.Password))
+    {
+        var pgPassword = Environment.GetEnvironmentVariable("PGPASSWORD");
+        csb.Password = !string.IsNullOrWhiteSpace(pgPassword) ? pgPassword : "123";
+        connectionString = csb.ConnectionString;
+    }
+}
+
 builder.Services.AddDbContext<RunWayDbContext>(options =>
     options.UseNpgsql(connectionString));
 
@@ -48,6 +66,48 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseCors("RunWayFrontendPolicy");
+
+app.MapGet("/api/health", async (RunWayDbContext dbContext, CancellationToken cancellationToken) =>
+{
+    var databaseName = dbContext.Database.GetDbConnection().Database;
+    try
+    {
+        var canConnect = await dbContext.Database.CanConnectAsync(cancellationToken);
+        if (!canConnect)
+        {
+            return Results.Json(
+                new
+                {
+                    status = "unhealthy",
+                    banco = databaseName,
+                    conectado = false,
+                    timestampUtc = DateTimeOffset.UtcNow
+                },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        return Results.Ok(new
+        {
+            status = "ok",
+            banco = databaseName,
+            conectado = true,
+            timestampUtc = DateTimeOffset.UtcNow
+        });
+    }
+    catch (Exception)
+    {
+        return Results.Json(
+            new
+            {
+                status = "unhealthy",
+                banco = databaseName,
+                conectado = false,
+                erro = "Falha ao verificar conectividade com o banco de dados.",
+                timestampUtc = DateTimeOffset.UtcNow
+            },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
 
 app.MapControllers();
 

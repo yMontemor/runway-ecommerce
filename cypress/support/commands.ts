@@ -16,9 +16,25 @@ declare global {
        * Retorna o código gerado pela sequence (ex: CLI-1048) e o ID numérico correspondente.
        */
       obterClientePrincipal(email?: string): Chainable<ClientePrincipalInfo>;
+
+      /**
+       * Acessa a rota /admin e ativa explicitamente o modo Administrador demonstrativo
+       * caso a barreira do perfil Cliente esteja sendo exibida.
+       */
+      acessarPainelAdmin(): Chainable<void>;
     }
   }
 }
+
+Cypress.Commands.add('acessarPainelAdmin', () => {
+  cy.visit('/admin');
+  cy.get('body').then(($body) => {
+    if ($body.find('[data-cy="btn-ativar-admin-explicitamente"]').length > 0) {
+      cy.get('[data-cy="btn-ativar-admin-explicitamente"]').click();
+    }
+  });
+  cy.get('[data-cy="admin-layout"]').should('be.visible');
+});
 
 Cypress.Commands.add('obterClientePrincipal', (email = 'ana.silva@email.com') => {
   const apiUrl = 'http://localhost:5035';

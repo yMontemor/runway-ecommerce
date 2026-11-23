@@ -206,4 +206,31 @@ describe('Cenário 8 — Validação de Desempenho RNF0011 no Cypress (Consultas
       }
     });
   });
+
+  // =========================================================================================
+  // VARIAÇÃO 5 — TODAS AS 5 CATEGORIAS NO PERÍODO COMPLETO DE 14 MESES (MASSA AMPLIADA)
+  // =========================================================================================
+  it('Variação 5 — Consulta das 5 categorias no período completo (Nov/2025 a Dez/2026 - 14 meses) responde em menos de 1.000 ms', () => {
+    cy.task<any>('consultarTotaisGlobaisAnalise', {
+      dataInicio: '2025-11-01',
+      dataFim: '2026-12-31'
+    }).then((totaisBanco) => {
+      const categoriasQuery = [
+        'COMPETIÇÃO',
+        'LONGA DISTÂNCIA',
+        'TRAIL',
+        'TREINO DIÁRIO',
+        'VELOCIDADE'
+      ]
+        .map(c => `categorias=${encodeURIComponent(c)}`)
+        .join('&');
+
+      executarVariacaoDesempenho({
+        nomeVariacao: '5 Categorias (Período Completo 14 Meses: Nov/25 a Dez/26)',
+        queryString: `dataInicio=2025-11-01&dataFim=2026-12-31&${categoriasQuery}`,
+        valorEsperado: totaisBanco.totalGeral,
+        subtotaisEsperados: totaisBanco.porCategoria
+      });
+    });
+  });
 });

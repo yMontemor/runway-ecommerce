@@ -20,12 +20,11 @@ const { Client } = require('pg');
 const os = require('os');
 const {
   DB_CONFIG,
+  calcularTotalEsperadoCanonico,
   validarConexaoSegura,
-  limparMassaExistente,
-  obterClienteDeterministo,
-  validarVariacoesExistentes,
-  inserirMassaAnalise,
-  consultarTotaisEsperados
+  restaurarMassaTesteControlada,
+  consultarTotaisEsperados,
+  consultarTotaisGlobaisBanco
 } = require('../../scripts/seed-massa-analise.js');
 
 // 1. Configuração da API (Alternativa C Controlada — protótipo acadêmico com acesso direto à API)
@@ -103,41 +102,20 @@ async function validarAmbienteSeguro() {
   await clientTest.connect();
   let dbNameTest;
   try {
-    dbNameTest = await validarConexaoSegura(clientTest);
+    dbNameTest = await validarConexaoSegura(clientTest, 'runway_test');
     console.log(`✔ [OK] Script conectado diretamente ao banco de testes: "${dbNameTest}".`);
   } finally {
     await clientTest.end();
   }
 
-  // 1.2 Validar que o banco principal "runway" está isolado e intocado
-  const clientProd = new Client({
-    ...DB_CONFIG,
-    database: 'runway'
-  });
-  await clientProd.connect();
-  try {
-    const prodRes = await clientProd.query(
-      `SELECT count(*) as c FROM "PEDIDO" WHERE codigo LIKE 'PED-ANL-%'`
-    );
-    const countProd = Number(prodRes.rows[0]?.c || 0);
-    if (countProd > 0) {
-      throw new Error(
-        `[VIOLAÇÃO DE ISOLAMENTO] O banco principal "runway" contém ${countProd} pedidos de análise! Operação abortada.`
-      );
-    }
-    console.log(`✔ [OK] Banco principal "runway" verificado e 100% intocado (0 pedidos PED-ANL).`);
-  } finally {
-    await clientProd.end();
-  }
-
-  // 1.3 Validar que a API ASP.NET Core está ativa e operando sobre "runway_test"
+  // 1.2 Validar via /api/health que a API ASP.NET Core está ativa e conectada a "runway_test"
   console.log('\n--- 2. VERIFICAÇÃO DE CONEXÃO DA API ASP.NET CORE ---');
-  let apiPing;
+  let healthRes;
   try {
-    apiPing = await requestHttp({
+    healthRes = await requestHttp({
       hostname: API_CONFIG.hostname,
       port: API_CONFIG.port,
-      path: '/api/pedidos/PED-ANL-0001',
+      path: '/api/health',
       method: 'GET'
     });
   } catch (err) {
@@ -148,22 +126,29 @@ async function validarAmbienteSeguro() {
     );
   }
 
-  if (apiPing.statusCode === 404) {
+  if (healthRes.statusCode !== 200 || healthRes.body?.banco !== 'runway_test') {
     throw new Error(
       `[ERRO FATAL: DESALINHAMENTO DE BANCO NA API]\n` +
-      `A API em http://${API_CONFIG.hostname}:${API_CONFIG.port} retornou 404 Not Found para o pedido PED-ANL-0001.\n` +
-      `Isso indica que a API está apontando para o banco "runway" e NÃO para "runway_test".\n` +
-      `Conforme o item 7 dos requisitos, a execução foi IMEDIATAMENTE INTERROMPIDA por segurança.`
+      `GET /api/health retornou HTTP ${healthRes.statusCode} com banco="${healthRes.body?.banco}".\n` +
+      `O benchmark exige que a API esteja apontando exclusivamente para "runway_test". Execução abortada.`
     );
   }
+
+  console.log(`✔ [OK] GET /api/health confirmou API ativa e conectada ao banco "runway_test"!`);
+
+  // 1.3 Validar pedido canônico da massa na API
+  const apiPing = await requestHttp({
+    hostname: API_CONFIG.hostname,
+    port: API_CONFIG.port,
+    path: '/api/pedidos/PED-ANL-0001',
+    method: 'GET'
+  });
 
   if (apiPing.statusCode !== 200 || apiPing.body?.codigo !== 'PED-ANL-0001') {
     throw new Error(
       `[ERRO NA API] Resposta inesperada ao validar PED-ANL-0001 na API (HTTP ${apiPing.statusCode}).`
     );
   }
-
-  console.log(`✔ [OK] API ASP.NET Core confirmada ativa e consumindo comprovadamente o banco "runway_test"!`);
 
   // 1.4 Validar endpoint de análise na API (acesso direto conforme protótipo acadêmico)
   const authTest = await requestHttp({
@@ -187,11 +172,26 @@ async function resetarMassaInicial() {
   const client = new Client(DB_CONFIG);
   await client.connect();
   try {
-    await validarConexaoSegura(client);
-    const { cliente, endereco, cartaoId } = await obterClienteDeterministo(client);
-    await validarVariacoesExistentes(client);
-    await limparMassaExistente(client);
-    await inserirMassaAnalise(client, { cliente, endereco, cartaoId });
+    await restaurarMassaTesteControlada(client);
+  } finally {
+    await client.end();
+  }
+}
+
+async function obterTotaisGlobaisPeriodoCompleto() {
+  const client = new Client(DB_CONFIG);
+  await client.connect();
+  try {
+    await validarConexaoSegura(client, 'runway_test');
+    const linhas = await consultarTotaisGlobaisBanco(client, '2025-11-01', '2026-12-31', null);
+    const porCategoria = {};
+    let totalGeral = 0;
+    for (const r of linhas) {
+      const v = Number(r.valor_categoria);
+      porCategoria[r.categoria] = Number(((porCategoria[r.categoria] || 0) + v).toFixed(2));
+      totalGeral = Number((totalGeral + v).toFixed(2));
+    }
+    return { totalGeral, porCategoria };
   } finally {
     await client.end();
   }
@@ -374,10 +374,15 @@ async function runBenchmark() {
   // Fase 1: Validação de Segurança e Conexão do Ambiente
   await validarAmbienteSeguro();
 
-  // Fase 2: Preparação inicial da massa oficial do Cartão 02
-  console.log('\n--- 3. PREPARANDO MASSA DE DADOS OFICIAL DO CARTÃO 02 ---');
+  // Fase 2: Preparação inicial da massa oficial
+  console.log('\n--- 3. PREPARANDO MASSA DE DADOS OFICIAL (01/11/2025 a 31/12/2026) ---');
   await resetarMassaInicial();
-  console.log('✔ Massa inicial carregada com sucesso (PED-ANL-0008 em "EM TRANSPORTE").\n');
+  const totais14Meses = await obterTotaisGlobaisPeriodoCompleto();
+  console.log('✔ Massa inicial pronta (PED-ANL-0008 em "EM TRANSPORTE").\n');
+
+  const categoriasTodasQuery = ['COMPETIÇÃO', 'LONGA DISTÂNCIA', 'TRAIL', 'TREINO DIÁRIO', 'VELOCIDADE']
+    .map(c => `categorias=${encodeURIComponent(c)}`)
+    .join('&');
 
   const cenarios = [
     {
@@ -493,6 +498,17 @@ async function runBenchmark() {
         }
         console.log('  ✔ [C8 SETUP] PED-ANL-0008 atualizado para "ENTREGUE" via contrato oficial da API.');
       }
+    },
+    {
+      id: 'C9',
+      nome: '5 Categorias no Período Completo (14 Meses: Nov/25 a Dez/26)',
+      pathQuery: `/api/analise/vendas?dataInicio=2025-11-01&dataFim=2026-12-31&${categoriasTodasQuery}`,
+      amostrasOficiais: 10,
+      valorEsperado: totais14Meses.totalGeral,
+      subtotaisEsperados: totais14Meses.porCategoria,
+      prepararCenario: async () => {
+        await resetarMassaInicial();
+      }
     }
   ];
 
@@ -520,14 +536,15 @@ async function runBenchmark() {
       const statusPed8 = resPed8.rows[0]?.status;
 
       const totais = await consultarTotaisEsperados(clientConfirma);
-      const totalGeral = totais.reduce((acc, t) => acc + Number(t.valor_categoria), 0);
+      const totalGeral = Number(totais.reduce((acc, t) => acc + Number(t.valor_categoria), 0).toFixed(2));
+      const totalCanonicoEsperado = calcularTotalEsperadoCanonico();
 
-      if (statusPed8 !== 'EM TRANSPORTE' || Math.abs(totalGeral - 7850.09) >= 0.01) {
+      if (statusPed8 !== 'EM TRANSPORTE' || Math.abs(totalGeral - totalCanonicoEsperado) >= 0.01) {
         throw new Error(
           `[FALHA FATAL NA RESTAURAÇÃO]\n` +
-          `A base "runway_test" não retornou ao estado original canônico do Cartão 02!\n` +
+          `A base "runway_test" não retornou ao estado original canônico!\n` +
           `Status PED-ANL-0008: "${statusPed8}" (esperado: "EM TRANSPORTE").\n` +
-          `Total Geral Acumulado: R$ ${totalGeral.toFixed(2)} (esperado: R$ 7.850,09).\n` +
+          `Total Geral Acumulado PED-ANL-*: R$ ${totalGeral.toFixed(2)} (esperado: R$ ${totalCanonicoEsperado.toFixed(2)}).\n` +
           `A execução foi reprovada devido à falha de integridade da restauração.`
         );
       }

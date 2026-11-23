@@ -111,7 +111,7 @@ describe('Suíte E2E: Gestão Administrativa de Pedidos e Ciclo de Trocas (Cená
    * Helper para avançar o pedido pelo painel administrativo até o status ENTREGUE
    */
   function avancarPedidoAdminAteEntregue(codigoPedido: string) {
-    cy.visit('/admin');
+    cy.acessarPainelAdmin();
     cy.get('[data-cy="admin-pedidos"]').click();
     cy.get(`[data-cy="order-code-${codigoPedido}"]`).scrollIntoView().should('be.visible');
 
@@ -148,7 +148,7 @@ describe('Suíte E2E: Gestão Administrativa de Pedidos e Ciclo de Trocas (Cená
       });
 
       // 3. Acessar o Painel Administrativo de Pedidos
-      cy.visit('/admin');
+      cy.acessarPainelAdmin();
       cy.get('[data-cy="admin-pedidos"]').click();
       cy.get(`[data-cy="order-code-${codigoPedido}"]`).scrollIntoView().should('be.visible');
       cy.get(`[data-cy="order-status-tag-${codigoPedido}"]`).should('contain.text', 'EM PROCESSAMENTO');
@@ -214,7 +214,7 @@ describe('Suíte E2E: Gestão Administrativa de Pedidos e Ciclo de Trocas (Cená
       });
 
       // 4. Avançar para APROVADA no Admin e verificar novamente
-      cy.visit('/admin');
+      cy.acessarPainelAdmin();
       cy.get('[data-cy="admin-pedidos"]').click();
       cy.get(`[data-cy="btn-processar-pagamento-${codigoPedido}"]`).click();
       cy.wait('@processarPagamento');
@@ -239,7 +239,7 @@ describe('Suíte E2E: Gestão Administrativa de Pedidos e Ciclo de Trocas (Cená
       });
 
       // 5. Avançar para EM TRANSPORTE e verificar novamente
-      cy.visit('/admin');
+      cy.acessarPainelAdmin();
       cy.get('[data-cy="admin-pedidos"]').click();
       cy.get(`[data-cy="btn-despachar-${codigoPedido}"]`).click();
       cy.wait('@atualizarStatusPedido');
@@ -409,7 +409,7 @@ describe('Suíte E2E: Gestão Administrativa de Pedidos e Ciclo de Trocas (Cená
           const codigoTroca = solicitarInterception.response?.body.codigo;
 
           // PASSO 2: Administrador visualiza a solicitação EM TROCA
-          cy.visit('/admin');
+          cy.acessarPainelAdmin();
           cy.get('[data-cy="admin-trocas"]').click();
           cy.get(`[data-cy="exchange-code-${codigoTroca}"]`).scrollIntoView().should('be.visible');
           cy.get(`[data-cy="exchange-status-${codigoTroca}"]`).should('contain.text', 'EM TROCA');
@@ -427,7 +427,7 @@ describe('Suíte E2E: Gestão Administrativa de Pedidos e Ciclo de Trocas (Cená
             .and('contain.text', 'foi AUTORIZADA com sucesso');
 
           // PASSO 5 e 6: Administrador confirma recebimento e determina reentrada no estoque
-          cy.visit('/admin');
+          cy.acessarPainelAdmin();
           cy.get('[data-cy="admin-trocas"]').click();
           cy.get(`[data-cy="btn-confirmar-recebimento-${codigoTroca}"]`).scrollIntoView().click();
 

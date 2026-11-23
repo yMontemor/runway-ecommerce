@@ -110,8 +110,9 @@ function verificarParcialidadeCompetencia(
 export default function AdminAnalytics() {
   const { products, isLoadingProducts } = useApp();
 
-  // Período padrão: Ano corrente (2026-01-01 a 2026-12-31, 12 meses)
-  const [startDate, setStartDate] = useState('2026-01-01');
+  // Período padrão: Histórico completo de 14 meses (2025-11-01 a 2026-12-31)
+  // Sem restrição fixa para consultas anteriores a novembro de 2025 (respeita RN0072: 1 a 24 meses)
+  const [startDate, setStartDate] = useState('2025-11-01');
   const [endDate, setEndDate] = useState('2026-12-31');
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [catsInitialized, setCatsInitialized] = useState(false);
@@ -142,6 +143,8 @@ export default function AdminAnalytics() {
   } | null>(null);
 
   const activeAbortRef = useRef<AbortController | null>(null);
+  const latestRequestIdRef = useRef(0);
+  const initialLoadDispatchedRef = useRef(false);
 
   // Categorias canônicas extraídas exclusivamente do catálogo real de produtos (Condição 3)
   const availableCategories = useMemo(() => {
@@ -194,6 +197,7 @@ export default function AdminAnalytics() {
     }
     const abortController = new AbortController();
     activeAbortRef.current = abortController;
+    const requestId = ++latestRequestIdRef.current;
 
     setIsLoading(true);
 
@@ -203,7 +207,8 @@ export default function AdminAnalytics() {
         abortController.signal
       );
 
-      if (abortController.signal.aborted) return;
+      // Ignora respostas de requisições substituídas por consultas mais recentes
+      if (abortController.signal.aborted || requestId !== latestRequestIdRef.current) return;
 
       if (res.sucesso && res.dados) {
         setAnaliseData(res.dados);
@@ -213,29 +218,36 @@ export default function AdminAnalytics() {
         setApiError(res.mensagem || 'Erro ao consultar análise de vendas.');
       }
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        setApiError(err.message || 'Falha de comunicação com o servidor ao consultar análise.');
+      if (err?.name !== 'AbortError' && requestId === latestRequestIdRef.current) {
+        setApiError(err?.message || 'Falha de comunicação com o servidor ao consultar análise.');
       }
     } finally {
-      if (!abortController.signal.aborted) {
+      if (requestId === latestRequestIdRef.current) {
         setIsLoading(false);
+        if (activeAbortRef.current === abortController) {
+          activeAbortRef.current = null;
+        }
       }
     }
   }, []);
 
-  // Consulta automática inicial ao carregar as categorias
+  // Consulta automática inicial disparada uma única vez após o carregamento das categorias.
+  // Em caso de falha, não entra em loop automático: o usuário pode tentar novamente pelo botão CONSULTAR VENDAS.
   useEffect(() => {
-    if (selectedCats.length > 0 && !analiseData && !isLoading) {
+    if (catsInitialized && selectedCats.length > 0 && !initialLoadDispatchedRef.current) {
+      initialLoadDispatchedRef.current = true;
       fetchVendas(startDate, endDate, selectedCats);
     }
-  }, [selectedCats, analiseData, isLoading, startDate, endDate, fetchVendas]);
+  }, [catsInitialized, selectedCats, startDate, endDate, fetchVendas]);
 
-  // Limpeza ao desmontar
+  // Limpeza ao desmontar (compatível com React StrictMode)
   useEffect(() => {
     return () => {
       if (activeAbortRef.current) {
         activeAbortRef.current.abort();
+        activeAbortRef.current = null;
       }
+      initialLoadDispatchedRef.current = false;
     };
   }, []);
 
@@ -264,7 +276,7 @@ export default function AdminAnalytics() {
 
   const svgWidth = 780;
   const svgHeight = 380;
-  const paddingLeft = 75;
+  const paddingLeft = 88;
   const paddingRight = 30;
   const paddingTop = 25;
   const paddingBottom = 55;
@@ -469,80 +481,85 @@ export default function AdminAnalytics() {
               </div>
             )}
 
-            <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="svg-line-chart">
-              {/* Linhas de Grade e Eixo Y */}
-              {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
-                const yVal = yAxisMax * ratio;
-                const yPos = paddingTop + chartHeight - ratio * chartHeight;
-                return (
-                  <g key={idx}>
-                    <line
-                      x1={paddingLeft}
-                      y1={yPos}
-                      x2={svgWidth - paddingRight}
-                      y2={yPos}
-                      stroke="#1d1d1d"
-                      strokeWidth="1"
-                      strokeDasharray={idx === 0 ? 'none' : '4 4'}
-                    />
-                    <text
-                      x={paddingLeft - 10}
-                      y={yPos + 4}
-                      fill="#888888"
-                      fontSize="10"
-                      textAnchor="end"
-                    >
-                      {yVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Rótulos do Eixo X (Meses) */}
-              {periodos.map((p, idx) => {
-                const xPos = periodos.length > 1
-                  ? paddingLeft + idx * xSpacing
-                  : paddingLeft + chartWidth / 2;
-
-                // Evitar sobreposição de texto caso haja mais de 12 meses
-                const shouldDisplayLabel = periodos.length <= 12 || idx % 2 === 0 || idx === periodos.length - 1;
-                const partialInfo = verificarParcialidadeCompetencia(p, appliedFilters);
-
-                return (
-                  <g key={p}>
-                    <line
-                      x1={xPos}
-                      y1={paddingTop}
-                      x2={xPos}
-                      y2={paddingTop + chartHeight}
-                      stroke="#161616"
-                      strokeWidth="1"
-                    />
-                    {/* Traço de demarcação (tick) na linha de base */}
-                    <line
-                      x1={xPos}
-                      y1={paddingTop + chartHeight}
-                      x2={xPos}
-                      y2={paddingTop + chartHeight + 4}
-                      stroke="#333333"
-                      strokeWidth="1"
-                    />
-                    {shouldDisplayLabel && (
+            <div className="svg-plot-area">
+              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="svg-line-chart">
+                {/* Linhas de Grade e Eixo Y */}
+                {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
+                  const yVal = yAxisMax * ratio;
+                  const yPos = paddingTop + chartHeight - ratio * chartHeight;
+                  return (
+                    <g key={idx}>
+                      <line
+                        x1={paddingLeft}
+                        y1={yPos}
+                        x2={svgWidth - paddingRight}
+                        y2={yPos}
+                        stroke="#1d1d1d"
+                        strokeWidth="1"
+                        strokeDasharray={idx === 0 ? 'none' : '4 4'}
+                      />
                       <text
-                        x={xPos}
-                        y={paddingTop + chartHeight + 28}
+                        x={paddingLeft - 10}
+                        y={yPos + 4}
                         fill="#888888"
-                        fontSize={periodos.length > 16 ? '9' : '10.5'}
-                        fontWeight="600"
-                        textAnchor="middle"
-                        data-cy="rotulo-eixo-x"
+                        fontSize="9.5"
+                        textAnchor="end"
                       >
-                        {partialInfo.isParcial ? `${formatMonthLabel(p)}*` : formatMonthLabel(p)}
+                        {formatCurrency(yVal)}
                       </text>
-                    )}
-                  </g>
-                );
-              })}
+                    </g>
+                  );
+                })}
+
+                {/* Rótulos do Eixo X (Meses) */}
+                {periodos.map((p, idx) => {
+                  const xPos = periodos.length > 1
+                    ? paddingLeft + idx * xSpacing
+                    : paddingLeft + chartWidth / 2;
+
+                  // Exibe todos os rótulos até 14 meses (evitando colisão em janelas maiores de até 24 meses)
+                  const isLast = idx === periodos.length - 1;
+                  const isPenultimate = idx === periodos.length - 2;
+                  const shouldDisplayLabel = periodos.length <= 14
+                    ? true
+                    : (isLast || (idx % 2 === 0 && !(isPenultimate && periodos.length % 2 === 0)));
+                  const partialInfo = verificarParcialidadeCompetencia(p, appliedFilters);
+
+                  return (
+                    <g key={p}>
+                      <line
+                        x1={xPos}
+                        y1={paddingTop}
+                        x2={xPos}
+                        y2={paddingTop + chartHeight}
+                        stroke="#161616"
+                        strokeWidth="1"
+                      />
+                      {/* Traço de demarcação (tick) na linha de base */}
+                      <line
+                        x1={xPos}
+                        y1={paddingTop + chartHeight}
+                        x2={xPos}
+                        y2={paddingTop + chartHeight + 4}
+                        stroke="#333333"
+                        strokeWidth="1"
+                      />
+                      {shouldDisplayLabel && (
+                        <text
+                          x={xPos}
+                          y={paddingTop + chartHeight + 28}
+                          fill="#888888"
+                          fontSize={periodos.length > 12 ? '9.5' : '10.5'}
+                          fontWeight="600"
+                          textAnchor="middle"
+                          data-cy="rotulo-eixo-x"
+                        >
+                          {partialInfo.isParcial ? `${formatMonthLabel(p)}*` : formatMonthLabel(p)}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
 
               {/* Séries Temporais por Categoria (RF0055, RNF0043, RN0073) */}
               {series.map((serie, sIdx) => {
@@ -710,61 +727,68 @@ export default function AdminAnalytics() {
               })}
             </svg>
 
-            {/* Tooltip HTML Dinâmico (RNF0046) */}
-            {tooltip && (
-              <div
-                className="analytics-tooltip"
-                data-cy="analytics-tooltip"
-                style={{
-                  position: 'absolute',
-                  left: `${tooltip.x}px`,
-                  top: `${tooltip.y - 12}px`,
-                  transform: 'translate(-50%, -100%)'
-                }}
-              >
-                <div className="tooltip-cat" style={{ color: tooltip.color || getCategoryColor(tooltip.category, 0) }}>
-                  {tooltip.category}
-                </div>
-                <div className="tooltip-value">
-                  {formatCurrency(tooltip.value)}
-                </div>
-                <div className="tooltip-month">{tooltip.month}</div>
-                {tooltip.isPartial && (
-                  <div className="tooltip-partial-badge" data-cy="tooltip-partial-badge">
-                    * Período Parcial
+            {/* Tooltip HTML Dinâmico com posicionamento proporcional ao viewBox (RNF0046) */}
+            {tooltip && (() => {
+              const leftPct = (tooltip.x / svgWidth) * 100;
+              const topPct = (tooltip.y / svgHeight) * 100;
+              const translateX = tooltip.x < 120 ? '-15%' : (tooltip.x > svgWidth - 120 ? '-85%' : '-50%');
+              const translateY = tooltip.y < 110 ? '14px' : 'calc(-100% - 12px)';
+              return (
+                <div
+                  className="analytics-tooltip"
+                  data-cy="analytics-tooltip"
+                  style={{
+                    position: 'absolute',
+                    left: `${leftPct}%`,
+                    top: `${topPct}%`,
+                    transform: `translate(${translateX}, ${translateY})`
+                  }}
+                >
+                  <div className="tooltip-cat" style={{ color: tooltip.color || getCategoryColor(tooltip.category, 0) }}>
+                    {tooltip.category}
                   </div>
-                )}
-                {tooltip.coincidentItems && tooltip.coincidentItems.length > 1 ? (
-                  <div className="tooltip-coincident-badge" data-cy="tooltip-coincident-badge">
-                    <div className="tooltip-coincident-header">
-                      Coincide com:
-                    </div>
-                    <div className="tooltip-coincident-list" data-cy="tooltip-coincident-list">
-                      {tooltip.coincidentItems.map((item) => (
-                        <div
-                          key={item.categoria}
-                          className={`tooltip-coincident-item ${item.categoria === tooltip.category ? 'active' : ''}`}
-                          data-cy={`tooltip-item-${item.categoria}`}
-                        >
-                          <span
-                            className="tooltip-coincident-dot"
-                            style={{ backgroundColor: item.cor }}
-                          />
-                          <span className="tooltip-item-cat">{item.categoria}:</span>
-                          <span className="tooltip-item-val">{formatCurrency(item.valor)}</span>
-                        </div>
-                      ))}
-                    </div>
+                  <div className="tooltip-value">
+                    {formatCurrency(tooltip.value)}
                   </div>
-                ) : (
-                  tooltip.coincidentCats && tooltip.coincidentCats.length > 1 && (
+                  <div className="tooltip-month">{tooltip.month}</div>
+                  {tooltip.isPartial && (
+                    <div className="tooltip-partial-badge" data-cy="tooltip-partial-badge">
+                      * Período Parcial
+                    </div>
+                  )}
+                  {tooltip.coincidentItems && tooltip.coincidentItems.length > 1 ? (
                     <div className="tooltip-coincident-badge" data-cy="tooltip-coincident-badge">
-                      Coincide com: {tooltip.coincidentCats.filter(c => c !== tooltip.category).join(', ')}
+                      <div className="tooltip-coincident-header">
+                        Coincide com:
+                      </div>
+                      <div className="tooltip-coincident-list" data-cy="tooltip-coincident-list">
+                        {tooltip.coincidentItems.map((item) => (
+                          <div
+                            key={item.categoria}
+                            className={`tooltip-coincident-item ${item.categoria === tooltip.category ? 'active' : ''}`}
+                            data-cy={`tooltip-item-${item.categoria}`}
+                          >
+                            <span
+                              className="tooltip-coincident-dot"
+                              style={{ backgroundColor: item.cor }}
+                            />
+                            <span className="tooltip-item-cat">{item.categoria}:</span>
+                            <span className="tooltip-item-val">{formatCurrency(item.valor)}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  )
-                )}
-              </div>
-            )}
+                  ) : (
+                    tooltip.coincidentCats && tooltip.coincidentCats.length > 1 && (
+                      <div className="tooltip-coincident-badge" data-cy="tooltip-coincident-badge">
+                        Coincide com: {tooltip.coincidentCats.filter(c => c !== tooltip.category).join(', ')}
+                      </div>
+                    )
+                  )}
+                </div>
+              );
+            })()}
+            </div>
 
             {/* Legenda das Categorias Posicionada Abaixo do Gráfico (RNF0045) */}
             <div className="analytics-legend-container" data-cy="analytics-legend">

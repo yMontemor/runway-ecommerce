@@ -1,7 +1,10 @@
 {
   "scripts": {
     "build": "npm run build --prefix frontend",
-    "cy:run": "cypress run"
+    "cy:run": "cypress run",
+    "test:backend": "dotnet run --project backend --launch-profile testing",
+    "test:frontend": "npm run dev --prefix frontend",
+    "test:benchmark": "node tests/performance/benchmark_analise_rnf0011.js"
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",

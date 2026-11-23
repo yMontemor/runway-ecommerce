@@ -511,6 +511,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }
 
+  const cartExpirationDeadlineRef = useRef<number | null>(null);
+  const wasCartTimerRunningRef = useRef(false);
+
   // Carregar carrinho persistido do backend para um cliente
   const refreshCart = useCallback(async (customerId?: string) => {
     const targetId = customerId || activeCustomer.id;
@@ -524,6 +527,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...prev,
           [targetId]: mapped
         }));
+
+        if (!res.carrinho.expirado && res.carrinho.tempoRestanteSegundos > 0) {
+          cartExpirationDeadlineRef.current = Date.now() + res.carrinho.tempoRestanteSegundos * 1000;
+        } else {
+          cartExpirationDeadlineRef.current = null;
+        }
 
         setCartExpiracao(prev => {
           const isExpired = res.carrinho!.expirado || prev.expirado;
@@ -557,15 +566,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [productsList, activeCustomer.id]);
 
   // Cronômetro local com alerta 5 minutos antes da expiração (RN0044)
+  // Mantém um único intervalo estável enquanto houver contagem ativa (sem recriação por segundo)
+  // e calcula o tempo restante via relógio real para resistir à inatividade/throttling de abas.
+  const isCartTimerRunning = cartExpiracao.tempoRestanteSegundos > 0 && !cartExpiracao.expirado;
+
   useEffect(() => {
-    if (cartExpiracao.tempoRestanteSegundos <= 0 || cartExpiracao.expirado) {
+    if (!isCartTimerRunning) {
       return;
+    }
+
+    if (cartExpirationDeadlineRef.current === null) {
+      cartExpirationDeadlineRef.current = Date.now() + cartExpiracao.tempoRestanteSegundos * 1000;
     }
 
     const timer = setInterval(() => {
       setCartExpiracao(prev => {
-        if (prev.tempoRestanteSegundos <= 1) {
-          refreshCart(activeCustomer.id);
+        if (prev.expirado || prev.tempoRestanteSegundos <= 0) {
+          return prev;
+        }
+
+        const novosSegundos = cartExpirationDeadlineRef.current !== null
+          ? Math.max(0, Math.ceil((cartExpirationDeadlineRef.current - Date.now()) / 1000))
+          : Math.max(0, prev.tempoRestanteSegundos - 1);
+
+        if (novosSegundos <= 0) {
+          cartExpirationDeadlineRef.current = null;
           return {
             ...prev,
             tempoRestanteSegundos: 0,
@@ -575,7 +600,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           };
         }
 
-        const novosSegundos = prev.tempoRestanteSegundos - 1;
+        if (novosSegundos === prev.tempoRestanteSegundos) {
+          return prev;
+        }
+
         return {
           ...prev,
           tempoRestanteSegundos: novosSegundos,
@@ -585,7 +613,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [cartExpiracao.tempoRestanteSegundos, cartExpiracao.expirado, activeCustomer.id, refreshCart]);
+  }, [isCartTimerRunning]);
+
+  // Sincronização única com o backend quando a contagem regressiva atinge zero (fora do updater de estado)
+  useEffect(() => {
+    if (isCartTimerRunning) {
+      wasCartTimerRunningRef.current = true;
+      return;
+    }
+
+    if (wasCartTimerRunningRef.current && cartExpiracao.expirado && activeCustomer.id) {
+      wasCartTimerRunningRef.current = false;
+      refreshCart(activeCustomer.id);
+    } else {
+      wasCartTimerRunningRef.current = false;
+    }
+  }, [isCartTimerRunning, cartExpiracao.expirado, activeCustomer.id, refreshCart]);
 
   const limparAvisoExpiracao = () => {
     setCartExpiracao(prev => ({
@@ -632,6 +675,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...prev,
           [activeCustomer.id]: mapped
         }));
+
+        cartExpirationDeadlineRef.current =
+          !res.carrinho.expirado && res.carrinho.tempoRestanteSegundos > 0
+            ? Date.now() + res.carrinho.tempoRestanteSegundos * 1000
+            : null;
 
         setCartExpiracao({
           tempoRestanteSegundos: res.carrinho.tempoRestanteSegundos,
@@ -700,6 +748,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           [customerId]: mapped
         }));
 
+        cartExpirationDeadlineRef.current =
+          !res.carrinho.expirado && res.carrinho.tempoRestanteSegundos > 0
+            ? Date.now() + res.carrinho.tempoRestanteSegundos * 1000
+            : null;
+
         setCartExpiracao({
           tempoRestanteSegundos: res.carrinho.tempoRestanteSegundos,
           alertaExpirando: res.carrinho.alertaExpirando,
@@ -765,6 +818,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           [customerId]: mapped
         }));
 
+        cartExpirationDeadlineRef.current =
+          !res.carrinho.expirado && res.carrinho.tempoRestanteSegundos > 0
+            ? Date.now() + res.carrinho.tempoRestanteSegundos * 1000
+            : null;
+
         setCartExpiracao({
           tempoRestanteSegundos: res.carrinho.tempoRestanteSegundos,
           alertaExpirando: res.carrinho.alertaExpirando,
@@ -793,6 +851,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           [targetId]: []
         }));
 
+        cartExpirationDeadlineRef.current = null;
         setCartExpiracao({
           tempoRestanteSegundos: 0,
           alertaExpirando: false,

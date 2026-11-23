@@ -19,7 +19,7 @@ describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', ()
     cy.task('validarIntegridadeMassaAposTeste').then((res: any) => {
       expect(res.restaurado).to.be.true;
       expect(res.statusPed8).to.eq('EM TRANSPORTE');
-      expect(res.totalGeral).to.eq(7850.09);
+      expect(res.totalGeral).to.be.closeTo(res.totalCanonicoEsperado, 0.01);
     });
   });
 
@@ -37,7 +37,7 @@ describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', ()
     cy.task('validarIntegridadeMassaAposTeste').then((res: any) => {
       expect(res.restaurado).to.be.true;
       expect(res.statusPed8).to.eq('EM TRANSPORTE');
-      expect(res.totalGeral).to.eq(7850.09);
+      expect(res.totalGeral).to.be.closeTo(res.totalCanonicoEsperado, 0.01);
     });
   });
 
@@ -46,7 +46,7 @@ describe('Cartão 09 — Captura de Evidências Reais da Análise Gerencial', ()
     cy.task('validarIntegridadeMassaAposTeste').then((res: any) => {
       expect(res.restaurado).to.be.true;
       expect(res.statusPed8).to.eq('EM TRANSPORTE');
-      expect(res.totalGeral).to.eq(7850.09);
+      expect(res.totalGeral).to.be.closeTo(res.totalCanonicoEsperado, 0.01);
     });
   });
 

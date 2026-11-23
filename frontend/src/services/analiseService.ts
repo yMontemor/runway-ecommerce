@@ -29,22 +29,51 @@ export interface ConsultaAnaliseVendasParams {
   categorias: string[];
 }
 
+export type TipoErroAnalise = 'TIMEOUT' | 'NETWORK' | 'HTTP';
+
 export interface ConsultaAnaliseVendasResult {
   sucesso: boolean;
   statusCode: number;
+  tipoErro?: TipoErroAnalise;
   mensagem?: string;
   dados?: AnaliseVendasResponseDto;
 }
+
+const ANALISE_REQUEST_TIMEOUT_MS = 10000;
 
 export const analiseService = {
   /**
    * Consulta o histórico de vendas agrupado por período e categoria de produto (RF0055, RF0056, RF0057, RN0071, RN0072, RN0073).
    * No modelo demonstrativo do protótipo, a consulta é realizada diretamente pela camada de apresentação.
+   * Possui timeout controlado de 10s para recuperação de falhas de comunicação (não substitui o limite RNF0011 <= 1s).
    */
   async consultarVendas(
     params: ConsultaAnaliseVendasParams,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    timeoutMs: number = ANALISE_REQUEST_TIMEOUT_MS
   ): Promise<ConsultaAnaliseVendasResult> {
+    if (signal?.aborted) {
+      const abortErr = new Error('Consulta cancelada.');
+      abortErr.name = 'AbortError';
+      throw abortErr;
+    }
+
+    const internalController = new AbortController();
+    let timedOut = false;
+
+    const handleExternalAbort = () => {
+      internalController.abort();
+    };
+
+    if (signal) {
+      signal.addEventListener('abort', handleExternalAbort, { once: true });
+    }
+
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      internalController.abort();
+    }, timeoutMs);
+
     try {
       const queryParams = new URLSearchParams();
       queryParams.append('dataInicio', params.dataInicio);
@@ -58,7 +87,7 @@ export const analiseService = {
         headers: {
           'Accept': 'application/json'
         },
-        signal
+        signal: internalController.signal
       });
 
       if (response.status === 200) {
@@ -74,17 +103,39 @@ export const analiseService = {
       return {
         sucesso: false,
         statusCode: response.status,
-        mensagem: erroJson.erro || 'Erro ao consultar análise gerencial de vendas.'
+        tipoErro: 'HTTP',
+        mensagem: erroJson.erro || `Erro HTTP ${response.status} ao consultar análise gerencial de vendas.`
       };
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        throw err;
+      // Cancelamento intencional por nova consulta sobreposta ou desmontagem do componente
+      if (!timedOut && (signal?.aborted || err?.name === 'AbortError')) {
+        const abortErr = new Error('Consulta substituída por uma requisição mais recente.');
+        abortErr.name = 'AbortError';
+        throw abortErr;
       }
+
+      // Timeout explícito de comunicação
+      if (timedOut) {
+        return {
+          sucesso: false,
+          statusCode: 408,
+          tipoErro: 'TIMEOUT',
+          mensagem: `A consulta excedeu o tempo limite de ${Math.round(timeoutMs / 1000)} segundos. Verifique se o servidor está respondendo e tente novamente.`
+        };
+      }
+
+      // Falha de rede / backend indisponível
       return {
         sucesso: false,
         statusCode: 0,
-        mensagem: err.message || 'Falha de comunicação com o servidor ao consultar análise de vendas.'
+        tipoErro: 'NETWORK',
+        mensagem: 'Não foi possível comunicar com o servidor para consultar a análise de vendas. Verifique se o backend está em execução e tente novamente.'
       };
+    } finally {
+      clearTimeout(timeoutId);
+      if (signal) {
+        signal.removeEventListener('abort', handleExternalAbort);
+      }
     }
   }
 };

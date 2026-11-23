@@ -37,8 +37,8 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
    */
   const desbloquearModoAdmin = () => {
     cy.visit('/');
-    cy.get('[data-cy="user-dropdown"]').click();
-    cy.get('[data-cy="painel-admin"]').click();
+    cy.get('[data-cy="user-dropdown"]', { timeout: 10000 }).should('be.visible').click();
+    cy.get('[data-cy="painel-admin"]', { timeout: 10000 }).should('be.visible').click();
     cy.url().should('include', '/admin');
     cy.get('[data-cy="admin-analise"]').click();
 
@@ -86,13 +86,29 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
       expect(interception.response?.body.series).to.have.length(1);
       expect(interception.response?.body.series[0].categoria).to.eq('TREINO DIÁRIO');
       expect(interception.response?.body.series[0].total).to.eq(2350.59);
+
+      // Conferir cada valor mensal individualmente na resposta da API (Cenário 1)
+      const dadosMensais = interception.response?.body.series[0].dados;
+      expect(dadosMensais).to.deep.eq([
+        { periodo: '2025-11', valor: 449.90 },
+        { periodo: '2025-12', valor: 899.80 },
+        { periodo: '2026-01', valor: 550.99 },
+        { periodo: '2026-02', valor: 449.90 },
+        { periodo: '2026-03', valor: 0 }
+      ]);
     });
 
-    // 6. Validar apresentação visual no SVG: somente a série TREINO DIÁRIO deve estar presente
+    // 6. Validar apresentação visual no SVG: somente a série TREINO DIÁRIO deve estar presente com valores mensais corretos
     cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');
     cy.get('[data-cy="serie-TREINO DIÁRIO"]').should('exist');
     cy.get('[data-cy="serie-TREINO DIÁRIO"] polyline').should('exist').and('have.attr', 'points').and('not.be.empty');
     cy.get('[data-cy="serie-COMPETIÇÃO"]').should('not.exist');
+
+    cy.get('[data-cy="chart-point"][data-periodo="2025-11"][data-categoria="TREINO DIÁRIO"]').should('have.attr', 'data-valor', '449.9');
+    cy.get('[data-cy="chart-point"][data-periodo="2025-12"][data-categoria="TREINO DIÁRIO"]').should('have.attr', 'data-valor', '899.8');
+    cy.get('[data-cy="chart-point"][data-periodo="2026-01"][data-categoria="TREINO DIÁRIO"]').should('have.attr', 'data-valor', '550.99');
+    cy.get('[data-cy="chart-point"][data-periodo="2026-02"][data-categoria="TREINO DIÁRIO"]').should('have.attr', 'data-valor', '449.9');
+    cy.get('[data-cy="chart-point"][data-periodo="2026-03"][data-categoria="TREINO DIÁRIO"]').should('have.attr', 'data-valor', '0');
 
     // 7. Validar legenda: corresponde estritamente à categoria selecionada com subtotal
     cy.get('[data-cy="analytics-legend"]').should('be.visible');
@@ -206,9 +222,9 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
       cy.get('.svg-line-chart').contains('text', mes).should('exist');
     });
 
-    // 2. Eixo vertical Y: validar apresentação de valores monetários com símbolo R$
+    // 2. Eixo vertical Y: validar apresentação de valores monetários no padrão brasileiro (R$ X,XX - RNF0044)
     cy.get('.svg-line-chart text')
-      .filter((_, el) => el.textContent?.includes('R$') ?? false)
+      .filter((_, el) => /R\$\s*[\d.]+,\d{2}/.test(el.textContent ?? ''))
       .should('have.length.at.least', 4);
 
     // 3. Validar linhas contínuas (polyline) conectando os nós para cada série (RNF0043)
@@ -258,10 +274,10 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
       cy.get('[data-cy="analytics-legend"]').should('exist');
     });
 
-    // 6. Validar Tooltip com categoria, mês/ano e valor financeiro exato (RNF0046)
-    // Teste 6.1: Pico de Competição em Jan/26 (R$ 2.199,80)
+    // 6. Validar Tooltip acionado por HOVER (mouseover) e por clique com categoria, mês/ano e valor financeiro exato (RNF0046)
+    // Teste 6.1: Hover no pico de Competição em Jan/26 (R$ 2.199,80)
     cy.get('[data-cy="chart-point"][data-periodo="2026-01"][data-categoria="COMPETIÇÃO"]')
-      .click({ force: true });
+      .trigger('mouseover', { force: true });
 
     cy.get('[data-cy="analytics-tooltip"]')
       .should('be.visible')
@@ -269,9 +285,9 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
       .and('contain.text', 'Jan/26')
       .and('contain.text', '2.199,80');
 
-    // Teste 6.2: Mês com zero de Treino Diário em Mar/26 (R$ 0,00)
+    // Teste 6.2: Hover em mês com zero de Treino Diário em Mar/26 (R$ 0,00)
     cy.get('[data-cy="chart-point"][data-periodo="2026-03"][data-categoria="TREINO DIÁRIO"]')
-      .click({ force: true });
+      .trigger('mouseover', { force: true });
 
     cy.get('[data-cy="analytics-tooltip"]')
       .should('be.visible')
@@ -279,7 +295,7 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
       .and('contain.text', 'Mar/26')
       .and('contain.text', '0,00');
 
-    // Teste 6.3: Mês com zero de Competição em Fev/26 (R$ 0,00)
+    // Teste 6.3: Clique em mês com zero de Competição em Fev/26 (R$ 0,00)
     cy.get('[data-cy="chart-point"][data-periodo="2026-02"][data-categoria="COMPETIÇÃO"]')
       .click({ force: true });
 
@@ -379,6 +395,30 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
     cy.get('.svg-line-chart').contains('text', 'Nov/25').should('exist');
 
     // ---------------------------------------------------------------------------------------
+    // Etapa 4.4b: Consulta ao período histórico ampliado completo (14 meses: Nov/2025 a Dez/2026, 5 categorias)
+    // ---------------------------------------------------------------------------------------
+    cy.task<any>('consultarTotaisGlobaisAnalise', {
+      dataInicio: '2025-11-01',
+      dataFim: '2026-12-31'
+    }).then((totaisBanco) => {
+      cy.get('[data-cy="btn-todas-categorias"]').click();
+      cy.intercept('GET', '**/api/analise/vendas*dataInicio=2025-11-01*dataFim=2026-12-31*').as('consulta14Meses');
+      cy.get('[data-cy="input-data-inicio"]').clear().type('2025-11-01');
+      cy.get('[data-cy="input-data-fim"]').clear().type('2026-12-31');
+      cy.get('[data-cy="btn-aplicar-filtros"]').click();
+
+      cy.wait('@consulta14Meses').then((interception) => {
+        expect(interception.response?.statusCode).to.eq(200);
+        expect(interception.response?.body.periodos).to.have.length(14);
+        expect(interception.response?.body.series).to.have.length(5);
+        expect(interception.response?.body.totalGeral).to.be.closeTo(totaisBanco.totalGeral, 0.01);
+      });
+
+      cy.get('.svg-line-chart').contains('text', 'Nov/25').should('exist');
+      cy.get('.svg-line-chart').contains('text', 'Dez/26').should('exist');
+    });
+
+    // ---------------------------------------------------------------------------------------
     // Etapa 4.5: Validações de Rejeição de Intervalos Inválidos (RF0056, RN0072, RF0057)
     // ---------------------------------------------------------------------------------------
     // Tentativa A: Data final anterior à inicial (RF0056)
@@ -421,123 +461,131 @@ describe('Cartão 07 — Testes Funcionais da Análise Gerencial (Cenários 1 a 
   });
 
   // =========================================================================================
-  // VALIDAÇÃO OBJETIVA DE LEGIBILIDADE, RAIO MÁXIMO E NÃO-SOBREPOSIÇÃO DO SVG (12 MESES / 5 CATS)
+  // VALIDAÇÃO OBJETIVA DE 14 MESES (NOV/25 A DEZ/26) COM 5 CATEGORIAS REAIS E LEGIBILIDADE DO SVG
   // =========================================================================================
-  it('Deve garantir legibilidade visual, raio máximo e ausência de sobreposição no eixo X em consulta de 12 meses com 5 categorias', () => {
-    desbloquearModoAdmin();
+  it('Deve carregar período padrão (2025-11-01 a 2026-12-31), comparar as 5 categorias reais e garantir legibilidade sem sobreposição no eixo X', () => {
+    cy.task<any>('consultarTotaisGlobaisAnalise', {
+      dataInicio: '2025-11-01',
+      dataFim: '2026-12-31'
+    }).then((totaisBanco) => {
+      desbloquearModoAdmin();
 
-    // 1. Configurar consulta anual completa: Janeiro a Dezembro de 2026 (12 meses)
-    cy.get('[data-cy="input-data-inicio"]').clear().type('2026-01-01');
-    cy.get('[data-cy="input-data-fim"]').clear().type('2026-12-31');
+      // 1. Confirmar período padrão inicial da tela: 2025-11-01 a 2026-12-31 (14 meses)
+      cy.get('[data-cy="input-data-inicio"]').should('have.value', '2025-11-01');
+      cy.get('[data-cy="input-data-fim"]').should('have.value', '2026-12-31');
 
-    // 2. Selecionar todas as cinco categorias disponíveis
-    cy.get('[data-cy="btn-todas-categorias"]').click();
+      // 2. Selecionar todas as cinco categorias disponíveis e consultar explicitamente com intercept espião
+      cy.get('[data-cy="btn-todas-categorias"]').click();
 
-    cy.intercept('GET', '**/api/analise/vendas*dataInicio=2026-01-01*dataFim=2026-12-31*').as('consulta12Meses');
-    cy.get('[data-cy="btn-aplicar-filtros"]').click();
+      cy.intercept('GET', '**/api/analise/vendas*dataInicio=2025-11-01*dataFim=2026-12-31*').as('consulta14Meses');
+      cy.get('[data-cy="btn-aplicar-filtros"]').click();
 
-    let totalGeralRetornadoApi = 0;
+      let totalGeralRetornadoApi = 0;
 
-    cy.wait('@consulta12Meses').then((interception) => {
-      expect(interception.response?.statusCode).to.eq(200);
-      expect(interception.response?.body.periodos).to.have.length(12);
-      expect(interception.response?.body.series).to.have.length(5);
+      cy.wait('@consulta14Meses').then((interception) => {
+        expect(interception.response?.statusCode).to.eq(200);
+        const corpo = interception.response?.body;
 
-      const corpo = interception.response?.body;
-      totalGeralRetornadoApi = Number(corpo.totalGeral);
+        expect(corpo.periodos).to.have.length(14);
+        expect(corpo.series).to.have.length(5);
+        totalGeralRetornadoApi = Number(corpo.totalGeral);
 
-      // O total geral deve corresponder exatamente à soma dos subtotais das 5 séries retornadas
-      // e contemplar ao menos o piso determinístico de 2026 da massa oficial (R$ 4.300,59 em Jan-Mar/2026)
-      const somaSeries = corpo.series.reduce((acc: number, s: any) => acc + Number(s.total), 0);
-      expect(totalGeralRetornadoApi).to.be.closeTo(somaSeries, 0.01);
-      expect(totalGeralRetornadoApi).to.be.at.least(4300.59);
-    });
+        // Validação exata contra o estado real do PostgreSQL runway_test (incluindo PED-ANL-* e RW-* preservados)
+        expect(totalGeralRetornadoApi).to.be.closeTo(totaisBanco.totalGeral, 0.01);
 
-    // 3. Validar a renderização das cinco séries e da legenda completa
-    cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');
-    cy.get('.svg-line-chart').should('exist');
-    cy.get('[data-cy="analytics-legend"]').within(() => {
-      cy.get('.legend-item').should('have.length', 5);
-    });
-
-    // 4. Verificação objetiva: Raio máximo dos marcadores em consulta de múltiplos meses
-    // Todos os pontos em múltiplos meses devem ter raio <= 7.0px (eliminando halos concêntricos gigantes)
-    cy.get('[data-cy="chart-point"]').each(($point) => {
-      const r = Number($point.attr('r'));
-      expect(r, `Raio do ponto (${$point.attr('data-categoria')} em ${$point.attr('data-periodo')})`).to.be.at.most(7.0);
-    });
-
-    // 5. Verificação objetiva: Meses zerados (R$ 0,00) com raio compacto na linha de base
-    // Exemplo: Junho de 2026 (2026-06), onde todas as categorias estão zeradas
-    cy.get('[data-cy="chart-point"][data-periodo="2026-06"]').each(($point) => {
-      expect(Number($point.attr('data-valor'))).to.eq(0);
-      const r = Number($point.attr('r'));
-      expect(r, 'Raio de ponto zerado na linha de base').to.be.at.most(4.0);
-    });
-
-    // 6. Verificação objetiva: Ausência de sobreposição entre marcadores e rótulos do eixo X
-    // Medir matematicamente a coordenada inferior do marcador mais baixo vs. topo do rótulo do mês
-    let maxPointBottom = 0;
-    cy.get('[data-cy="chart-point"]').each(($point) => {
-      const cy = Number($point.attr('cy'));
-      const r = Number($point.attr('r'));
-      const pointBottom = cy + r;
-      if (pointBottom > maxPointBottom) {
-        maxPointBottom = pointBottom;
-      }
-    }).then(() => {
-      cy.get('[data-cy="rotulo-eixo-x"]').each(($label) => {
-        const textY = Number($label.attr('y'));
-        // textY é a linha de base do texto (353). O topo da fonte (10.5px) fica por volta de 342.5.
-        // A folga entre o ponto mais baixo e a linha de base do texto deve ser de pelo menos 20px,
-        // garantindo folga superior livre >= 10px em relação ao topo das letras.
-        const gap = textY - maxPointBottom;
-        expect(gap, 'Espaçamento vertical entre ponto mais baixo e rótulo do eixo X').to.be.at.least(20);
+        const categoriasEsperadas = ['COMPETIÇÃO', 'LONGA DISTÂNCIA', 'TRAIL', 'TREINO DIÁRIO', 'VELOCIDADE'];
+        categoriasEsperadas.forEach((cat) => {
+          const serie = corpo.series.find((s: any) => s.categoria === cat);
+          expect(serie, `Série ${cat} deve estar presente`).to.exist;
+          expect(serie.total, `Categoria ${cat} deve possuir vendas entregues reais (> 0)`).to.be.greaterThan(0);
+          expect(serie.total, `Subtotal da categoria ${cat} deve corresponder exatamente ao banco`)
+            .to.be.closeTo(totaisBanco.porCategoria[cat] || 0, 0.01);
+        });
       });
-    });
 
-    // 7. Verificação objetiva: Tooltip estruturado em pontos coincidentes (mês com múltiplas categorias em R$ 0,00)
-    cy.get('[data-cy="chart-point"][data-periodo="2026-06"]').first().click({ force: true });
-    cy.get('[data-cy="analytics-tooltip"]').should('be.visible');
-    cy.get('[data-cy="analytics-tooltip"]').should('contain.text', 'Jun/26');
-    cy.get('[data-cy="analytics-tooltip"]').should('contain.text', '0,00');
-
-    // Validar bloco de coincidências completo com todas as categorias coincidentes
-    cy.get('[data-cy="tooltip-coincident-badge"]').should('be.visible').and('contain.text', 'Coincide com');
-    cy.get('[data-cy="tooltip-coincident-list"]').within(() => {
-      cy.get('.tooltip-coincident-item').should('have.length', 5);
-      cy.get('.tooltip-coincident-dot').should('have.length', 5);
-      cy.contains('0,00').should('exist');
-    });
-
-    // 8. Verificação objetiva: Preservação dos valores determinísticos da massa oficial em Jan-Mar/2026
-    // e consistência do card totalizador com o payload real da API (independente de pedidos de outros módulos)
-    cy.get('[data-cy="chart-point"][data-periodo="2026-01"][data-categoria="TREINO DIÁRIO"]')
-      .should('have.attr', 'data-valor', '550.99');
-    cy.get('[data-cy="chart-point"][data-periodo="2026-01"][data-categoria="COMPETIÇÃO"]')
-      .should('have.attr', 'data-valor', '2199.8');
-    cy.get('[data-cy="chart-point"][data-periodo="2026-02"][data-categoria="TREINO DIÁRIO"]')
-      .should('have.attr', 'data-valor', '449.9');
-    cy.get('[data-cy="chart-point"][data-periodo="2026-03"][data-categoria="COMPETIÇÃO"]')
-      .should('have.attr', 'data-valor', '1099.9');
-
-    cy.then(() => {
-      const valorFormatado = totalGeralRetornadoApi.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
+      // 3. Validar a renderização das cinco séries, cores distintas e legenda completa
+      cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');
+      cy.get('.svg-line-chart').should('exist');
+      cy.get('[data-cy="analytics-legend"]').within(() => {
+        cy.get('.legend-item').should('have.length', 5);
       });
-      cy.get('[data-cy="total-geral-vendas"]').should('contain.text', valorFormatado);
+
+      // Confirmar exibição de todos os 14 rótulos mensais no eixo X (Nov/25 a Dez/26)
+      cy.get('[data-cy="rotulo-eixo-x"]').should('have.length', 14);
+      ['Nov/25', 'Dez/25', 'Jan/26', 'Jun/26', 'Dez/26'].forEach((rotulo) => {
+        cy.get('.svg-line-chart').contains('text', rotulo).should('exist');
+      });
+
+      // 4. Verificação objetiva: Raio máximo dos marcadores em consulta de múltiplos meses
+      cy.get('[data-cy="chart-point"]').each(($point) => {
+        const r = Number($point.attr('r'));
+        expect(r, `Raio do ponto (${$point.attr('data-categoria')} em ${$point.attr('data-periodo')})`).to.be.at.most(7.0);
+      });
+
+      // 5. Verificação objetiva: Junho/2026 (2026-06) preservado sem vendas ENTREGUE em todas as 5 categorias
+      cy.get('[data-cy="chart-point"][data-periodo="2026-06"]').should('have.length', 5).each(($point) => {
+        expect(Number($point.attr('data-valor'))).to.eq(0);
+        const r = Number($point.attr('r'));
+        expect(r, 'Raio de ponto zerado na linha de base').to.be.at.most(4.0);
+      });
+
+      // 6. Verificação objetiva: Ausência de sobreposição entre marcadores e rótulos do eixo X
+      let maxPointBottom = 0;
+      cy.get('[data-cy="chart-point"]').each(($point) => {
+        const cyVal = Number($point.attr('cy'));
+        const r = Number($point.attr('r'));
+        const pointBottom = cyVal + r;
+        if (pointBottom > maxPointBottom) {
+          maxPointBottom = pointBottom;
+        }
+      }).then(() => {
+        cy.get('[data-cy="rotulo-eixo-x"]').each(($label) => {
+          const textY = Number($label.attr('y'));
+          const gap = textY - maxPointBottom;
+          expect(gap, 'Espaçamento vertical entre ponto mais baixo e rótulo do eixo X').to.be.at.least(20);
+        });
+      });
+
+      // 7. Verificação objetiva: Tooltip estruturado por hover em pontos coincidentes (Jun/26 em R$ 0,00)
+      cy.get('[data-cy="chart-point"][data-periodo="2026-06"]').first().trigger('mouseover', { force: true });
+      cy.get('[data-cy="analytics-tooltip"]').should('be.visible');
+      cy.get('[data-cy="analytics-tooltip"]').should('contain.text', 'Jun/26');
+      cy.get('[data-cy="analytics-tooltip"]').should('contain.text', '0,00');
+
+      cy.get('[data-cy="tooltip-coincident-badge"]').should('be.visible').and('contain.text', 'Coincide com');
+      cy.get('[data-cy="tooltip-coincident-list"]').within(() => {
+        cy.get('.tooltip-coincident-item').should('have.length', 5);
+        cy.get('.tooltip-coincident-dot').should('have.length', 5);
+        cy.contains('0,00').should('exist');
+      });
+
+      // 8. Verificação objetiva: Preservação dos valores determinísticos em Jan-Mar/2026 e vendas reais em Dez/2026
+      cy.get('[data-cy="chart-point"][data-periodo="2026-01"][data-categoria="TREINO DIÁRIO"]').should('have.attr', 'data-valor', '550.99');
+      cy.get('[data-cy="chart-point"][data-periodo="2026-01"][data-categoria="COMPETIÇÃO"]').should('have.attr', 'data-valor', '2199.8');
+      cy.get('[data-cy="chart-point"][data-periodo="2026-12"][data-categoria="TREINO DIÁRIO"]').should('have.attr', 'data-valor', '2399.98');
+      cy.get('[data-cy="chart-point"][data-periodo="2026-12"][data-categoria="COMPETIÇÃO"]').should('have.attr', 'data-valor', '1699.9');
+      cy.get('[data-cy="chart-point"][data-periodo="2026-12"][data-categoria="LONGA DISTÂNCIA"]').should('have.attr', 'data-valor', '1849.9');
+      cy.get('[data-cy="chart-point"][data-periodo="2026-12"][data-categoria="VELOCIDADE"]').should('have.attr', 'data-valor', '1299.9');
+      cy.get('[data-cy="chart-point"][data-periodo="2026-12"][data-categoria="TRAIL"]').should('have.attr', 'data-valor', '1499.9');
+
+      cy.then(() => {
+        const valorFormatado = totalGeralRetornadoApi.toLocaleString('pt-BR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+        cy.get('[data-cy="total-geral-vendas"]').should('contain.text', valorFormatado);
+      });
+
+      // 9. Verificação objetiva: Gráfico de um único mês determinístico (Jan/2026 = R$ 2.750,79) (RN0072, ACH-02)
+      cy.get('[data-cy="input-data-inicio"]').clear().type('2026-01-01');
+      cy.get('[data-cy="input-data-fim"]').clear().type('2026-01-31');
+      cy.get('[data-cy="btn-aplicar-filtros"]').click();
+
+      cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');
+      cy.get('[data-cy="total-geral-vendas"]').should('contain.text', '2.750,79');
+      cy.get('.svg-line-chart').contains('text', 'Jan/26').should('exist');
+      cy.get('[data-cy="rotulo-ponto-COMPETIÇÃO"]').should('be.visible');
+      cy.get('[data-cy="rotulo-ponto-TREINO DIÁRIO"]').should('be.visible');
     });
-
-    // 9. Verificação objetiva: Preservação de gráfico de um único mês determinístico (Jan/2026 = R$ 2.750,79) (RN0072, ACH-02)
-    cy.get('[data-cy="input-data-inicio"]').clear().type('2026-01-01');
-    cy.get('[data-cy="input-data-fim"]').clear().type('2026-01-31');
-    cy.get('[data-cy="btn-aplicar-filtros"]').click();
-
-    cy.get('[data-cy="painel-grafico-analise"]').should('be.visible');
-    cy.get('[data-cy="total-geral-vendas"]').should('contain.text', '2.750,79');
-    cy.get('.svg-line-chart').contains('text', 'Jan/26').should('exist');
-    cy.get('[data-cy="rotulo-ponto-COMPETIÇÃO"]').should('be.visible');
-    cy.get('[data-cy="rotulo-ponto-TREINO DIÁRIO"]').should('be.visible');
   });
 });

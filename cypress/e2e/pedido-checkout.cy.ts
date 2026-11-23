@@ -115,7 +115,7 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 1 a 5
         cy.get('[data-cy="confirmed-order-status"]').should('contain.text', 'EM PROCESSAMENTO');
 
         // 7. Navegar até o painel administrativo para aprovar o pagamento
-        cy.visit('/admin');
+        cy.acessarPainelAdmin();
         cy.get('[data-cy="admin-pedidos"]').click();
         cy.get(`[data-cy="order-code-${codigoPedido}"]`).should('be.visible');
 
@@ -506,7 +506,7 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 1 a 5
             cy.get('[data-cy="confirmed-order-code"]').should('contain.text', codigoPedido);
 
             // 5. Processar o pagamento pelo fluxo real da aplicação no painel administrativo
-            cy.visit('/admin');
+            cy.acessarPainelAdmin();
             cy.get('[data-cy="admin-pedidos"]').click();
             cy.get(`[data-cy="order-code-${codigoPedido}"]`).should('be.visible');
 
@@ -549,7 +549,7 @@ describe('Suíte E2E: Fluxos de Checkout e Criação de Pedidos (Cenários 1 a 5
             cy.get('[data-cy="btn-cart-checkout"]').should('be.visible').and('not.be.disabled');
 
             // Acessar o admin e verificar que o pedido continua REPROVADO após refresh
-            cy.visit('/admin');
+            cy.acessarPainelAdmin();
             cy.get('[data-cy="admin-pedidos"]').click();
             cy.get(`[data-cy="order-status-tag-${codigoPedido}"]`).should('contain.text', 'REPROVADA');
 

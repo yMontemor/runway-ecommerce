@@ -1,6 +1,37 @@
 import { defineConfig } from 'cypress';
 import { Client } from 'pg';
 
+function createTestDbClient(): Client {
+  const envDb = process.env.PGDATABASE?.trim();
+  if (envDb && envDb !== 'runway_test') {
+    throw new Error(
+      `[BLOQUEIO DE SEGURANÇA CYPRESS] PGDATABASE está configurado como "${envDb}".\n` +
+      `As tasks do Cypress só podem operar exclusivamente sobre o banco "runway_test" para proteger o banco principal "runway".\n` +
+      `Fallback silencioso para "runway" é proibido.`
+    );
+  }
+
+  return new Client({
+    host: process.env.PGHOST || 'localhost',
+    port: Number(process.env.PGPORT) || 5432,
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD || '123',
+    database: 'runway_test'
+  });
+}
+
+async function withSafeTestDb<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+  const { validarConexaoSegura } = require('./scripts/seed-massa-analise.js');
+  const client = createTestDbClient();
+  await client.connect();
+  try {
+    await validarConexaoSegura(client, 'runway_test');
+    return await fn(client);
+  } finally {
+    await client.end();
+  }
+}
+
 export default defineConfig({
   e2e: {
     baseUrl: 'http://localhost:5173',
@@ -18,17 +49,9 @@ export default defineConfig({
         obterAdminKey() {
           return process.env.RUNWAY_ADMIN_KEY || process.env.CYPRESS_RUNWAY_ADMIN_KEY || '';
         },
-        async prepararCuponsCypress({ clienteId, clienteCodigo }: { clienteId?: number; clienteCodigo?: string }) {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
 
-          await client.connect();
-          try {
+        async prepararCuponsCypress({ clienteId, clienteCodigo }: { clienteId?: number; clienteCodigo?: string }) {
+          return withSafeTestDb(async (client) => {
             let targetClienteId = clienteId;
             if ((!targetClienteId || targetClienteId <= 0) && clienteCodigo) {
               const res = await client.query('SELECT id FROM "CLIENTE" WHERE codigo = $1', [clienteCodigo]);
@@ -54,19 +77,14 @@ export default defineConfig({
             const cupomMaior = `CY-MAIOR-${ts}`;
             const cupomSuperfluo = `CY-EXTRA-${ts}`;
 
-            // Inserir cupom de troca para residual de R$ 5,00 (compra Corre 4 R$ 449,90 + Frete SP R$ 20,00 = R$ 469,90)
             await client.query(
               `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 464.90, $2)`,
               [cupomResto5, targetClienteId]
             );
-
-            // Inserir cupom PROMOCIONAL para residual de R$ 5,00 (Cenário 3 obrigatório)
             await client.query(
               `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'PROMOCIONAL', 464.90, NULL)`,
               [cupomPromoResto5]
             );
-
-            // Inserir par de cupons de troca (R$ 300,00 cada = R$ 600,00 para compra de R$ 469,90, excedente de R$ 130,10 - Cenário 4 obrigatório)
             await client.query(
               `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 300.00, $2)`,
               [cupomTrocaA, targetClienteId]
@@ -75,14 +93,10 @@ export default defineConfig({
               `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 300.00, $2)`,
               [cupomTrocaB, targetClienteId]
             );
-
-            // Inserir cupom de troca para excedente único (R$ 600,00 para compra de R$ 469,90, excedente de R$ 130,10)
             await client.query(
               `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 600.00, $2)`,
               [cupomSobra, targetClienteId]
             );
-
-            // Cupons de valores distintos para validar ordenação decrescente de valor (RN0035)
             await client.query(
               `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 50.00, $2)`,
               [cupomMenor, targetClienteId]
@@ -91,52 +105,28 @@ export default defineConfig({
               `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 150.00, $2)`,
               [cupomMaior, targetClienteId]
             );
-
-            // Cupom extra para validar rejeição de cupom supérfluo/desnecessário (RN0036)
             await client.query(
               `INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id) VALUES ($1, 'TROCA', 40.00, $2)`,
               [cupomSuperfluo, targetClienteId]
             );
 
             return { cupomResto5, cupomPromoResto5, cupomTrocaA, cupomTrocaB, cupomSobra, cupomMenor, cupomMaior, cupomSuperfluo };
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async limparCuponsCypressNaoUtilizados() {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
-
-          await client.connect();
-          try {
+          return withSafeTestDb(async (client) => {
             await client.query(`
-              DELETE FROM "CUPOM" 
-              WHERE codigo LIKE 'CY-%' 
+              DELETE FROM "CUPOM"
+              WHERE codigo LIKE 'CY-%'
                 AND id NOT IN (SELECT cupom_id FROM "PAGAMENTO_PEDIDO" WHERE cupom_id IS NOT NULL)
             `);
             return true;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async garantirCuponsPromocionais() {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
-
-          await client.connect();
-          try {
+          return withSafeTestDb(async (client) => {
             await client.query(`
               INSERT INTO "CUPOM" (codigo, tipo, valor, cliente_id)
               SELECT 'PROMO20', 'PROMOCIONAL', 20.00, NULL
@@ -147,75 +137,42 @@ export default defineConfig({
               WHERE NOT EXISTS (SELECT 1 FROM "CUPOM" WHERE codigo = 'BEMVINDO50');
             `);
             return true;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async ajustarEstoqueVariacao({ variacaoId, quantidade }: { variacaoId: number; quantidade: number }) {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
-
-          await client.connect();
-          try {
-            // Cancelar pedidos EM PROCESSAMENTO de clientes de teste (CLI-%) que contenham esta variação
-            // para não inflar artificialmente pedidosEmProcessamento na fórmula do estoque disponível
+          return withSafeTestDb(async (client) => {
+            // Cancelar apenas pedidos EM PROCESSAMENTO de testes (excluindo pedidos controlados PED-ANL-*)
+            // para não inflar pedidosEmProcessamento na fórmula do estoque disponível
             await client.query(`
               UPDATE "PEDIDO"
               SET status = 'CANCELADA'
               WHERE status = 'EM PROCESSAMENTO'
+                AND codigo NOT LIKE 'PED-ANL-%'
                 AND cliente_id IN (SELECT id FROM "CLIENTE" WHERE codigo LIKE 'CLI-%')
                 AND id IN (SELECT pedido_id FROM "ITEM_PEDIDO" WHERE produto_variacao_id = $1)
             `, [variacaoId]);
 
-            // Atualizar estoque físico no banco
             await client.query(
               `UPDATE "ESTOQUE" SET quantidade = $1 WHERE produto_variacao_id = $2`,
               [quantidade, variacaoId]
             );
             return true;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async obterEstoqueVariacao({ variacaoId }: { variacaoId: number }) {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
-
-          await client.connect();
-          try {
+          return withSafeTestDb(async (client) => {
             const res = await client.query(
               `SELECT quantidade FROM "ESTOQUE" WHERE produto_variacao_id = $1`,
               [variacaoId]
             );
             return res.rows[0]?.quantidade !== undefined ? Number(res.rows[0].quantidade) : null;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async expirarCarrinhoCliente({ clienteCodigo }: { clienteCodigo: string }) {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
-
-          await client.connect();
-          try {
+          return withSafeTestDb(async (client) => {
             await client.query(`
               UPDATE "CARRINHO"
               SET dt_criacao = NOW() - INTERVAL '25 minutes',
@@ -224,43 +181,21 @@ export default defineConfig({
               WHERE cliente_id = (SELECT id FROM "CLIENTE" WHERE codigo = $1)
             `, [clienteCodigo]);
             return true;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async obterPedidoPorCodigo({ codigoPedido }: { codigoPedido: string }) {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
-
-          await client.connect();
-          try {
+          return withSafeTestDb(async (client) => {
             const res = await client.query(
               'SELECT id, codigo, status, valor_total as "valorTotal", subtotal, valor_frete as "valorFrete" FROM "PEDIDO" WHERE codigo = $1',
               [codigoPedido]
             );
             return res.rows[0] || null;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async obterTrocaPorCodigo({ codigoTroca }: { codigoTroca: string }) {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
-
-          await client.connect();
-          try {
+          return withSafeTestDb(async (client) => {
             const res = await client.query(`
               SELECT t.id, t.codigo, t.status, t.tipo, t.valor_total as "valorTotal",
                      t.retornou_ao_estoque as "retornouAoEstoque", t.cupom_id as "cupomId",
@@ -271,22 +206,11 @@ export default defineConfig({
               WHERE t.codigo = $1
             `, [codigoTroca]);
             return res.rows[0] || null;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async obterPagamentoCupom({ cupomCodigo, pedidoCodigo }: { cupomCodigo: string; pedidoCodigo?: string }) {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
-
-          await client.connect();
-          try {
+          return withSafeTestDb(async (client) => {
             let sql = `
               SELECT pp.id, pp.pedido_id as "pedidoId", pp.forma_pagamento as "formaPagamento",
                      pp.valor, pp.cupom_id as "cupomId", c.codigo as "cupomCodigo", p.codigo as "pedidoCodigo"
@@ -302,22 +226,11 @@ export default defineConfig({
             }
             const res = await client.query(sql, params);
             return res.rows[0] || null;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async gerarCupomTrocaParaCenario11({ clienteCodigo }: { clienteCodigo: string }) {
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: process.env.PGDATABASE || 'runway'
-          });
-
-          await client.connect();
-          try {
+          return withSafeTestDb(async (client) => {
             const clienteRes = await client.query('SELECT id FROM "CLIENTE" WHERE codigo = $1', [clienteCodigo]);
             const clienteId = clienteRes.rows[0]?.id;
             const codigoCupom = `TROCA-CY11-${Date.now().toString().slice(-6)}`;
@@ -326,144 +239,113 @@ export default defineConfig({
               [codigoCupom, clienteId]
             );
             return codigoCupom;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async prepararMassaAnalise() {
-          const { validarConexaoSegura, limparMassaExistente, obterClienteDeterministo, validarVariacoesExistentes, inserirMassaAnalise } = require('./scripts/seed-massa-analise.js');
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: 'runway_test'
-          });
-          await client.connect();
-          try {
-            await validarConexaoSegura(client);
-            const { cliente, endereco, cartaoId } = await obterClienteDeterministo(client);
-            await validarVariacoesExistentes(client);
-            await limparMassaExistente(client);
-            await inserirMassaAnalise(client, { cliente, endereco, cartaoId });
+          const { restaurarMassaTesteControlada } = require('./scripts/seed-massa-analise.js');
+          return withSafeTestDb(async (client) => {
+            await restaurarMassaTesteControlada(client);
             return true;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async restaurarMassaAnalise() {
-          const { validarConexaoSegura, limparMassaExistente } = require('./scripts/seed-massa-analise.js');
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: 'runway_test'
+          const { restaurarMassaTesteControlada } = require('./scripts/seed-massa-analise.js');
+          return withSafeTestDb(async (client) => {
+            const res = await restaurarMassaTesteControlada(client);
+            return res;
           });
-          await client.connect();
-          try {
-            await validarConexaoSegura(client);
-            const count = await limparMassaExistente(client);
-            return count;
-          } finally {
-            await client.end();
-          }
         },
 
         async consultarTotaisMassaAnalise() {
-          const { validarConexaoSegura, consultarTotaisEsperados } = require('./scripts/seed-massa-analise.js');
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: 'runway_test'
+          const { consultarTotaisEsperados } = require('./scripts/seed-massa-analise.js');
+          return withSafeTestDb(async (client) => {
+            return await consultarTotaisEsperados(client);
           });
-          await client.connect();
-          try {
-            await validarConexaoSegura(client);
-            const totais = await consultarTotaisEsperados(client);
-            return totais;
-          } finally {
-            await client.end();
-          }
+        },
+
+        async consultarTotaisGlobaisAnalise({
+          dataInicio = '2025-11-01',
+          dataFim = '2026-12-31',
+          categorias
+        }: {
+          dataInicio?: string;
+          dataFim?: string;
+          categorias?: string[];
+        } = {}) {
+          const { consultarTotaisGlobaisBanco } = require('./scripts/seed-massa-analise.js');
+          return withSafeTestDb(async (client) => {
+            const linhas = await consultarTotaisGlobaisBanco(client, dataInicio, dataFim, categorias || null);
+            const porCategoria: Record<string, number> = {};
+            let totalGeral = 0;
+
+            for (const row of linhas) {
+              const val = Number(row.valor_categoria);
+              porCategoria[row.categoria] = Number(((porCategoria[row.categoria] || 0) + val).toFixed(2));
+              totalGeral = Number((totalGeral + val).toFixed(2));
+            }
+
+            return {
+              linhas: linhas.map((r: any) => ({
+                periodo: r.periodo,
+                categoria: r.categoria,
+                valor: Number(r.valor_categoria),
+                qtdPedidos: Number(r.qtd_pedidos)
+              })),
+              porCategoria,
+              totalGeral
+            };
+          });
         },
 
         async confirmarBancoSeguro() {
-          const { validarConexaoSegura } = require('./scripts/seed-massa-analise.js');
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: 'runway_test'
+          return withSafeTestDb(async () => {
+            return { banco: 'runway_test', seguro: true };
           });
-          await client.connect();
-          try {
-            const db = await validarConexaoSegura(client);
-            return { banco: db, seguro: true };
-          } finally {
-            await client.end();
-          }
         },
 
         async obterPedidoDb({ codigoPedido }: { codigoPedido: string }) {
-          const { validarConexaoSegura } = require('./scripts/seed-massa-analise.js');
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: 'runway_test'
-          });
-          await client.connect();
-          try {
-            await validarConexaoSegura(client);
+          return withSafeTestDb(async (client) => {
             const res = await client.query(
               `SELECT codigo, status, dt_pedido as "dataPedido" FROM "PEDIDO" WHERE codigo = $1`,
               [codigoPedido]
             );
             return res.rows[0] || null;
-          } finally {
-            await client.end();
-          }
+          });
         },
 
         async validarIntegridadeMassaAposTeste() {
-          const { validarConexaoSegura, consultarTotaisEsperados } = require('./scripts/seed-massa-analise.js');
-          const client = new Client({
-            host: process.env.PGHOST || 'localhost',
-            port: Number(process.env.PGPORT) || 5432,
-            user: process.env.PGUSER || 'postgres',
-            password: process.env.PGPASSWORD || '123',
-            database: 'runway_test'
-          });
-          await client.connect();
-          try {
-            await validarConexaoSegura(client);
-            const resPed8 = await client.query(
-              `SELECT status FROM "PEDIDO" WHERE codigo = 'PED-ANL-0008'`
-            );
+          const { consultarTotaisEsperados, calcularTotalEsperadoCanonico } = require('./scripts/seed-massa-analise.js');
+          return withSafeTestDb(async (client) => {
+            const resPed8 = await client.query(`SELECT status FROM "PEDIDO" WHERE codigo = 'PED-ANL-0008'`);
+            const resPed36 = await client.query(`SELECT status FROM "PEDIDO" WHERE codigo = 'PED-ANL-0036'`);
             const statusPed8 = resPed8.rows[0]?.status;
-            const totais = await consultarTotaisEsperados(client);
-            const totalGeral = totais.reduce(
-              (acc: number, t: { valor_categoria: number | string }) => acc + Number(t.valor_categoria),
-              0
-            );
+            const statusPed36 = resPed36.rows[0]?.status;
 
-            if (statusPed8 !== 'EM TRANSPORTE' || Math.abs(totalGeral - 7850.09) >= 0.01) {
+            const totais = await consultarTotaisEsperados(client);
+            const totalGeral = Number(
+              totais.reduce(
+                (acc: number, t: { valor_categoria: number | string }) => acc + Number(t.valor_categoria),
+                0
+              ).toFixed(2)
+            );
+            const totalCanonicoEsperado = calcularTotalEsperadoCanonico();
+
+            if (
+              statusPed8 !== 'EM TRANSPORTE' ||
+              statusPed36 !== 'EM TRANSPORTE' ||
+              Math.abs(totalGeral - totalCanonicoEsperado) >= 0.01
+            ) {
               throw new Error(
                 `[FALHA FATAL NA RESTAURAÇÃO DA MASSA]\n` +
                 `Status de PED-ANL-0008: "${statusPed8}" (esperado: "EM TRANSPORTE").\n` +
-                `Total geral: R$ ${totalGeral.toFixed(2)} (esperado: R$ 7.850,09).`
+                `Status de PED-ANL-0036: "${statusPed36}" (esperado: "EM TRANSPORTE").\n` +
+                `Total geral PED-ANL-*: R$ ${totalGeral.toFixed(2)} (esperado: R$ ${totalCanonicoEsperado.toFixed(2)}).`
               );
             }
-            return { restaurado: true, totalGeral, statusPed8 };
-          } finally {
-            await client.end();
-          }
+            return { restaurado: true, totalGeral, totalCanonicoEsperado, statusPed8, statusPed36 };
+          });
         }
       });
 
